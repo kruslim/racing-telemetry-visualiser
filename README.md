@@ -2,6 +2,8 @@
 
 **A full-stack iRacing telemetry platform: real-time ingest → columnar storage → a MoTeC-i2-style web analysis UI → a tiered AI race engineer.**
 
+**▶ [Live showcase](https://kruslim.github.io/racing-telemetry-visualiser/)**
+
 Racing Telemetry Visualiser (RTV) captures *every* channel iRacing exposes — from
 the live 60 Hz shared-memory feed or from recorded `.ibt` files — stores it
 columnar in DuckDB/Parquet, and serves it three ways:
