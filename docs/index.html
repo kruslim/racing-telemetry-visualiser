@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Racing Telemetry Visualiser — full-stack iRacing telemetry platform</title>
+<title>Racing Telemetry Visualiser &mdash; full-stack iRacing telemetry platform</title>
 <meta name="description" content="Full-stack iRacing telemetry platform: real-time 60 Hz ingest, DuckDB/Parquet storage, a MoTeC-i2-style web analysis UI, and a tiered AI race engineer (MCP + multi-agent Claude + evals).">
 <meta property="og:type" content="website">
 <meta property="og:title" content="Racing Telemetry Visualiser">
@@ -14,190 +14,181 @@
 </head>
 <body><style>
   :root{
-    --ink:#0A0D14; --panel:#10151F; --panel2:#161C28; --raise:#1B2231;
-    --line:#232B3A; --line2:#2E374A;
-    --text:#D8DEEA; --muted:#8A94A8; --faint:#5B6479;
-    --accent:#B14EFF; --accent-2:#8A5BFF; --accent-dim:rgba(177,78,255,.13);
-    --speed:#EAEEF6; --throttle:#37D08A; --brake:#FF4B5C; --gear:#F4B740;
-    --good:#37D08A; --warn:#F4B740; --crit:#FF4B5C;
-    --disp:"Segoe UI","Helvetica Neue",system-ui,-apple-system,sans-serif;
+    --paper:#F7F8FA; --card:#FFFFFF; --sub:#F1F3F6;
+    --line:#E5E9EE; --line2:#D2D8E0;
+    --ink:#141A23; --body:#39434F; --muted:#697280; --faint:#9AA3AF;
+    --accent:#0C6E52; --accent-2:#0A5A43; --accent-soft:#E8F3EE;
+    --speed:#1B2430; --throttle:#0C6E52; --brake:#D1394A; --delta:#BE8817;
+    --good:#0C6E52;
+    --disp:"Segoe UI",system-ui,-apple-system,"Helvetica Neue",Arial,sans-serif;
     --mono:"Cascadia Code","Cascadia Mono",ui-monospace,"SF Mono",Consolas,monospace;
-    --maxw:1080px;
+    --maxw:1060px;
+    --shadow:0 1px 2px rgba(20,26,35,.04),0 6px 20px rgba(20,26,35,.05);
   }
   *{box-sizing:border-box}
   html{scroll-behavior:smooth}
-  body{margin:0;background:var(--ink);color:var(--text);
-    font-family:var(--disp);font-size:16px;line-height:1.65;
-    -webkit-font-smoothing:antialiased;overflow-x:hidden;
-    background-image:radial-gradient(1200px 600px at 78% -10%,rgba(177,78,255,.10),transparent 60%);}
+  body{margin:0;background:var(--paper);color:var(--body);
+    font-family:var(--disp);font-size:16px;line-height:1.65;-webkit-font-smoothing:antialiased;overflow-x:hidden}
   .wrap{max-width:var(--maxw);margin:0 auto;padding:0 28px}
   .mono{font-family:var(--mono)}
-  .eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.24em;
-    text-transform:uppercase;color:var(--accent);font-weight:600}
+  .eyebrow{font-family:var(--mono);font-size:11.5px;letter-spacing:.22em;text-transform:uppercase;color:var(--accent);font-weight:600}
   .tnum{font-variant-numeric:tabular-nums}
-  h1,h2,h3{margin:0;text-wrap:balance;font-weight:800;letter-spacing:-.02em;line-height:1.05}
+  h1,h2,h3{margin:0;text-wrap:balance;color:var(--ink);font-weight:800;letter-spacing:-.021em;line-height:1.08}
   a{color:inherit}
-  .hair{height:1px;background:var(--line);border:0}
 
-  header.bar{position:sticky;top:0;z-index:40;background:rgba(10,13,20,.82);
-    backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}
-  .bar .wrap{display:flex;align-items:center;gap:16px;height:60px}
-  .brand{display:flex;align-items:center;gap:11px;font-weight:800;letter-spacing:-.01em}
-  .brand .dot{width:11px;height:11px;border-radius:2px;background:var(--accent);
-    box-shadow:0 0 14px 1px rgba(177,78,255,.7)}
-  .brand small{font-family:var(--mono);font-weight:500;font-size:11px;letter-spacing:.18em;
-    text-transform:uppercase;color:var(--faint)}
-  .bar nav{margin-left:auto;display:flex;gap:26px;font-size:13.5px;color:var(--muted)}
+  header.bar{position:sticky;top:0;z-index:40;background:rgba(247,248,250,.85);backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}
+  .bar .wrap{display:flex;align-items:center;gap:16px;height:62px}
+  .brand{display:flex;align-items:center;gap:11px;font-weight:800;color:var(--ink);letter-spacing:-.01em}
+  .brand .mk{width:22px;height:22px;border-radius:5px;background:var(--accent);display:flex;align-items:center;justify-content:center}
+  .brand .mk::after{content:"";width:8px;height:8px;background:#fff;border-radius:2px;transform:rotate(45deg)}
+  .brand small{font-family:var(--mono);font-weight:500;font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--faint)}
+  .bar nav{margin-left:auto;display:flex;gap:26px;font-size:14px;color:var(--muted)}
   .bar nav a{text-decoration:none}
-  .bar nav a:hover{color:var(--text)}
-  .ghbtn{font-family:var(--mono);font-size:12.5px;letter-spacing:.04em;color:var(--text);
-    border:1px solid var(--line2);padding:8px 14px;border-radius:7px;text-decoration:none;
-    display:inline-flex;align-items:center;gap:8px}
-  .ghbtn:hover{border-color:var(--accent);color:#fff;background:var(--accent-dim)}
+  .bar nav a:hover{color:var(--ink)}
+  .ghbtn{font-size:13.5px;color:var(--ink);border:1px solid var(--line2);padding:8px 15px;border-radius:8px;text-decoration:none;display:inline-flex;align-items:center;gap:7px;background:var(--card);font-weight:600}
+  .ghbtn:hover{border-color:var(--accent);color:var(--accent)}
   @media(max-width:720px){.bar nav{display:none}}
 
-  section{padding:82px 0}
+  section{padding:78px 0}
   .lede{color:var(--muted);font-size:18px;line-height:1.6;max-width:60ch}
 
-  .hero{padding:64px 0 34px}
-  .hero h1{font-size:clamp(38px,6.4vw,68px)}
+  .hero{padding:66px 0 30px}
+  .hero h1{font-size:clamp(35px,5.6vw,58px)}
   .hero h1 .em{color:var(--accent)}
-  .hero .lede{margin-top:22px;font-size:19px}
+  .hero .lede{margin-top:20px;font-size:18.5px;color:var(--body)}
   .heroflags{display:flex;flex-wrap:wrap;gap:9px;margin-top:26px}
-  .flag{font-family:var(--mono);font-size:11.5px;letter-spacing:.06em;color:var(--muted);
-    border:1px solid var(--line);border-radius:999px;padding:6px 13px;background:var(--panel)}
-  .flag b{color:var(--text);font-weight:600}
+  .flag{font-family:var(--mono);font-size:11.5px;letter-spacing:.03em;color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:6px 13px;background:var(--card)}
+  .flag b{color:var(--ink);font-weight:600}
 
-  .console{margin-top:44px;border:1px solid var(--line2);border-radius:14px;overflow:hidden;
-    background:linear-gradient(180deg,var(--panel2),var(--panel))}
-  .console .top{display:flex;align-items:center;gap:14px;padding:12px 16px;
-    border-bottom:1px solid var(--line);font-family:var(--mono);font-size:12px;color:var(--muted)}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow)}
+  .console{margin-top:42px;overflow:hidden}
+  .console .top{display:flex;align-items:center;gap:14px;padding:12px 16px;border-bottom:1px solid var(--line);font-family:var(--mono);font-size:11.5px;color:var(--muted);background:var(--sub)}
   .lights{display:flex;gap:6px}
   .lights i{width:9px;height:9px;border-radius:50%;display:block;background:var(--line2)}
-  .lights i.g{background:var(--good)} .lights i.a{background:var(--gear)} .lights i.r{background:var(--brake)}
-  .console .top .sess{margin-left:auto;letter-spacing:.05em}
-  .tracegrid{display:grid;grid-template-columns:1fr 250px}
+  .lights i.g{background:var(--good)} .lights i.a{background:var(--delta)} .lights i.r{background:var(--brake)}
+  .console .top .sess{margin-left:auto;letter-spacing:.03em;color:var(--faint)}
+  .tracegrid{display:grid;grid-template-columns:1fr 246px}
   @media(max-width:760px){.tracegrid{grid-template-columns:1fr}}
-  .plot{position:relative;padding:6px 6px 0}
+  .plot{position:relative;padding:8px 8px 0}
   svg.trace{display:block;width:100%;height:auto}
-  .legend{display:flex;gap:16px;padding:8px 18px 14px;font-family:var(--mono);font-size:11.5px;color:var(--muted);flex-wrap:wrap}
+  .legend{display:flex;gap:16px;padding:8px 18px 15px;font-family:var(--mono);font-size:11.5px;color:var(--muted);flex-wrap:wrap}
   .legend span{display:inline-flex;align-items:center;gap:7px}
   .legend span::before{content:"";width:14px;height:3px;border-radius:2px;background:var(--c)}
-  .readout{border-left:1px solid var(--line);padding:16px 18px;display:flex;flex-direction:column;gap:14px}
-  @media(max-width:760px){.readout{border-left:0;border-top:1px solid var(--line);flex-direction:row;flex-wrap:wrap;gap:20px}}
-  .ro .k{font-family:var(--mono);font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--faint)}
-  .ro .v{font-family:var(--mono);font-size:26px;font-weight:600;letter-spacing:-.01em;line-height:1.1;margin-top:3px}
+  .readout{border-left:1px solid var(--line);padding:16px 18px;display:flex;flex-direction:column;gap:15px}
+  @media(max-width:760px){.readout{border-left:0;border-top:1px solid var(--line);flex-direction:row;flex-wrap:wrap;gap:22px}}
+  .ro .k{font-family:var(--mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint)}
+  .ro .v{font-family:var(--mono);font-size:25px;font-weight:600;letter-spacing:-.01em;line-height:1.1;margin-top:3px;color:var(--ink)}
   .ro .v.delta{color:var(--accent)}
-  .ro small{font-family:var(--mono);font-size:11px;color:var(--muted)}
+  .ro small{font-family:var(--mono);font-size:10.5px;color:var(--muted)}
 
   .shead{max-width:70ch}
-  .shead h2{font-size:clamp(26px,3.6vw,38px);margin-top:14px}
-  .shead p{color:var(--muted);margin-top:14px;font-size:17px}
+  .shead h2{font-size:clamp(25px,3.4vw,35px);margin-top:13px}
+  .shead p{color:var(--muted);margin-top:13px;font-size:16.5px}
 
-  .sheet{margin-top:38px;border:1px solid var(--line2);border-radius:13px;overflow:hidden;background:var(--panel)}
-  .brow{display:grid;grid-template-columns:1fr auto;align-items:center;gap:16px;
-    padding:17px 22px;border-top:1px solid var(--line)}
+  .board{margin-top:36px;overflow:hidden}
+  .brow{display:grid;grid-template-columns:1fr auto;align-items:center;gap:16px;padding:18px 22px;border-top:1px solid var(--line)}
   .brow:first-child{border-top:0}
-  .brow .bt{font-weight:700;letter-spacing:-.01em}
-  .brow .bt small{display:block;font-weight:400;color:var(--muted);font-size:13.5px;
-    letter-spacing:0;margin-top:3px;font-family:var(--disp)}
-  .stat{font-family:var(--mono);font-size:12px;letter-spacing:.03em;display:inline-flex;
-    align-items:center;gap:8px;white-space:nowrap}
-  .stat::before{content:"";width:8px;height:8px;border-radius:50%}
-  .stat.ship{color:var(--good)} .stat.ship::before{background:var(--good);box-shadow:0 0 9px var(--good)}
+  .brow .bt{font-weight:700;color:var(--ink);letter-spacing:-.01em}
+  .brow .bt small{display:block;font-weight:400;color:var(--muted);font-size:13.5px;margin-top:3px;font-family:var(--disp)}
+  .chip{font-family:var(--mono);font-size:11px;letter-spacing:.04em;text-transform:uppercase;font-weight:600;
+    color:var(--accent-2);background:var(--accent-soft);border:1px solid #CDE6DC;padding:4px 11px;border-radius:999px;white-space:nowrap}
 
-  .panels{margin-top:36px;display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+  .panels{margin-top:34px;display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
   @media(max-width:860px){.panels{grid-template-columns:repeat(2,1fr)}}
   @media(max-width:560px){.panels{grid-template-columns:1fr}}
-  .panel{border:1px solid var(--line);border-radius:12px;padding:20px;background:var(--panel);
-    display:flex;flex-direction:column;gap:11px;transition:border-color .2s,transform .2s}
-  .panel:hover{border-color:var(--accent);transform:translateY(-3px)}
-  .panel .pn{font-family:var(--mono);font-size:11px;letter-spacing:.12em;color:var(--faint)}
-  .panel h3{font-size:18px;letter-spacing:-.01em}
+  .panel{border:1px solid var(--line);border-radius:12px;padding:22px;background:var(--card);display:flex;flex-direction:column;gap:10px;transition:border-color .18s,box-shadow .18s,transform .18s}
+  .panel:hover{border-color:var(--accent);box-shadow:var(--shadow);transform:translateY(-3px)}
+  .panel .pn{font-family:var(--mono);font-size:10.5px;letter-spacing:.11em;color:var(--faint)}
+  .panel h3{font-size:17.5px;letter-spacing:-.01em}
   .panel p{margin:0;color:var(--muted);font-size:14px;line-height:1.58}
-  .panel .tag{margin-top:auto;font-family:var(--mono);font-size:11px;color:var(--accent);letter-spacing:.03em}
+  .panel .tag{margin-top:auto;font-family:var(--mono);font-size:11px;color:var(--accent);letter-spacing:.02em}
 
-  .layers{margin-top:34px;display:grid;gap:14px}
-  .layer{display:grid;grid-template-columns:64px 1fr 128px;gap:18px;align-items:center;
-    border:1px solid var(--line);border-left:3px solid var(--accent);border-radius:10px;
-    padding:20px 22px;background:var(--panel)}
-  .layer .ln{font-family:var(--mono);font-size:34px;font-weight:700;color:var(--accent-2);line-height:1}
-  .layer h3{font-size:18px}
-  .layer p{margin:6px 0 0;color:var(--muted);font-size:14px;line-height:1.55}
-  .layer p code{font-family:var(--mono);font-size:12.5px;color:var(--text);background:var(--raise);padding:1px 6px;border-radius:5px}
-  .cost{font-family:var(--mono);font-size:12px;text-align:right;color:var(--good);letter-spacing:.03em}
-  @media(max-width:640px){.layer{grid-template-columns:44px 1fr}.layer .cost{grid-column:2;text-align:left}}
+  .layers{margin-top:32px;display:grid;gap:13px}
+  .layer{display:grid;grid-template-columns:46px 1fr 130px;gap:18px;align-items:center;border:1px solid var(--line);border-radius:12px;padding:20px 22px;background:var(--card)}
+  .layer .ln{width:40px;height:40px;border-radius:9px;background:var(--accent-soft);color:var(--accent-2);font-family:var(--mono);font-size:19px;font-weight:700;display:flex;align-items:center;justify-content:center}
+  .layer h3{font-size:17px}
+  .layer p{margin:5px 0 0;color:var(--muted);font-size:14px;line-height:1.55}
+  .layer p code{font-family:var(--mono);font-size:12.5px;color:var(--accent-2);background:var(--accent-soft);padding:1px 6px;border-radius:5px}
+  .cost{font-family:var(--mono);font-size:12px;text-align:right;color:var(--muted);letter-spacing:.02em}
+  @media(max-width:640px){.layer{grid-template-columns:40px 1fr}.layer .cost{grid-column:2;text-align:left}}
 
-  .pipe{margin-top:32px;border:1px solid var(--line);border-radius:12px;padding:22px;background:var(--panel);
-    font-family:var(--mono);font-size:12.5px;line-height:1.9;color:var(--muted);overflow-x:auto}
-  .pipe b{color:var(--accent)} .pipe .n{color:var(--text)}
+  .flow{margin-top:30px;display:flex;flex-direction:column;align-items:stretch;gap:0}
+  .frow{display:grid;gap:14px}
+  .frow.two{grid-template-columns:1fr 1fr}
+  .frow.three{grid-template-columns:repeat(3,1fr)}
+  @media(max-width:640px){.frow.two,.frow.three{grid-template-columns:1fr}}
+  .fbox{background:var(--card);border:1px solid var(--line);border-radius:11px;padding:16px 18px}
+  .fbox.src{background:var(--sub)}
+  .fbox.store{background:var(--ink);border-color:var(--ink)}
+  .fbox.store .fk,.fbox.store .fd{color:#fff}
+  .fbox.store .fd{color:#B9C2CE}
+  .fbox .fk{font-family:var(--mono);font-weight:700;font-size:13.5px;color:var(--accent-2);letter-spacing:-.01em}
+  .fbox .fd{font-size:13px;color:var(--muted);margin-top:4px}
+  .fbox.cons .fk{color:var(--ink)}
+  .farrow{display:flex;justify-content:center;color:var(--faint);font-size:18px;padding:9px 0;line-height:1}
 
-  .strip{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--line);
-    border:1px solid var(--line);border-radius:12px;overflow:hidden;margin-top:8px}
+  .strip{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-top:8px}
   @media(max-width:640px){.strip{grid-template-columns:repeat(2,1fr)}}
-  .cell{background:var(--panel);padding:22px 20px}
-  .cell .big{font-family:var(--mono);font-size:30px;font-weight:600;letter-spacing:-.02em;color:var(--text)}
-  .cell .lbl{font-size:13px;color:var(--muted);margin-top:5px}
+  .cell{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:22px 20px}
+  .cell .big{font-family:var(--mono);font-size:29px;font-weight:600;letter-spacing:-.02em;color:var(--accent)}
+  .cell .lbl{font-size:13px;color:var(--muted);margin-top:6px}
 
-  footer{border-top:1px solid var(--line);padding:40px 0 60px;color:var(--faint);font-size:13.5px}
+  footer{border-top:1px solid var(--line);padding:38px 0 58px;color:var(--faint);font-size:13.5px;margin-top:12px}
   footer .wrap{display:flex;gap:16px;flex-wrap:wrap;align-items:center}
-  footer .mono{font-size:12px}
+  footer .mono{font-size:12px;color:var(--muted)}
 
-  .reveal{opacity:0;transform:translateY(16px);transition:opacity .6s ease,transform .6s ease}
+  .reveal{opacity:0;transform:translateY(15px);transition:opacity .55s ease,transform .55s ease}
   .reveal.in{opacity:1;transform:none}
-  @media(prefers-reduced-motion:reduce){
-    .reveal{opacity:1;transform:none;transition:none}
-    html{scroll-behavior:auto}
-  }
+  @media(prefers-reduced-motion:reduce){.reveal{opacity:1;transform:none;transition:none}html{scroll-behavior:auto}}
   :focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:4px}
 </style>
 
-<h2 class="sr-only" style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)">Racing Telemetry Visualiser â€” a full-stack iRacing telemetry platform with real-time ingest, a MoTeC-style analysis UI, and a tiered AI race engineer.</h2>
+<h2 class="sr-only" style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)">Racing Telemetry Visualiser &mdash; a full-stack iRacing telemetry platform with real-time ingest, a MoTeC-style analysis UI, and a tiered AI race engineer.</h2>
 
 <header class="bar">
   <div class="wrap">
-    <div class="brand"><span class="dot" aria-hidden="true"></span>RTV<small>Racing&nbsp;Telemetry&nbsp;Visualiser</small></div>
+    <div class="brand"><span class="mk" aria-hidden="true"></span>RTV<small>Racing&nbsp;Telemetry&nbsp;Visualiser</small></div>
     <nav>
       <a href="#stack">Overview</a>
       <a href="#features">Features</a>
       <a href="#coach">AI coach</a>
       <a href="#arch">Architecture</a>
     </nav>
-    <a class="ghbtn" href="https://github.com/kruslim/racing-telemetry-visualiser">GitHub â†—</a>
+    <a class="ghbtn" href="https://github.com/kruslim/racing-telemetry-visualiser">GitHub &nearr;</a>
   </div>
 </header>
 
 <main>
 <section class="hero wrap">
   <p class="eyebrow reveal">Full-stack sim-racing telemetry platform</p>
-  <h1 class="reveal">Every channel iRacing exposes â€”<br><span class="em">ingested, streamed, visualised, coached.</span></h1>
-  <p class="lede reveal">Live 60&nbsp;Hz shared-memory feed and recorded <span class="mono">.ibt</span> files, stored columnar in DuckDB&nbsp;/&nbsp;Parquet, served over REST and WebSocket to a MoTeC-i2-style analysis UI â€” and distilled into a three-layer AI race engineer that can't hallucinate your lap advice.</p>
+  <h1 class="reveal">Every channel iRacing exposes &mdash;<br><span class="em">ingested, streamed, visualised, coached.</span></h1>
+  <p class="lede reveal">A live 60&nbsp;Hz shared-memory feed and recorded <span class="mono">.ibt</span> files, stored columnar in DuckDB&nbsp;/&nbsp;Parquet, served over REST and WebSocket to a MoTeC-i2-style analysis UI &mdash; and distilled into a three-layer AI race engineer that can't hallucinate your lap advice.</p>
   <div class="heroflags reveal">
-    <span class="flag"><b>Python</b> Â· FastAPI Â· uvicorn</span>
+    <span class="flag"><b>Python</b> &middot; FastAPI &middot; uvicorn</span>
     <span class="flag"><b>DuckDB</b> + Parquet</span>
     <span class="flag"><b>WebSocket</b> live stream</span>
     <span class="flag"><b>MCP</b> + multi-agent Claude</span>
     <span class="flag"><b>Evals</b> vs ground truth</span>
   </div>
 
-  <div class="console reveal" aria-hidden="true">
+  <div class="console card reveal" aria-hidden="true">
     <div class="top">
       <span class="lights"><i class="g"></i><i class="a"></i><i class="r"></i></span>
-      <span>lap_dist_pct Â· 0 â†’ 100%</span>
-      <span class="sess">SESSION Â· GET /channels?names=Speed,Throttle,Brake</span>
+      <span>lap_dist_pct &middot; 0 &rarr; 100%</span>
+      <span class="sess">GET /channels?names=Speed,Throttle,Brake</span>
     </div>
     <div class="tracegrid">
       <div>
-        <div class="plot"><svg class="trace" viewBox="0 0 720 260" preserveAspectRatio="none" id="trace"></svg></div>
+        <div class="plot"><svg class="trace" viewBox="0 0 720 250" preserveAspectRatio="none" id="trace"></svg></div>
         <div class="legend">
           <span style="--c:var(--speed)">Speed</span>
           <span style="--c:var(--throttle)">Throttle</span>
           <span style="--c:var(--brake)">Brake</span>
-          <span style="--c:var(--accent)">Î” vs reference</span>
+          <span style="--c:var(--delta)">&Delta; vs reference</span>
         </div>
       </div>
       <div class="readout">
-        <div class="ro"><div class="k">Lap delta</div><div class="v delta tnum" id="ro-delta">âˆ’0.000</div><small>main vs reference lap</small></div>
+        <div class="ro"><div class="k">Lap delta</div><div class="v delta tnum" id="ro-delta">&minus;0.000</div><small>main vs reference lap</small></div>
         <div class="ro"><div class="k">Corners analysed</div><div class="v tnum" id="ro-corners">0</div><small>speed-minima detection</small></div>
         <div class="ro"><div class="k">Points / lap</div><div class="v tnum" id="ro-points">0</div><small>distilled to ~20 findings</small></div>
       </div>
@@ -209,16 +200,16 @@
   <div class="shead reveal">
     <p class="eyebrow">The full stack</p>
     <h2>Ingest to AI, built end to end.</h2>
-    <p>Not a single library â€” a complete platform. Every layer below runs today: capture, columnar storage, an HTTP and streaming API, a visual analysis UI, and a grounded AI coaching pipeline.</p>
+    <p>Not a single library &mdash; a complete platform. Every layer below runs today: capture, columnar storage, an HTTP and streaming API, a visual analysis UI, and a grounded AI coaching pipeline.</p>
   </div>
-  <div class="sheet reveal">
-    <div class="brow"><div class="bt">Live telemetry stream<small>Latest-frame WebSocket at up to 60&nbsp;Hz, backpressure-safe</small></div><span class="stat ship">live</span></div>
-    <div class="brow"><div class="bt">REST API<small>Sessions, laps, multi-channel charts, lap compare, track maps</small></div><span class="stat ship">shipped</span></div>
-    <div class="brow"><div class="bt">Web analysis UI<small>MoTeC-i2-style traces, GPS maps, histograms, live console</small></div><span class="stat ship">shipped</span></div>
-    <div class="brow"><div class="bt">Runtime variable catalog<small>Read from the binary header â€” complete for any car or content</small></div><span class="stat ship">shipped</span></div>
-    <div class="brow"><div class="bt">MCP server<small>Six tools â€” chat-driven coaching in Claude Desktop / Code</small></div><span class="stat ship">shipped</span></div>
-    <div class="brow"><div class="bt">Multi-agent AI coach<small>Specialists per corner â†’ synthesise â†’ adversarially verify</small></div><span class="stat ship">shipped</span></div>
-    <div class="brow"><div class="bt">Evals harness<small>Every claimed figure checked against deterministic ground truth</small></div><span class="stat ship">shipped</span></div>
+  <div class="board card reveal">
+    <div class="brow"><div class="bt">Live telemetry stream<small>Latest-frame WebSocket at up to 60&nbsp;Hz, backpressure-safe</small></div><span class="chip">Live</span></div>
+    <div class="brow"><div class="bt">REST API<small>Sessions, laps, multi-channel charts, lap compare, track maps</small></div><span class="chip">Shipped</span></div>
+    <div class="brow"><div class="bt">Web analysis UI<small>MoTeC-i2-style traces, GPS maps, histograms, live console</small></div><span class="chip">Shipped</span></div>
+    <div class="brow"><div class="bt">Runtime variable catalog<small>Read from the binary header &mdash; complete for any car or content</small></div><span class="chip">Shipped</span></div>
+    <div class="brow"><div class="bt">MCP server<small>Six tools &mdash; chat-driven coaching in Claude Desktop / Code</small></div><span class="chip">Shipped</span></div>
+    <div class="brow"><div class="bt">Multi-agent AI coach<small>Specialists per corner &rarr; synthesise &rarr; adversarially verify</small></div><span class="chip">Shipped</span></div>
+    <div class="brow"><div class="bt">Evals harness<small>Every claimed figure checked against deterministic ground truth</small></div><span class="chip">Shipped</span></div>
   </div>
 </section>
 
@@ -228,12 +219,12 @@
     <h2>Six subsystems, each testable alone.</h2>
   </div>
   <div class="panels">
-    <div class="panel reveal"><span class="pn">CATALOG</span><h3>Runtime schema discovery</h3><p>The channel list is read from the binary telemetry header at runtime â€” nothing hard-coded â€” so it's complete for any car or content, with types, units and bitfield decode tables.</p><span class="tag">GET /variables</span></div>
-    <div class="panel reveal"><span class="pn">INGEST</span><h3>Live and offline</h3><p>One pipeline reads the iRacing shared-memory feed at 60&nbsp;Hz and parses recorded .ibt files in tick-window chunks, with async import jobs and status polling.</p><span class="tag">shared-mem Â· .ibt</span></div>
+    <div class="panel reveal"><span class="pn">CATALOG</span><h3>Runtime schema discovery</h3><p>The channel list is read from the binary telemetry header at runtime &mdash; nothing hard-coded &mdash; so it's complete for any car or content, with types, units and bitfield decode tables.</p><span class="tag">GET /variables</span></div>
+    <div class="panel reveal"><span class="pn">INGEST</span><h3>Live and offline</h3><p>One pipeline reads the iRacing shared-memory feed at 60&nbsp;Hz and parses recorded .ibt files in tick-window chunks, with async import jobs and status polling.</p><span class="tag">shared-mem &middot; .ibt</span></div>
     <div class="panel reveal"><span class="pn">STORE</span><h3>Columnar, pruned per lap</h3><p>Metadata in DuckDB; high-rate telemetry as per-session/per-lap Parquet. Every chart query prunes to one or two small files instead of scanning a session.</p><span class="tag">DuckDB + Parquet</span></div>
-    <div class="panel reveal"><span class="pn">STREAM</span><h3>Backpressure-safe live</h3><p>/ws/live delivers latest-frame-only at each client's requested rate. Slow clients coalesce to the newest sample â€” no unbounded buffering, no lag spiral.</p><span class="tag">WebSocket fan-out</span></div>
-    <div class="panel reveal"><span class="pn">FRONTEND</span><h3>MoTeC-i2 analysis UI</h3><p>Canvas charts, GPS track maps, histograms, suspension and a live Pitwall console â€” plus alien-lap cross-session compare to set another driver's lap as your reference.</p><span class="tag">time / distance worksheets</span></div>
-    <div class="panel reveal"><span class="pn">COACHING</span><h3>1M points â†’ 20 findings</h3><p>Deterministic feature extraction aligns main and reference laps, detects corners, and apportions a time-delta curve to eight diagnostics before any LLM sees the data.</p><span class="tag">GET /coaching/lap-findings</span></div>
+    <div class="panel reveal"><span class="pn">STREAM</span><h3>Backpressure-safe live</h3><p>/ws/live delivers latest-frame-only at each client's requested rate. Slow clients coalesce to the newest sample &mdash; no unbounded buffering, no lag spiral.</p><span class="tag">WebSocket fan-out</span></div>
+    <div class="panel reveal"><span class="pn">FRONTEND</span><h3>MoTeC-i2 analysis UI</h3><p>Canvas charts, GPS track maps, histograms, suspension and a live Pitwall console &mdash; plus alien-lap cross-session compare to set another driver's lap as your reference.</p><span class="tag">time / distance worksheets</span></div>
+    <div class="panel reveal"><span class="pn">COACHING</span><h3>1M points &rarr; 20 findings</h3><p>Deterministic feature extraction aligns main and reference laps, detects corners, and apportions a time-delta curve to eight diagnostics before any LLM sees the data.</p><span class="tag">GET /coaching/lap-findings</span></div>
   </div>
 </section>
 
@@ -241,23 +232,23 @@
   <div class="shead reveal">
     <p class="eyebrow">The AI race engineer</p>
     <h2>Three layers. The LLM never sees raw telemetry.</h2>
-    <p>Heuristics find brake points and speed deltas faster and more reliably than any model â€” so they stay deterministic, and Claude is used only where code is weak: synthesis, prioritisation, and open-ended Q&amp;A. That same deterministic layer becomes the eval ground truth.</p>
+    <p>Heuristics find brake points and speed deltas faster and more reliably than any model &mdash; so they stay deterministic, and Claude is used only where code is weak: synthesis, prioritisation, and open-ended Q&amp;A. That same deterministic layer becomes the eval ground truth.</p>
   </div>
   <div class="layers">
     <div class="layer reveal">
       <span class="ln">1</span>
       <div><h3>Deterministic features</h3><p>Aligns laps on a uniform distance grid, detects corners as speed minima, builds a time-delta curve and runs eight diagnostics into a compact <code>LapFindings</code> model. This is the token solution <em>and</em> the ground truth.</p></div>
-      <div class="cost">free Â· code</div>
+      <div class="cost">free &middot; code</div>
     </div>
     <div class="layer reveal">
       <span class="ln">2</span>
-      <div><h3>MCP server</h3><p>Six tools over the API â€” <code>get_lap_findings</code>, <code>compare_channel</code>, <code>get_corner_detail</code> and more â€” driven from Claude Desktop / Code. "Review my lap 5 vs my fastest."</p></div>
-      <div class="cost">$0 Â· subscription</div>
+      <div><h3>MCP server</h3><p>Six tools over the API &mdash; <code>get_lap_findings</code>, <code>compare_channel</code>, <code>get_corner_detail</code> and more &mdash; driven from Claude Desktop / Code. "Review my lap 5 vs my fastest."</p></div>
+      <div class="cost">$0 &middot; subscription</div>
     </div>
     <div class="layer reveal">
       <span class="ln">3</span>
-      <div><h3>Multi-agent orchestration + evals</h3><p>Fan-out a specialist per priority corner â†’ synthesise a session plan â†’ adversarially verify it, all in structured Pydantic outputs. Then evals cross-check every claimed figure against Layer&nbsp;1 â€” a deterministic hallucination guard.</p></div>
-      <div class="cost">~cents Â· Claude API</div>
+      <div><h3>Multi-agent orchestration + evals</h3><p>Fan-out a specialist per priority corner &rarr; synthesise a session plan &rarr; adversarially verify it, all in structured Pydantic outputs. Then evals cross-check every claimed figure against Layer&nbsp;1 &mdash; a deterministic hallucination guard.</p></div>
+      <div class="cost">~cents &middot; Claude API</div>
     </div>
   </div>
 </section>
@@ -267,18 +258,28 @@
     <p class="eyebrow">Architecture</p>
     <h2>One pipeline, three consumers.</h2>
   </div>
-  <div class="pipe reveal">
-    <div>iRacing shared memory <b>(60&nbsp;Hz)</b> &nbsp;Â·&nbsp; recorded <span class="n">.ibt</span> files</div>
-    <div>&nbsp;&nbsp;&nbsp;â†“</div>
-    <div><b>ingest/</b> frame buffer Â· normalize / laps Â· sink &nbsp;&nbsp; <b>catalog/</b> runtime header â†’ typed variables</div>
-    <div>&nbsp;&nbsp;&nbsp;â†“</div>
-    <div><b>store/</b> DuckDB metadata + per-lap Parquet</div>
-    <div>&nbsp;&nbsp;&nbsp;â†“</div>
-    <div>â”œâ”€ <span class="n">REST /api/v1</span> &nbsp;â†’ web frontend (charts Â· maps Â· lap compare)</div>
-    <div>â”œâ”€ <span class="n">WebSocket /ws/live</span> &nbsp;â†’ live dashboards</div>
-    <div>â””â”€ <span class="n">coaching/</span> &nbsp;â†’ MCP server &nbsp;+&nbsp; multi-agent orchestrator &nbsp;+&nbsp; evals</div>
+  <div class="flow reveal">
+    <div class="frow two">
+      <div class="fbox src"><div class="fk">iRacing shared memory</div><div class="fd">live feed at 60&nbsp;Hz</div></div>
+      <div class="fbox src"><div class="fk">Recorded .ibt files</div><div class="fd">offline, any OS</div></div>
+    </div>
+    <div class="farrow" aria-hidden="true">&darr;</div>
+    <div class="frow two">
+      <div class="fbox"><div class="fk">ingest/</div><div class="fd">frame buffer &middot; normalize / laps &middot; sink</div></div>
+      <div class="fbox"><div class="fk">catalog/</div><div class="fd">runtime header &rarr; typed variables</div></div>
+    </div>
+    <div class="farrow" aria-hidden="true">&darr;</div>
+    <div class="frow">
+      <div class="fbox store"><div class="fk">store/</div><div class="fd">DuckDB metadata + per-lap Parquet</div></div>
+    </div>
+    <div class="farrow" aria-hidden="true">&darr;</div>
+    <div class="frow three">
+      <div class="fbox cons"><div class="fk">REST /api/v1</div><div class="fd">web frontend &mdash; charts, maps, lap compare</div></div>
+      <div class="fbox cons"><div class="fk">WebSocket /ws/live</div><div class="fd">live dashboards</div></div>
+      <div class="fbox cons"><div class="fk">coaching/</div><div class="fd">MCP server + orchestrator + evals</div></div>
+    </div>
   </div>
-  <div class="strip reveal" style="margin-top:34px">
+  <div class="strip reveal">
     <div class="cell"><div class="big tnum">60 Hz</div><div class="lbl">Live shared-memory poll</div></div>
     <div class="cell"><div class="big tnum">6</div><div class="lbl">Src packages, each testable</div></div>
     <div class="cell"><div class="big tnum">3</div><div class="lbl">Coaching layers, one foundation</div></div>
@@ -289,62 +290,57 @@
 
 <footer>
   <div class="wrap">
-    <div class="brand" style="font-size:15px"><span class="dot" aria-hidden="true"></span>RTV</div>
-    <span class="mono">Racing Telemetry Visualiser Â· iRacing telemetry platform Â· MIT</span>
-    <a class="ghbtn" style="margin-left:auto" href="https://github.com/kruslim/racing-telemetry-visualiser">View source â†—</a>
+    <div class="brand" style="font-size:15px"><span class="mk" aria-hidden="true"></span>RTV</div>
+    <span class="mono">Racing Telemetry Visualiser &middot; iRacing telemetry platform &middot; MIT</span>
+    <a class="ghbtn" style="margin-left:auto" href="https://github.com/kruslim/racing-telemetry-visualiser">View source &nearr;</a>
   </div>
 </footer>
 
 <script>
 (function(){
   var reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-
-  var W=720,H=260,N=240;
+  var W=720,H=250,N=240;
   function path(fn){var d="",i,x,y;for(i=0;i<=N;i++){x=i/N*W;y=fn(i/N);d+=(i?"L":"M")+x.toFixed(1)+" "+y.toFixed(1);}return d;}
   function speedFn(t){
-    var s=0.62+0.30*Math.sin(t*6.2831*1.0-0.6)
-          +0.16*Math.sin(t*6.2831*2.3+1.1)
-          +0.08*Math.sin(t*6.2831*4.7);
+    var s=0.62+0.30*Math.sin(t*6.2831*1.0-0.6)+0.16*Math.sin(t*6.2831*2.3+1.1)+0.08*Math.sin(t*6.2831*4.7);
     s=Math.max(0.05,Math.min(1,(s+0.15)/1.25));
-    return H*0.10 + (1-s)*H*0.52;
+    return H*0.10 + (1-s)*H*0.50;
   }
   function thrFn(t){
-    var s=speedFn(t), norm=1-((s-H*0.10)/(H*0.52));
+    var s=speedFn(t), norm=1-((s-H*0.10)/(H*0.50));
     var thr=Math.max(0,Math.min(1, norm*1.35-0.1));
-    return H*0.66 + (1-thr)*H*0.30;
+    return H*0.66 + (1-thr)*H*0.29;
   }
   function brakeFn(t){
     var b=0,c,peaks=[0.12,0.31,0.5,0.68,0.86];
     for(var k=0;k<peaks.length;k++){c=Math.exp(-Math.pow((t-peaks[k])/0.028,2));b=Math.max(b,c);}
-    return H*0.66 + (1-b*0.9)*H*0.30;
+    return H*0.66 + (1-b*0.9)*H*0.29;
   }
   function deltaFn(t){
     var v=0.5+0.42*Math.sin(t*6.2831*1.0+0.4)+0.12*Math.sin(t*6.2831*3.1);
-    return H*0.12 + (1-Math.max(0,Math.min(1,v)))*H*0.5;
+    return H*0.12 + (1-Math.max(0,Math.min(1,v)))*H*0.48;
   }
-
   var svg=document.getElementById("trace");
   if(svg){
     var ns="http://www.w3.org/2000/svg", i;
     for(i=1;i<6;i++){var gl=document.createElementNS(ns,"line");var gx=i/6*W;
       gl.setAttribute("x1",gx);gl.setAttribute("x2",gx);gl.setAttribute("y1",6);gl.setAttribute("y2",H-6);
-      gl.setAttribute("stroke","#232B3A");gl.setAttribute("stroke-width","1");svg.appendChild(gl);}
+      gl.setAttribute("stroke","#EAEDF1");gl.setAttribute("stroke-width","1");svg.appendChild(gl);}
     function stroke(d,color,w,dash){
       var p=document.createElementNS(ns,"path");
       p.setAttribute("d",d);p.setAttribute("fill","none");p.setAttribute("stroke",color);
       p.setAttribute("stroke-width",w);p.setAttribute("stroke-linejoin","round");p.setAttribute("stroke-linecap","round");
       if(dash)p.setAttribute("stroke-dasharray",dash);
       svg.appendChild(p);return p;}
-    var pd=stroke(path(deltaFn),"#B14EFF",1.4,"5 6");pd.setAttribute("opacity","0.55");
-    stroke(path(brakeFn),"#FF4B5C",1.8);
-    stroke(path(thrFn),"#37D08A",1.8);
-    stroke(path(speedFn),"#EAEEF6",2.4);
+    var pd=stroke(path(deltaFn),"#BE8817",1.4,"5 6");pd.setAttribute("opacity","0.75");
+    stroke(path(brakeFn),"#D1394A",1.7);
+    stroke(path(thrFn),"#0C6E52",1.7);
+    stroke(path(speedFn),"#1B2430",2.3);
     if(!reduce){
       Array.prototype.slice.call(svg.querySelectorAll("path")).forEach(function(p,idx){
         var len=p.getTotalLength();
         p.style.transition="none";
-        if(!p.getAttribute("stroke-dasharray")){p.style.strokeDasharray=len;}
-        else{p.style.strokeDasharray=len+"";}
+        if(!p.getAttribute("stroke-dasharray")){p.style.strokeDasharray=len;}else{p.style.strokeDasharray=len+"";}
         p.style.strokeDashoffset=len;
         void p.getBoundingClientRect();
         p.style.transition="stroke-dashoffset 1.5s cubic-bezier(.4,0,.2,1) "+(idx*0.12)+"s";
@@ -352,34 +348,25 @@
       });
     }
   }
-
   function countUp(el,to,dur,fmt){
     if(!el)return;
     if(reduce){el.textContent=fmt(to);return;}
     var start=null;
-    function step(ts){
-      if(start===null)start=ts;var p=Math.min(1,(ts-start)/dur);
-      var e=1-Math.pow(1-p,3);el.textContent=fmt(to*e);
-      if(p<1)requestAnimationFrame(step);
-    }
+    function step(ts){if(start===null)start=ts;var p=Math.min(1,(ts-start)/dur);var e=1-Math.pow(1-p,3);el.textContent=fmt(to*e);if(p<1)requestAnimationFrame(step);}
     requestAnimationFrame(step);
   }
   var started=false;
   function fire(){
     if(started)return;started=true;
-    countUp(document.getElementById("ro-delta"),-0.412,1400,function(v){return v.toFixed(3);});
+    countUp(document.getElementById("ro-delta"),-0.412,1400,function(v){return String.fromCharCode(8722)+Math.abs(v).toFixed(3);});
     countUp(document.getElementById("ro-corners"),14,1200,function(v){return Math.round(v);});
     countUp(document.getElementById("ro-points"),1042000,1600,function(v){return Math.round(v).toLocaleString();});
   }
-
   var els=document.querySelectorAll(".reveal");
   if("IntersectionObserver" in window && !reduce){
-    var io=new IntersectionObserver(function(es){
-      es.forEach(function(en){if(en.isIntersecting){en.target.classList.add("in");io.unobserve(en.target);}});
-    },{threshold:.14});
+    var io=new IntersectionObserver(function(es){es.forEach(function(en){if(en.isIntersecting){en.target.classList.add("in");io.unobserve(en.target);}});},{threshold:.14});
     els.forEach(function(el){io.observe(el);});
   } else { els.forEach(function(el){el.classList.add("in");}); }
-
   var cons=document.querySelector(".console");
   if(cons && "IntersectionObserver" in window){
     var io2=new IntersectionObserver(function(es){es.forEach(function(en){if(en.isIntersecting){fire();io2.disconnect();}});},{threshold:.3});
