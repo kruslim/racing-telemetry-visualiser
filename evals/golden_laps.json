@@ -1,0 +1,13 @@
+[
+  {
+    "name": "_readme",
+    "about": "Golden set for the coaching eval harness. Replace the example below with real cases from your store. Find session_id + lap numbers via GET /api/v1/sessions and /sessions/{id}/laps (or scripts/import_latest.ps1 then the API). Entries whose name starts with '_' are ignored.",
+    "expectation_note": "The harness scores factuality deterministically against the findings; you don't need to hand-label correct answers. Add an 'expect_top_corner' field only if you want a stricter outcome assertion."
+  },
+  {
+    "name": "spa-fastest-vs-slow",
+    "session_id": "REPLACE_WITH_REAL_SESSION_ID",
+    "main_lap": 5,
+    "ref_lap": 3
+  }
+]

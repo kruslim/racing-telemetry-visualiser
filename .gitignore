@@ -1,0 +1,36 @@
+# Runtime data (DuckDB + Parquet telemetry)
+/data/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+env/
+
+# Tooling caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Local config / secrets
+.env
+
+# Server logs
+*.log
+server.out.log
+server.err.log
+
+# Local Claude Code settings
+.claude/settings.local.json
+
+# Editor
+.vscode/
+.idea/
+
+# Sample telemetry files (drop your own .ibt here for offline testing)
+/samples/*.ibt

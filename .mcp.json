@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "telemetry-coach": {
+      "command": "D:/Personal Projects/Racing Telemetry Visualiser/.venv/Scripts/python.exe",
+      "args": [
+        "D:/Personal Projects/Racing Telemetry Visualiser/mcp_server/telemetry_coach.py"
+      ],
+      "env": {
+        "RTV_API_BASE": "http://127.0.0.1:8000/api/v1"
+      }
+    }
+  }
+}
