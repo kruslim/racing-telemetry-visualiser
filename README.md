@@ -85,7 +85,8 @@ explanation, open-ended Q&A). **Raw 60 Hz telemetry never reaches an LLM.**
 |---|---|---|---|
 | **1 · Features** | `src/rtv/coaching/`, `GET /coaching/lap-findings` | Deterministic feature extraction → `LapFindings` | free |
 | **2 · MCP server** | `mcp_server/telemetry_coach.py` | 6 tools over the API; chat-driven coaching in Claude Desktop/Code | **$0** (subscription) |
-| **3 · Orchestration + evals** | `src/rtv/coaching/orchestrator.py`, `evals/` | Multi-agent Claude pipeline + eval harness | ~cents (API) |
+| **3a · Orchestration** | `src/rtv/coaching/orchestrator.py` | Code-controlled multi-agent Claude pipeline (fan-out → synthesise → verify) | ~cents (API) |
+| **3b · Graph agent + evals** | `src/rtv/coaching/agent/`, `evals/` | LangGraph tool-calling coach: grounded refusal + in-loop citation validation, replayed by a hermetic regression harness | ~cents (API) |
 
 **Layer 1 — deterministic features.** `CoachingService.lap_findings()` aligns a
 main and reference lap on a uniform lap-distance grid, detects corners as prominent
@@ -99,12 +100,25 @@ is *both* the token solution and the eval ground truth.
 Driven from Claude Desktop/Code on your existing subscription — no API bill.
 "Review my lap 5 vs my fastest."
 
-**Layer 3 — multi-agent orchestration + evals.** `CoachOrchestrator` runs a
+**Layer 3a — multi-agent orchestration.** `CoachOrchestrator` runs a
 code-controlled pipeline: **fan-out a specialist per priority corner (parallel) →
 synthesise a session plan → adversarially verify it**, all through structured
-Pydantic outputs. The `evals/` harness then cross-checks the coach's claimed
-figures (e.g. "brake 7 m earlier into T4") against the Layer-1 findings — a
-deterministic hallucination check — with an optional LLM judge on top.
+Pydantic outputs.
+
+**Layer 3b — the graph agent + eval harness.** `src/rtv/coaching/agent/` is a
+**LangGraph** coach: a model drives the same coaching tools in-process
+(`get_lap_findings`, `list_available_channels`, …) through an
+`agent → tools → validate → refuse` state graph. Two behaviours make it more than a
+chat loop: it **refuses questions the telemetry can't answer** — ask for tyre
+temperatures the session never captured and it returns a grounded `CoachRefusal`
+listing the channels that *are* available, instead of inventing a number — and it
+**validates every asserted figure in-loop**, bouncing a claimed time gain or brake
+point that no retrieved finding supports before it can reach the driver. The `evals/`
+harness replays a seed set of these behaviours against a scripted model — fully
+offline, no key — cross-checks the coach's figures against the Layer-1 findings
+(`evals/checks.py`, shared with the in-loop validator), and diffs each run against a
+baseline so a regression is a merge-blocker. An optional LLM judge scores the soft
+qualities on top.
 
 ---
 
@@ -143,10 +157,11 @@ src/rtv/
   store/     duckdb, schema, parquet writer, query builders, repository
   stream/    live hub (fan-out)
   api/       FastAPI routes + /ws/live
-  coaching/  Layer-1 feature extraction, models, Layer-3 orchestrator
+  coaching/  Layer-1 feature extraction, models, Layer-3a orchestrator
+    agent/   Layer-3b LangGraph coach (provider, tools, graph, refusal, validator)
   services.py  wiring; main.py  app factory
 mcp_server/  Layer-2 MCP server (telemetry_coach.py)
-evals/       ground-truth checks, LLM judge, golden laps, runner
+evals/       ground-truth checks, LLM judge, hermetic fixtures, trace, seed cases, runner
 docs/        VARIABLES.md (catalog reference), COACHING.md (coaching deep-dive)
 ```
 

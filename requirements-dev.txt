@@ -8,3 +8,6 @@ numpy>=1.26
 ruff>=0.3
 black>=24.0
 mypy>=1.9
+# Layer-3b graph coach + its hermetic evals (tests guard with importorskip).
+langgraph>=0.2
+langchain-core>=0.3

@@ -31,16 +31,28 @@ dev = [
     "ruff>=0.3",
     "black>=24.0",
     "mypy>=1.9",
+    # The Layer-3b graph agent + its hermetic evals run in CI; guarded by importorskip.
+    "langgraph>=0.2",
+    "langchain-core>=0.3",
 ]
 # Layer 2 — local MCP server (driven from Claude Desktop / Claude Code).
 mcp = [
     "mcp>=1.2",
     "httpx>=0.27",
 ]
-# Layer 3 — Claude API orchestration + evals.
+# Layer 3a — Claude API orchestration + evals (the async multi-agent showcase).
 ai = [
     "anthropic>=0.40",
     "httpx>=0.27",
+]
+# Layer 3b — the LangGraph coach agent: tool-calling loop, grounded refusal, in-loop
+# citation validation, and the hermetic eval harness on top. `anthropic` is only needed
+# for a live model; the tests drive a scripted fake and never import it.
+agent = [
+    "langgraph>=0.2",
+    "langchain-core>=0.3",
+    "anthropic>=0.40",
+    "langchain-anthropic>=0.2",
 ]
 
 [project.scripts]
