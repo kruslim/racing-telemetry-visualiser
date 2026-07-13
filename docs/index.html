@@ -4,10 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Racing Telemetry Visualiser &mdash; full-stack iRacing telemetry platform</title>
-<meta name="description" content="Full-stack iRacing telemetry platform: real-time 60 Hz ingest, DuckDB/Parquet storage, a MoTeC-i2-style web analysis UI, and a tiered AI race engineer (MCP + multi-agent Claude + evals).">
+<meta name="description" content="Full-stack iRacing telemetry platform: real-time 60 Hz ingest, DuckDB/Parquet storage, a MoTeC-i2-style web analysis UI, and a tiered AI race engineer (MCP + multi-agent Claude + a LangGraph coach that refuses ungrounded questions and validates every figure).">
 <meta property="og:type" content="website">
 <meta property="og:title" content="Racing Telemetry Visualiser">
-<meta property="og:description" content="Full-stack iRacing telemetry platform: real-time 60 Hz ingest, DuckDB/Parquet storage, a MoTeC-i2-style web analysis UI, and a tiered AI race engineer (MCP + multi-agent Claude + evals).">
+<meta property="og:description" content="Full-stack iRacing telemetry platform: real-time 60 Hz ingest, DuckDB/Parquet storage, a MoTeC-i2-style web analysis UI, and a tiered AI race engineer (MCP + multi-agent Claude + a LangGraph coach that refuses ungrounded questions and validates every figure).">
 <meta property="og:url" content="https://kruslim.github.io/racing-telemetry-visualiser/">
 <meta name="twitter:card" content="summary_large_image">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='88'>&#127950;</text></svg>">
@@ -162,12 +162,13 @@
 <section class="hero wrap">
   <p class="eyebrow reveal">Full-stack sim-racing telemetry platform</p>
   <h1 class="reveal">Every channel iRacing exposes &mdash;<br><span class="em">ingested, streamed, visualised, coached.</span></h1>
-  <p class="lede reveal">A live 60&nbsp;Hz shared-memory feed and recorded <span class="mono">.ibt</span> files, stored columnar in DuckDB&nbsp;/&nbsp;Parquet, served over REST and WebSocket to a MoTeC-i2-style analysis UI &mdash; and distilled into a three-layer AI race engineer that can't hallucinate your lap advice.</p>
+  <p class="lede reveal">A live 60&nbsp;Hz shared-memory feed and recorded <span class="mono">.ibt</span> files, stored columnar in DuckDB&nbsp;/&nbsp;Parquet, served over REST and WebSocket to a MoTeC-i2-style analysis UI &mdash; and distilled into a layered AI race engineer that refuses what it can't ground and can't hallucinate your lap advice.</p>
   <div class="heroflags reveal">
     <span class="flag"><b>Python</b> &middot; FastAPI &middot; uvicorn</span>
     <span class="flag"><b>DuckDB</b> + Parquet</span>
     <span class="flag"><b>WebSocket</b> live stream</span>
     <span class="flag"><b>MCP</b> + multi-agent Claude</span>
+    <span class="flag"><b>LangGraph</b> coach &middot; grounded refusal</span>
     <span class="flag"><b>Evals</b> vs ground truth</span>
   </div>
 
@@ -209,7 +210,8 @@
     <div class="brow"><div class="bt">Runtime variable catalog<small>Read from the binary header &mdash; complete for any car or content</small></div><span class="chip">Shipped</span></div>
     <div class="brow"><div class="bt">MCP server<small>Six tools &mdash; chat-driven coaching in Claude Desktop / Code</small></div><span class="chip">Shipped</span></div>
     <div class="brow"><div class="bt">Multi-agent AI coach<small>Specialists per corner &rarr; synthesise &rarr; adversarially verify</small></div><span class="chip">Shipped</span></div>
-    <div class="brow"><div class="bt">Evals harness<small>Every claimed figure checked against deterministic ground truth</small></div><span class="chip">Shipped</span></div>
+    <div class="brow"><div class="bt">LangGraph coach<small>Tool-calling loop that refuses ungrounded questions &amp; validates every figure in-loop</small></div><span class="chip">Shipped</span></div>
+    <div class="brow"><div class="bt">Hermetic eval harness<small>Grounded-truth checks + baseline-diff regression, offline, no API key</small></div><span class="chip">Shipped</span></div>
   </div>
 </section>
 
@@ -231,8 +233,8 @@
 <section id="coach" class="wrap" style="padding-top:0">
   <div class="shead reveal">
     <p class="eyebrow">The AI race engineer</p>
-    <h2>Three layers. The LLM never sees raw telemetry.</h2>
-    <p>Heuristics find brake points and speed deltas faster and more reliably than any model &mdash; so they stay deterministic, and Claude is used only where code is weak: synthesis, prioritisation, and open-ended Q&amp;A. That same deterministic layer becomes the eval ground truth.</p>
+    <h2>Four layers. The LLM never sees raw telemetry.</h2>
+    <p>Heuristics find brake points and speed deltas faster and more reliably than any model &mdash; so they stay deterministic, and Claude is used only where code is weak: synthesis, prioritisation, and open-ended Q&amp;A. That same deterministic layer becomes the eval ground truth &mdash; so the graph coach can <em>refuse</em> a question the data can't answer and every figure it does state is checked against the findings, in-loop.</p>
   </div>
   <div class="layers">
     <div class="layer reveal">
@@ -246,8 +248,13 @@
       <div class="cost">$0 &middot; subscription</div>
     </div>
     <div class="layer reveal">
-      <span class="ln">3</span>
-      <div><h3>Multi-agent orchestration + evals</h3><p>Fan-out a specialist per priority corner &rarr; synthesise a session plan &rarr; adversarially verify it, all in structured Pydantic outputs. Then evals cross-check every claimed figure against Layer&nbsp;1 &mdash; a deterministic hallucination guard.</p></div>
+      <span class="ln">3a</span>
+      <div><h3>Multi-agent orchestration</h3><p>Fan-out a specialist per priority corner &rarr; synthesise a session plan &rarr; adversarially verify it, all in structured Pydantic outputs with a cached findings block.</p></div>
+      <div class="cost">~cents &middot; Claude API</div>
+    </div>
+    <div class="layer reveal">
+      <span class="ln">3b</span>
+      <div><h3>LangGraph coach + eval flywheel</h3><p>A model-driven <code>agent &rarr; tools &rarr; validate &rarr; refuse</code> graph over the same findings. It <strong>refuses</strong> questions the telemetry can't answer &mdash; citing the channels that <em>are</em> captured, never an invented number &mdash; and <strong>validates every figure in-loop</strong> against ground truth, bouncing a claim the findings don't support. A hermetic harness replays these behaviours with baseline-diff regression &mdash; offline, no key.</p></div>
       <div class="cost">~cents &middot; Claude API</div>
     </div>
   </div>
@@ -276,13 +283,13 @@
     <div class="frow three">
       <div class="fbox cons"><div class="fk">REST /api/v1</div><div class="fd">web frontend &mdash; charts, maps, lap compare</div></div>
       <div class="fbox cons"><div class="fk">WebSocket /ws/live</div><div class="fd">live dashboards</div></div>
-      <div class="fbox cons"><div class="fk">coaching/</div><div class="fd">MCP server + orchestrator + evals</div></div>
+      <div class="fbox cons"><div class="fk">coaching/</div><div class="fd">MCP · orchestrator · LangGraph coach + evals</div></div>
     </div>
   </div>
   <div class="strip reveal">
     <div class="cell"><div class="big tnum">60 Hz</div><div class="lbl">Live shared-memory poll</div></div>
-    <div class="cell"><div class="big tnum">6</div><div class="lbl">Src packages, each testable</div></div>
-    <div class="cell"><div class="big tnum">3</div><div class="lbl">Coaching layers, one foundation</div></div>
+    <div class="cell"><div class="big tnum">4</div><div class="lbl">Coaching layers, one foundation</div></div>
+    <div class="cell"><div class="big tnum">65</div><div class="lbl">Tests, all fully offline</div></div>
     <div class="cell"><div class="big tnum">0</div><div class="lbl">API keys to run the tests</div></div>
   </div>
 </section>

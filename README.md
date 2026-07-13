@@ -10,8 +10,9 @@ columnar in DuckDB/Parquet, and serves it three ways:
 
 - a **REST API** for charts, lap comparison and track maps,
 - a **WebSocket stream** for live dashboards, and
-- a **three-layer AI coaching system** that turns a million raw points per lap into
-  a prioritised, fact-checked driving plan.
+- a **layered AI coaching system** that turns a million raw points per lap into
+  a prioritised, fact-checked driving plan — and refuses questions the telemetry
+  can't answer instead of inventing one.
 
 It is deliberately built as an end-to-end system: catalog → ingest → storage →
 query → visualisation → AI. Each layer is independently testable and the whole
@@ -69,7 +70,7 @@ suspension and track-report worksheets, a live **Pitwall** console, and a
 another driver's clean laps into your lap list (same track) and set any as
 Main/Reference against your own.
 
-### 6. Three-layer AI coaching
+### 6. Layered AI coaching
 The centrepiece. See below.
 
 ---
@@ -170,7 +171,7 @@ docs/        VARIABLES.md (catalog reference), COACHING.md (coaching deep-dive)
 ## Stack
 
 Python 3.11+ · FastAPI · uvicorn · pyirsdk · DuckDB · PyArrow · NumPy · orjson ·
-Pydantic · FastMCP · Anthropic SDK.
+Pydantic · FastMCP · LangGraph · Anthropic SDK.
 
 ## Quick start (Windows)
 
@@ -188,8 +189,9 @@ pytest             # full suite runs offline — no iRacing, no API key
 > create the venv with Python 3.12: `py -3.12 -m venv .venv`.
 
 **Optional extras:** `pip install -e ".[mcp]"` for the Layer-2 MCP server;
-`pip install -e ".[ai]"` (plus `ANTHROPIC_API_KEY`) for Layer-3 orchestration and
-evals.
+`pip install -e ".[ai]"` (plus `ANTHROPIC_API_KEY`) for Layer-3a orchestration;
+`pip install -e ".[agent]"` for the Layer-3b LangGraph coach. The Layer-3b graph and
+its eval harness run **offline with a scripted model** — no key — under the `dev` extra.
 
 ## API (prefix `/api/v1`)
 
@@ -228,12 +230,16 @@ evals.
 
 ## Testing
 
-The full `pytest` suite (~50 tests across catalog, decode, store round-trip, laps,
-API, coaching features, MCP server, orchestrator, and evals) runs **entirely
-offline** — DuckDB/PyArrow are import-guarded, the LLM layers are mocked, no
-iRacing install and no `ANTHROPIC_API_KEY` required. There's also an offline HTTP
-smoke test (`scripts/smoke_offline.py`) that pushes a synthetic session through the
-real storage writer via FastAPI's `TestClient`.
+The full `pytest` suite (~65 tests across catalog, decode, store round-trip, laps,
+API, coaching features, MCP server, orchestrator, evals, and the Layer-3b graph
+coach) runs **entirely offline** — DuckDB/PyArrow are import-guarded, the LLM layers
+are mocked or driven by a scripted model, no iRacing install and no
+`ANTHROPIC_API_KEY` required. The graph-coach suite exercises the headline behaviours
+hermetically: a **grounded refusal** when a channel wasn't captured, the **in-loop
+citation validator** bouncing a figure the findings don't support, iteration-cap
+termination, and a **baseline-diffing regression runner** over a seed case set.
+There's also an offline HTTP smoke test (`scripts/smoke_offline.py`) that pushes a
+synthetic session through the real storage writer via FastAPI's `TestClient`.
 
 ## Docs
 
