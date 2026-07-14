@@ -9,6 +9,10 @@ It never feeds raw 60 Hz telemetry (~1M points/lap) to an LLM. A deterministic
 feature-extraction layer distills each lap to ~20 corner findings (a few KB) first — that is
 both the token solution and the eval ground truth.
 
+> **Looking for the flow diagram?** [`AI_FLOW.md`](./AI_FLOW.md) has the
+> end-to-end diagrams — the LangGraph state machine, the orchestrator pipeline,
+> every tool call and its parameters, and a fully worked example.
+
 ## Layers
 
 | Layer | Code | What it is | Cost |
