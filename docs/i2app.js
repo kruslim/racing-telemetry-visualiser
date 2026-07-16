@@ -262,10 +262,50 @@
     st.cursorD = clamp(lay.dOfX(x), 0, L.LAP);
     renderAll();
   }
-  $('#graphcanvas').addEventListener('mousemove', e => { if (e.buttons === 0 || e.buttons === 1) graphMouse(e); });
-  $('#graphcanvas').addEventListener('mousedown', graphMouse);
+  // Pointer events unify mouse + touch (iPadOS) + pen. On a mouse, hover-scrub
+  // (no button) still works; on touch, we scrub only while a finger is down.
+  // Two fingers on the graph → pinch-to-zoom (the touch analogue of the wheel).
+  const _gcv = $('#graphcanvas');
+  const _gptrs = new Map();
+  let _pinchD = null;
+  function _graphSpread() {
+    const it = [..._gptrs.values()];
+    return Math.hypot(it[0].x - it[1].x, it[0].y - it[1].y);
+  }
+  function _pinchZoom() {
+    const nd = _graphSpread();
+    if (_pinchD == null || !nd) { _pinchD = nd; return; }
+    const span = st.view.d1 - st.view.d0;
+    let ns = clamp(span * (_pinchD / nd), 300, L.LAP);   // fingers apart → zoom in
+    const center = st.cursorD;
+    let d0 = center - (center - st.view.d0) * (ns / span);
+    let d1 = d0 + ns;
+    if (d0 < 0) { d0 = 0; d1 = ns; }
+    if (d1 > L.LAP) { d1 = L.LAP; d0 = L.LAP - ns; }
+    st.view.d0 = d0; st.view.d1 = clamp(d1, 0, L.LAP);
+    _pinchD = nd; renderAll();
+  }
+  _gcv.addEventListener('pointerdown', e => {
+    _gptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    try { _gcv.setPointerCapture(e.pointerId); } catch (_) {}
+    if (_gptrs.size === 1) graphMouse(e);
+    else if (_gptrs.size === 2) _pinchD = _graphSpread();
+  });
+  _gcv.addEventListener('pointermove', e => {
+    if (_gptrs.has(e.pointerId)) _gptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (_gptrs.size >= 2) { _pinchZoom(); return; }
+    if (e.pointerType === 'mouse') { if (e.buttons === 0 || e.buttons === 1) graphMouse(e); }
+    else if (_gptrs.has(e.pointerId)) graphMouse(e);   // touch/pen: only while pressed
+  });
+  function _gEnd(e) {
+    _gptrs.delete(e.pointerId);
+    if (_gptrs.size < 2) _pinchD = null;
+    try { _gcv.releasePointerCapture(e.pointerId); } catch (_) {}
+  }
+  _gcv.addEventListener('pointerup', _gEnd);
+  _gcv.addEventListener('pointercancel', _gEnd);
 
-  // wheel zoom around cursor
+  // wheel zoom around cursor (mouse / trackpad)
   $('#graphcanvas').addEventListener('wheel', e => {
     e.preventDefault();
     const lay = G.getLayout(); const span = st.view.d1 - st.view.d0;
@@ -288,7 +328,8 @@
     const ov = G.getOvLayout();
     return clamp((x - ov.px0) / ov.pw * L.LAP, 0, L.LAP);
   }
-  $('#overviewcanvas').addEventListener('mousedown', e => {
+  const _ocv = $('#overviewcanvas');
+  _ocv.addEventListener('pointerdown', e => {
     const d = ovDistAtX(e.clientX), span = st.view.d1 - st.view.d0;
     const edge = span * 0.06;
     if (Math.abs(d - st.view.d0) < edge) ovDrag = { mode: 'l' };
@@ -298,9 +339,12 @@
       const half = span / 2; let d0 = clamp(d - half, 0, L.LAP - span);
       st.view.d0 = d0; st.view.d1 = d0 + span; renderAll(); ovDrag = { mode: 'pan', off: half };
     }
+    try { _ocv.setPointerCapture(e.pointerId); } catch (_) {}
     e.preventDefault();
   });
-  window.addEventListener('mousemove', e => {
+  // Pointer capture keeps move/up flowing to the canvas even outside its bounds,
+  // so the drag works the same on mouse and on a touch finger (iPadOS).
+  _ocv.addEventListener('pointermove', e => {
     if (!ovDrag) return;
     const d = ovDistAtX(e.clientX);
     if (ovDrag.mode === 'pan') {
@@ -314,8 +358,10 @@
     }
     renderAll();
   });
-  window.addEventListener('mouseup', () => { ovDrag = null; });
-  $('#overviewcanvas').addEventListener('dblclick', () => { st.view.d0 = 0; st.view.d1 = L.LAP; renderAll(); });
+  function _ovEnd(e) { ovDrag = null; try { _ocv.releasePointerCapture(e.pointerId); } catch (_) {} }
+  _ocv.addEventListener('pointerup', _ovEnd);
+  _ocv.addEventListener('pointercancel', _ovEnd);
+  _ocv.addEventListener('dblclick', () => { st.view.d0 = 0; st.view.d1 = L.LAP; renderAll(); });
 
   // keyboard cursor step
   window.addEventListener('keydown', e => {
@@ -342,7 +388,12 @@
     const sc = Math.min(w / 1920, h / 1080);
     $('#app').style.transform = `scale(${sc})`;
   }
-  window.addEventListener('resize', () => { fit(); requestAnimationFrame(renderAll); });
+  const refit = () => { fit(); requestAnimationFrame(renderAll); };
+  window.addEventListener('resize', refit);
+  // iPadOS: the visual viewport changes on rotate and when Safari's chrome
+  // shows/hides; refit so the 1920×1080 stage keeps filling the screen.
+  window.addEventListener('orientationchange', () => setTimeout(refit, 250));
+  if (window.visualViewport) window.visualViewport.addEventListener('resize', refit);
 
   // ---------- boot ----------
   buildSession();
