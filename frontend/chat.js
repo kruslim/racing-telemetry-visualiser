@@ -21,7 +21,16 @@
     scopeLaps: $('#chat-scope-laps'),
     sub: $('#chat-sub'),
     foot: $('#chat-foot'),
+    collapse: $('#chat-collapse'),
+    launcher: $('#chat-launcher'),
   };
+
+  // Floating panel open/close (docked bottom-right). Starts open.
+  function setOpen(open) {
+    if (els.pane) els.pane.classList.toggle('collapsed', !open);
+    if (els.launcher) els.launcher.classList.toggle('show', !open);
+    if (open && els.input) { try { els.input.focus(); } catch (e) {} }
+  }
 
   const SUGGESTIONS = [
     'Where am I losing the most time?',
@@ -430,6 +439,10 @@
     els.input.addEventListener('keydown', e => {
       if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); els.form.requestSubmit(); }
     });
+
+    // minimise / reopen the floating chat panel
+    if (els.collapse) els.collapse.addEventListener('click', () => setOpen(false));
+    if (els.launcher) els.launcher.addEventListener('click', () => setOpen(true));
 
     // keep the scope label in sync when the user changes main/ref laps
     const origRender = global.I2App && global.I2App.renderAll;

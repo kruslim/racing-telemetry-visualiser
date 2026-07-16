@@ -21,13 +21,14 @@
 <body>
 <div id="rtv-shell">
 
-  <!-- ===== LEFT: AI RACE ENGINEER CHAT ===== -->
+  <!-- ===== FLOATING (bottom-right): AI RACE ENGINEER CHAT ===== -->
   <aside id="chat-pane">
     <div class="chat-head">
       <div class="chat-title">
         <span class="chat-glyph"></span>
         <span>RACE ENGINEER<b>AI</b></span>
       </div>
+      <button type="button" id="chat-collapse" title="Minimise chat" aria-label="Minimise chat">–</button>
       <div class="chat-sub" id="chat-sub">grounded on your telemetry</div>
     </div>
     <div class="chat-scope" id="chat-scope">Analysing <b id="chat-scope-laps">—</b></div>
@@ -39,6 +40,12 @@
     </form>
     <div class="chat-foot" id="chat-foot">The coach cites the deterministic findings — it can also refuse.</div>
   </aside>
+
+  <!-- Launcher bubble: reopens the chat when it's minimised -->
+  <button type="button" id="chat-launcher" title="Ask the race engineer" aria-label="Open race engineer chat">
+    <span class="chat-glyph"></span>
+    <span class="cl-label">RACE ENGINEER<b>AI</b></span>
+  </button>
 
   <!-- ===== RIGHT: ANALYSIS WORKBENCH ===== -->
   <div id="viewport">
