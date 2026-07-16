@@ -1,0 +1,156 @@
+/* ============================================================
+   chat.css — the AI race-engineer chat pane (left) and the
+   LLM-driven graph annotation flags. Reuses the analysis.css
+   design tokens (--chrome, --line, --ink, --accent, --mono).
+   ============================================================ */
+
+/* ---- shell: chat on the left, the scaled workbench on the right ---- */
+#rtv-shell { display: flex; width: 100vw; height: 100vh; overflow: hidden; background: #000; }
+
+/* Override analysis.css's fixed #viewport so it becomes the right-hand region. */
+#viewport {
+  position: relative; inset: auto;
+  flex: 1 1 auto; min-width: 0; height: 100vh;
+}
+/* Keep the 1920×1080 stage at its natural size (don't let the flex viewport
+   shrink it) — only the JS transform:scale() should size it. */
+#viewport > #app { flex: 0 0 auto; }
+
+/* ---- chat pane ---- */
+#chat-pane {
+  flex: 0 0 380px; max-width: 42vw;
+  display: flex; flex-direction: column;
+  height: 100vh; box-sizing: border-box;
+  background: linear-gradient(180deg, #101316 0%, #0c0e10 100%);
+  border-right: 1px solid var(--line, #34393e);
+  color: var(--ink, #d4d8da);
+  font-family: var(--sans, "Segoe UI", system-ui, sans-serif);
+}
+
+.chat-head {
+  padding: 14px 16px 12px; border-bottom: 1px solid var(--line, #34393e);
+  background: var(--chrome, #1a1d20);
+}
+.chat-title { display: flex; align-items: center; gap: 9px; font-size: 14px; font-weight: 700; letter-spacing: .06em; }
+.chat-title b { color: var(--accent, #ff9234); font-weight: 800; margin-left: 5px; }
+.chat-glyph {
+  width: 15px; height: 15px; border-radius: 3px; transform: rotate(45deg);
+  background: var(--accent, #ff9234); box-shadow: 0 0 0 3px rgba(255,146,52,.16);
+}
+.chat-sub { margin-top: 5px; font-size: 11px; color: var(--ink-dim, #8b9296); font-family: var(--mono, monospace); }
+
+.chat-scope {
+  padding: 8px 16px; font-size: 11px; color: var(--ink-dim, #8b9296);
+  background: #0b0d0f; border-bottom: 1px solid var(--line-soft, #22272b);
+}
+.chat-scope b { color: var(--ink, #d4d8da); font-family: var(--mono, monospace); }
+
+/* ---- messages ---- */
+.chat-messages { flex: 1 1 auto; overflow-y: auto; padding: 16px 14px; display: flex; flex-direction: column; gap: 12px; }
+.chat-messages::-webkit-scrollbar { width: 8px; }
+.chat-messages::-webkit-scrollbar-thumb { background: #2b3034; border-radius: 4px; }
+
+.msg { max-width: 92%; font-size: 13px; line-height: 1.5; border-radius: 12px; padding: 10px 13px; white-space: normal; }
+.msg.user {
+  align-self: flex-end; background: var(--accent, #ff9234); color: #170f05;
+  border-bottom-right-radius: 4px; font-weight: 500;
+}
+.msg.coach {
+  align-self: flex-start; background: var(--chrome-2, #222629);
+  border: 1px solid var(--line, #34393e); border-bottom-left-radius: 4px;
+}
+.msg.coach.refusal { border-color: rgba(255,210,59,.4); background: #201d10; }
+.msg.system { align-self: center; font-size: 11px; color: var(--ink-faint, #5b6266); background: transparent; padding: 2px; }
+.msg.error { align-self: flex-start; background: #2a1416; border: 1px solid rgba(255,70,58,.4); color: #ffb3ad; }
+
+.msg.coach strong { color: #fff; }
+.msg.coach em { color: var(--accent, #ff9234); font-style: normal; font-family: var(--mono, monospace); font-size: 12px; }
+.msg.coach ul { margin: 6px 0 2px; padding-left: 4px; list-style: none; }
+.msg.coach li { margin: 4px 0; padding-left: 12px; position: relative; }
+.msg.coach li::before { content: "▸"; position: absolute; left: 0; color: var(--accent, #ff9234); }
+.msg.coach p { margin: 6px 0; }
+
+/* corner chips: click to jump the graph cursor there */
+.msg-corners { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.corner-chip {
+  font-family: var(--mono, monospace); font-size: 11px; font-weight: 600;
+  padding: 3px 9px; border-radius: 20px; cursor: pointer;
+  background: #14181b; border: 1px solid var(--line, #34393e); color: var(--ink, #d4d8da);
+  display: inline-flex; align-items: center; gap: 6px; transition: transform .08s, background .12s;
+}
+.corner-chip:hover { transform: translateY(-1px); background: #1b2023; border-color: var(--accent, #ff9234); }
+.corner-chip .cc-dot { width: 7px; height: 7px; border-radius: 50%; }
+.corner-chip .cc-dot.high { background: #ff463a; }
+.corner-chip .cc-dot.medium { background: #ffd23b; }
+.corner-chip .cc-dot.low { background: #39d46a; }
+.corner-chip .cc-gain { color: var(--ink-dim, #8b9296); font-weight: 400; }
+
+.typing { display: inline-flex; gap: 4px; align-items: center; }
+.typing i { width: 6px; height: 6px; border-radius: 50%; background: var(--ink-dim, #8b9296); animation: tdot 1s infinite ease-in-out; }
+.typing i:nth-child(2) { animation-delay: .15s; }
+.typing i:nth-child(3) { animation-delay: .30s; }
+@keyframes tdot { 0%, 60%, 100% { opacity: .3; transform: translateY(0); } 30% { opacity: 1; transform: translateY(-3px); } }
+
+/* ---- suggestions ---- */
+.chat-suggest { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 14px 8px; }
+.suggest-chip {
+  font-size: 11px; padding: 5px 10px; border-radius: 16px; cursor: pointer;
+  background: #14181b; border: 1px solid var(--line-soft, #22272b); color: var(--ink-dim, #8b9296);
+}
+.suggest-chip:hover { color: var(--ink, #d4d8da); border-color: var(--accent, #ff9234); }
+
+/* ---- input ---- */
+.chat-input { display: flex; gap: 8px; padding: 10px 12px; border-top: 1px solid var(--line, #34393e); background: var(--chrome, #1a1d20); }
+#chat-input {
+  flex: 1; resize: none; max-height: 120px;
+  background: #0b0d0f; color: var(--ink, #d4d8da); border: 1px solid var(--line, #34393e);
+  border-radius: 9px; padding: 9px 11px; font-size: 13px; font-family: inherit; line-height: 1.4;
+}
+#chat-input:focus { outline: none; border-color: var(--accent, #ff9234); }
+#chat-send {
+  flex: 0 0 40px; width: 40px; border: 0; border-radius: 9px; cursor: pointer;
+  background: var(--accent, #ff9234); color: #170f05; font-size: 18px; font-weight: 700;
+}
+#chat-send:disabled { opacity: .4; cursor: default; }
+.chat-foot { padding: 6px 14px 10px; font-size: 10px; color: var(--ink-faint, #5b6266); text-align: center; }
+
+/* ============================================================
+   LLM annotation flags over the Time/Distance graph.
+   Positioned in layout px via I2Graphs.getLayout().xOf(distance).
+   ============================================================ */
+#llm-gmarkers { position: absolute; inset: 0; pointer-events: none; z-index: 6; overflow: hidden; }
+.llm-flag {
+  position: absolute; top: 34px; transform: translateX(-50%);
+  pointer-events: auto; cursor: pointer;
+  font-family: var(--mono, monospace); font-size: 10.5px; font-weight: 700;
+  padding: 2px 7px; border-radius: 5px; white-space: nowrap;
+  background: #170f06; color: var(--accent, #ff9234);
+  border: 1px solid var(--accent, #ff9234);
+  box-shadow: 0 2px 8px rgba(0,0,0,.5);
+}
+.llm-flag::after {
+  content: ""; position: absolute; left: 50%; top: 100%; width: 1px; height: 999px;
+  margin-left: -.5px; background: var(--accent, #ff9234); opacity: .28;
+}
+.llm-flag.high { color: #ff6a5e; border-color: #ff463a; background: #1e0e0c; }
+.llm-flag.high::after { background: #ff463a; opacity: .30; }
+.llm-flag.medium { color: #ffd23b; border-color: #d9a92e; background: #1c1808; }
+.llm-flag.medium::after { background: #ffd23b; opacity: .26; }
+.llm-flag.low { color: #4ade7e; border-color: #39d46a; background: #0d1a11; }
+.llm-flag.low::after { background: #39d46a; opacity: .24; }
+.llm-flag:hover { transform: translateX(-50%) translateY(-1px); }
+.llm-flag .lf-gain { font-weight: 400; opacity: .8; margin-left: 4px; }
+
+/* hover note tooltip */
+.llm-flag .lf-note {
+  display: none; position: absolute; top: calc(100% + 6px); left: 50%; transform: translateX(-50%);
+  width: 200px; white-space: normal; background: #0b0d0f; color: var(--ink, #d4d8da);
+  border: 1px solid var(--line, #34393e); border-radius: 7px; padding: 7px 9px;
+  font-family: var(--sans, sans-serif); font-size: 11px; font-weight: 400; line-height: 1.45;
+  box-shadow: 0 6px 18px rgba(0,0,0,.6); z-index: 8;
+}
+.llm-flag:hover .lf-note { display: block; }
+
+@media (max-width: 900px) {
+  #chat-pane { flex-basis: 300px; }
+}

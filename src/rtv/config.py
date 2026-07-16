@@ -61,6 +61,12 @@ class Settings(BaseSettings):
     autostart_live: bool = Field(
         default=False, description="Start the live poller on server startup."
     )
+    seed_demo: bool = Field(
+        default=True,
+        description="Seed a simulated demo session on startup when the store is "
+        "empty, so the frontend has real chart + coaching data to show without an "
+        "imported .ibt file.",
+    )
     log_level: str = "INFO"
 
     # --- derived paths ---------------------------------------------------

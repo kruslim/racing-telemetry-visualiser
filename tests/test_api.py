@@ -13,6 +13,8 @@ pytest.importorskip("fastapi")
 def client(tmp_path, monkeypatch):
     monkeypatch.setenv("RTV_DATA_DIR", str(tmp_path / "data"))
     monkeypatch.setenv("RTV_AUTOSTART_LIVE", "false")
+    # These smoke tests assert behaviour on an empty store — keep demo seeding off.
+    monkeypatch.setenv("RTV_SEED_DEMO", "false")
     # Fresh settings + app per test.
     from rtv.config import get_settings
 

@@ -61,14 +61,16 @@ prunes to one or two small files instead of scanning a session.
 at the poll rate). Slow clients coalesce to the newest sample instead of building
 an ever-growing backlog — no unbounded buffering, no lag death-spiral.
 
-### 5. A MoTeC-i2-style web frontend
-A separately-built vanilla-JS canvas UI (no build step) reads the REST API and
-renders: multi-channel time/distance worksheets, **GPS track maps** (with a
-heading-integration fallback for live sessions that lack GPS), histograms,
-suspension and track-report worksheets, a live **Pitwall** console, and a
-**Coach** worksheet. It also supports **alien-lap cross-session compare** — merge
-another driver's clean laps into your lap list (same track) and set any as
-Main/Reference against your own.
+### 5. A MoTeC-i2-style web frontend — with an AI chat engineer
+A vanilla-JS canvas UI (no build step, in `frontend/`, **served by FastAPI at
+`/`**) reads the REST API and renders: multi-channel time/distance worksheets,
+**GPS track maps**, histograms, suspension and track-report worksheets, and a
+**Coach** worksheet. The layout puts an **AI race-engineer chat on the left and
+the graphs on the right**: ask a question, the LLM answers grounded on the
+telemetry, and the corners it flags are **annotated directly onto the graph**
+(click a flag to jump the cursor there). If no `.ibt` is imported, a **simulated
+demo session is generated through the real store** on startup, so every endpoint
+— charts, coaching and chat — has realistic data to serve.
 
 ### 6. Layered AI coaching
 The centrepiece. See below.
@@ -181,9 +183,15 @@ python -m venv .venv
 python -m pip install -r requirements-dev.txt
 python -m pip install -e .
 
-.\run.ps1          # http://127.0.0.1:8000  (interactive docs at /docs)
+.\run.ps1          # http://127.0.0.1:8000  → the analysis app (chat + graphs)
+                   #   API docs at /docs · a demo session is seeded on first run
 pytest             # full suite runs offline — no iRacing, no API key
 ```
+
+On any OS: `uvicorn rtv.main:app --app-dir src` then open **http://127.0.0.1:8000/**.
+The chatbot needs `ANTHROPIC_API_KEY` in the environment; everything else (graphs,
+track map, deterministic findings) works without one. Set `RTV_SEED_DEMO=false` to
+skip the simulated demo session once you've imported real `.ibt` data.
 
 > `pyarrow`/`pyirsdk` wheels may lag the newest Python. If install fails on 3.14,
 > create the venv with Python 3.12: `py -3.12 -m venv .venv`.
@@ -208,6 +216,7 @@ its eval harness run **offline with a scripted model** — no key — under the 
 | GET | `/sessions/{id}/compare?name=Speed&laps=3,7&grid=1000` | Lap comparison aligned on lap distance |
 | GET | `/sessions/{id}/trackmap?color=Speed` | Decimated GPS polyline |
 | GET | `/coaching/lap-findings?session_id=…&main_lap=5&ref_lap=3` | Layer-1 corner findings |
+| POST | `/coaching/chat` | LLM race engineer: `{session_id, main_lap, ref_lap, question}` → grounded answer + graph annotations (needs `ANTHROPIC_API_KEY`) |
 | POST | `/import` · GET `/import/{job_id}` | Async `.ibt` import + status |
 | POST | `/live/start` · `/live/stop` · GET `/live/status` | Live poller control |
 | GET | `/health` | Liveness |

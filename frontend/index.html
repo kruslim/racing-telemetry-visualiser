@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>i2 — Telemetry Analysis</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="analysis.css">
+<link rel="stylesheet" href="coach.css">
+<link rel="stylesheet" href="chat.css">
+</head>
+<body>
+<div id="rtv-shell">
+
+  <!-- ===== LEFT: AI RACE ENGINEER CHAT ===== -->
+  <aside id="chat-pane">
+    <div class="chat-head">
+      <div class="chat-title">
+        <span class="chat-glyph"></span>
+        <span>RACE ENGINEER<b>AI</b></span>
+      </div>
+      <div class="chat-sub" id="chat-sub">grounded on your telemetry</div>
+    </div>
+    <div class="chat-scope" id="chat-scope">Analysing <b id="chat-scope-laps">—</b></div>
+    <div class="chat-messages" id="chat-messages"></div>
+    <div class="chat-suggest" id="chat-suggest"></div>
+    <form class="chat-input" id="chat-form" autocomplete="off">
+      <textarea id="chat-input" rows="1" placeholder="Ask about a corner, a brake point, where you're losing time…"></textarea>
+      <button type="submit" id="chat-send" title="Send">↑</button>
+    </form>
+    <div class="chat-foot" id="chat-foot">The coach cites the deterministic findings — it can also refuse.</div>
+  </aside>
+
+  <!-- ===== RIGHT: ANALYSIS WORKBENCH ===== -->
+  <div id="viewport">
+  <div id="app">
+
+    <!-- ===== MENU BAR ===== -->
+    <div class="menubar">
+      <div class="appmark">
+        <span class="glyph"></span>
+        <span class="appname">PITWALL <b>i2</b></span>
+        <span class="ver">v3.4</span>
+      </div>
+      <div class="menus">
+        <span class="m">File</span><span class="m">Edit</span><span class="m">View</span>
+        <span class="m">Channels</span><span class="m">Maths</span><span class="m">Tools</span><span class="m">Help</span>
+      </div>
+      <div class="mb-spacer"></div>
+      <div class="toolset">
+        <button class="tool" id="tb-reset" title="Reset zoom to full lap">⤢ FIT LAP</button>
+        <div class="tool on" style="cursor:default" title="Reference lap overlaid"><span class="sw" style="background:#34d2e3"></span>OVERLAY</div>
+        <div class="tool on" style="cursor:default" title="X-axis: distance">X · DIST</div>
+        <div class="tool" style="cursor:default" title="Logging rate">60 Hz</div>
+      </div>
+    </div>
+
+    <!-- ===== WORKSHEET TABS ===== -->
+    <div class="tabs">
+      <div class="tab on" data-ws="timedist">Time / Distance</div>
+      <div class="tab" data-ws="coach">◈ Coach</div>
+      <div class="tab" data-ws="track">Track Report</div>
+      <div class="tab" data-ws="histogram">Histogram</div>
+      <div class="tab" data-ws="susp">Suspension</div>
+      <div class="t-right">
+        <span>OUTING 2 · 04 Jun 2026</span>
+        <a href="Pitwall.html" title="Open the live pitwall console">◉ LIVE PITWALL</a>
+      </div>
+    </div>
+
+    <!-- ===== BODY ===== -->
+    <div class="body">
+
+      <!-- LEFT: session + laps -->
+      <div class="pane left">
+        <div class="block" style="flex:0 0 auto">
+          <div class="bhead"><span class="bt">Outing Details</span><span class="bm">i2 Pro</span></div>
+          <div class="bbody"><div class="session" id="session"></div></div>
+        </div>
+        <div class="block" style="flex:1">
+          <div class="bhead"><span class="bt">Lap Report</span><span class="bm" id="ll-meta"><i class="lg-m"></i>main <i class="lg-r"></i>ref</span></div>
+          <div class="bbody">
+            <div class="laplist">
+              <div class="ll-head"><span>Sel</span><span>Lap</span><span>Time</span><span>+ Best</span><span class="ll-sec-h">S1 · S2 · S3</span></div>
+              <div class="ll-rows" id="ll-rows"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===== WORKSHEET AREA ===== -->
+      <div class="wsarea">
+
+      <!-- WS: TIME / DISTANCE -->
+      <div class="ws on" id="ws-timedist">
+      <!-- CENTER: graph stack + overview -->
+      <div class="pane center">
+        <div class="graphwrap">
+          <canvas id="graphcanvas"></canvas>
+          <div class="cx-markers" id="cx-gmarkers"></div>
+        </div>
+        <div class="overview">
+          <canvas id="overviewcanvas"></canvas>
+        </div>
+      </div>
+
+      <!-- RIGHT: track map + readout -->
+      <div class="pane right">
+        <div class="block" style="flex:0 0 318px">
+          <div class="bhead"><span class="bt">Track Map</span><span class="bm">main lap · speed</span></div>
+          <div class="bbody">
+            <div class="mapwrap">
+              <canvas id="mapcanvas"></canvas>
+              <div class="cx-mapmarks" id="cx-mapmarks"></div>
+              <div class="map-legend">
+                <span class="ml-t">SPEED</span>
+                <span><i style="background:#39d46a"></i>high</span>
+                <span><i style="background:#ffd23b"></i>mid</span>
+                <span><i style="background:#ff463a"></i>low</span>
+              </div>
+              <div class="map-foot">
+                <span class="mi">DIST <b id="map-dist">0 m</b></span>
+                <span class="mi">LAP <b id="map-pct">0.0%</b></span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="block" style="flex:1">
+          <div class="bhead"><span class="bt">Channel Report — at Cursor</span><span class="bm">main · ref · Δ</span></div>
+          <div class="bbody">
+            <div class="readout">
+              <div class="ro-head"><span>Channel</span><span>Main</span><span>Ref</span><span>Δ</span></div>
+              <div id="readout"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      </div><!-- /ws-timedist -->
+
+      <!-- WS: TRACK REPORT -->
+      <div class="ws" id="ws-track">
+        <div class="pane" style="flex:1;min-width:0">
+          <div class="block" style="flex:1">
+            <div class="bhead"><span class="bt">Track Map — Time Variance vs Reference</span><span class="bm">green = gaining · red = losing</span></div>
+            <div class="bbody">
+              <div class="mapwrap">
+                <canvas id="tr-map"></canvas>
+                <div class="cx-mapmarks" id="cx-trmarks"></div>
+                <div class="tr-legend">
+                  <span><i style="background:#39d46a"></i>gaining time</span>
+                  <span><i style="background:#ff463a"></i>losing time</span>
+                  <span><i style="background:#5b6266"></i>neutral</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="block" style="flex:0 0 232px">
+            <div class="bhead"><span class="bt">Sector Comparison</span><span class="bm">main vs reference</span></div>
+            <div class="bbody"><div class="sectorbars" id="tr-sectors"></div></div>
+          </div>
+        </div>
+        <div class="pane" style="flex:0 0 560px">
+          <div class="block" style="flex:1">
+            <div class="bhead"><span class="bt">Corner Report</span><span class="bm" id="tr-cr-meta">min speed · Δ · time</span></div>
+            <div class="bbody"><div class="cornertable" id="tr-corners"></div></div>
+          </div>
+        </div>
+      </div><!-- /ws-track -->
+
+      <!-- WS: HISTOGRAM -->
+      <div class="ws" id="ws-histogram">
+        <div class="pane" style="flex:1;min-width:0">
+          <div class="histgrid">
+            <div class="hcell"><div class="hh"><span>Ground Speed</span><b>km/h · % of lap</b></div><canvas id="hg-speed"></canvas></div>
+            <div class="hcell"><div class="hh"><span>Engine RPM</span><b>rpm · % of lap</b></div><canvas id="hg-rpm"></canvas></div>
+            <div class="hcell"><div class="hh"><span>Throttle</span><b>% applied</b></div><canvas id="hg-thr"></canvas></div>
+            <div class="hcell"><div class="hh"><span>Lateral G</span><b>g · % of lap</b></div><canvas id="hg-lat"></canvas></div>
+            <div class="hcell"><div class="hh"><span>Gear Usage</span><b>% of lap distance</b></div><canvas id="hg-gear"></canvas></div>
+            <div class="hcell"><div class="hh"><span>G-G Diagram</span><b>lat × lon · friction circle</b></div><canvas id="hg-gg"></canvas></div>
+          </div>
+        </div>
+        <div class="pane" style="flex:0 0 332px">
+          <div class="block" style="flex:1">
+            <div class="bhead"><span class="bt">Distribution Summary</span><span class="bm">main · ref</span></div>
+            <div class="bbody"><div class="histstats" id="hg-stats"></div></div>
+          </div>
+        </div>
+      </div><!-- /ws-histogram -->
+
+      <!-- WS: SUSPENSION -->
+      <div class="ws" id="ws-susp">
+        <div class="pane" style="flex:1;min-width:0">
+          <div class="block" style="flex:1">
+            <div class="bhead"><span class="bt">Damper Travel &amp; Ride Height</span><span class="bm">main lap · by distance</span></div>
+            <div class="bbody"><div class="graphwrap"><canvas id="sp-graph"></canvas></div></div>
+          </div>
+        </div>
+        <div class="pane" style="flex:0 0 420px">
+          <div class="block" style="flex:0 0 340px">
+            <div class="bhead"><span class="bt">Damper Histogram</span><span class="bm">velocity · mm/s</span></div>
+            <div class="bbody"><div class="mapwrap"><canvas id="sp-hist"></canvas></div></div>
+          </div>
+          <div class="block" style="flex:1">
+            <div class="bhead"><span class="bt">Corner Loads — at Cursor</span><span class="bm">four-corner platform</span></div>
+            <div class="bbody"><div class="cornerload" id="sp-loads"></div></div>
+          </div>
+        </div>
+      </div><!-- /ws-susp -->
+
+      <!-- WS: COACH -->
+      <div class="ws" id="ws-coach">
+        <div class="pane" style="flex:1;min-width:0">
+          <div class="block" style="flex:0 0 auto">
+            <div class="bhead"><span class="bt">Chief Engineer — Debrief</span><span class="bm" id="cx-meta">main vs reference</span></div>
+            <div class="bbody"><div class="chief" id="cx-chief"></div></div>
+          </div>
+          <div class="block" style="flex:1">
+            <div class="bhead"><span class="bt">Lap Walkthrough — Turn by Turn</span><span class="bm" id="cx-wt-meta">by distance</span></div>
+            <div class="bbody"><div class="walkthrough" id="cx-walk"></div></div>
+          </div>
+        </div>
+        <div class="pane" style="flex:0 0 380px">
+          <div class="block" style="flex:0 0 446px">
+            <div class="bhead"><span class="bt">Coaching Agents</span><span class="bm" id="cx-ag-meta">active</span></div>
+            <div class="bbody"><div class="agents" id="cx-agents"></div></div>
+          </div>
+          <div class="block" style="flex:1">
+            <div class="bhead"><span class="bt">Findings Map</span><span class="bm">size = time · click to inspect</span></div>
+            <div class="bbody">
+              <div class="mapwrap">
+                <canvas id="cx-map"></canvas>
+                <div class="cx-map-foot" id="cx-mapfoot"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div><!-- /ws-coach -->
+
+      </div><!-- /wsarea -->
+
+    </div>
+
+    <!-- ===== STATUS BAR ===== -->
+    <div class="statusbar">
+      <div class="sb hl" id="sb-cursor"><span class="lbl">Cursor</span><b>0 m</b></div>
+      <div class="sb" id="sb-lappct"><span class="lbl">Lap</span><b>0.0%</b></div>
+      <div class="sb" id="sb-sector"><span class="lbl">Sector</span><b>S1</b></div>
+      <div class="sb main" id="sb-main"><span class="lbl">Main</span><b>—</b></div>
+      <div class="sb ref" id="sb-ref"><span class="lbl">Ref</span><b>—</b></div>
+      <div class="sb" id="sb-var"><span class="lbl">Δt</span><b>—</b></div>
+      <div class="grow"></div>
+      <div class="sb right">scroll = zoom · drag overview = pan · ← → = step cursor</div>
+    </div>
+
+  </div>
+  </div><!-- /viewport -->
+
+</div><!-- /rtv-shell -->
+
+<!-- sim.js + lapdata.js provide the offline fallback; api.js builds Laps from the
+     real backend, then injects i2graphs/worksheets/coach/i2app/i2menus/chat.js. -->
+<script src="sim.js"></script>
+<script src="lapdata.js"></script>
+<script src="api.js"></script>
+</body>
+</html>

@@ -9,3 +9,10 @@ duckdb>=0.10
 pyarrow>=15
 orjson>=3.9
 PyYAML>=6.0
+# numpy powers the deterministic coaching features and the demo generator.
+numpy>=1.26
+# The LLM coach exposed over HTTP (POST /coaching/chat) — the LangGraph agent
+# plus the Anthropic chat model it drives.
+langgraph>=0.2
+langchain-core>=0.3
+langchain-anthropic>=0.2
