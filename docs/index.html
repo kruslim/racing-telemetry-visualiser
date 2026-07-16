@@ -1,392 +1,275 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Racing Telemetry Visualiser &mdash; full-stack iRacing telemetry platform</title>
-<meta name="description" content="Full-stack iRacing telemetry platform: real-time 60 Hz ingest, DuckDB/Parquet storage, a MoTeC-i2-style web analysis UI, and a tiered AI race engineer (MCP + multi-agent Claude + a LangGraph coach that refuses ungrounded questions and validates every figure).">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pitwall i2 — Telemetry Analysis · Racing Telemetry Visualiser</title>
+<meta name="description" content="A MoTeC-i2-style iRacing telemetry analysis workbench with an AI race engineer: time/distance traces, GPS track maps, histograms, lap compare, and a coach that grounds every finding in the telemetry.">
 <meta property="og:type" content="website">
-<meta property="og:title" content="Racing Telemetry Visualiser">
-<meta property="og:description" content="Full-stack iRacing telemetry platform: real-time 60 Hz ingest, DuckDB/Parquet storage, a MoTeC-i2-style web analysis UI, and a tiered AI race engineer (MCP + multi-agent Claude + a LangGraph coach that refuses ungrounded questions and validates every figure).">
+<meta property="og:title" content="Racing Telemetry Visualiser — live analysis demo">
+<meta property="og:description" content="MoTeC-i2-style iRacing telemetry analysis with an AI race engineer. Running live on a simulated session.">
 <meta property="og:url" content="https://kruslim.github.io/racing-telemetry-visualiser/">
 <meta name="twitter:card" content="summary_large_image">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='88'>&#127950;</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="analysis.css">
+<link rel="stylesheet" href="coach.css">
+<link rel="stylesheet" href="chat.css">
 </head>
-<body><style>
-  :root{
-    --paper:#F7F8FA; --card:#FFFFFF; --sub:#F1F3F6;
-    --line:#E5E9EE; --line2:#D2D8E0;
-    --ink:#141A23; --body:#39434F; --muted:#697280; --faint:#9AA3AF;
-    --accent:#0C6E52; --accent-2:#0A5A43; --accent-soft:#E8F3EE;
-    --speed:#1B2430; --throttle:#0C6E52; --brake:#D1394A; --delta:#BE8817;
-    --good:#0C6E52;
-    --disp:"Segoe UI",system-ui,-apple-system,"Helvetica Neue",Arial,sans-serif;
-    --mono:"Cascadia Code","Cascadia Mono",ui-monospace,"SF Mono",Consolas,monospace;
-    --maxw:1060px;
-    --shadow:0 1px 2px rgba(20,26,35,.04),0 6px 20px rgba(20,26,35,.05);
-  }
-  *{box-sizing:border-box}
-  html{scroll-behavior:smooth}
-  body{margin:0;background:var(--paper);color:var(--body);
-    font-family:var(--disp);font-size:16px;line-height:1.65;-webkit-font-smoothing:antialiased;overflow-x:hidden}
-  .wrap{max-width:var(--maxw);margin:0 auto;padding:0 28px}
-  .mono{font-family:var(--mono)}
-  .eyebrow{font-family:var(--mono);font-size:11.5px;letter-spacing:.22em;text-transform:uppercase;color:var(--accent);font-weight:600}
-  .tnum{font-variant-numeric:tabular-nums}
-  h1,h2,h3{margin:0;text-wrap:balance;color:var(--ink);font-weight:800;letter-spacing:-.021em;line-height:1.08}
-  a{color:inherit}
+<body>
+<div id="rtv-shell">
 
-  header.bar{position:sticky;top:0;z-index:40;background:rgba(247,248,250,.85);backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}
-  .bar .wrap{display:flex;align-items:center;gap:16px;height:62px}
-  .brand{display:flex;align-items:center;gap:11px;font-weight:800;color:var(--ink);letter-spacing:-.01em}
-  .brand .mk{width:22px;height:22px;border-radius:5px;background:var(--accent);display:flex;align-items:center;justify-content:center}
-  .brand .mk::after{content:"";width:8px;height:8px;background:#fff;border-radius:2px;transform:rotate(45deg)}
-  .brand small{font-family:var(--mono);font-weight:500;font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--faint)}
-  .bar nav{margin-left:auto;display:flex;gap:26px;font-size:14px;color:var(--muted)}
-  .bar nav a{text-decoration:none}
-  .bar nav a:hover{color:var(--ink)}
-  .ghbtn{font-size:13.5px;color:var(--ink);border:1px solid var(--line2);padding:8px 15px;border-radius:8px;text-decoration:none;display:inline-flex;align-items:center;gap:7px;background:var(--card);font-weight:600}
-  .ghbtn:hover{border-color:var(--accent);color:var(--accent)}
-  @media(max-width:720px){.bar nav{display:none}}
-
-  section{padding:78px 0}
-  .lede{color:var(--muted);font-size:18px;line-height:1.6;max-width:60ch}
-
-  .hero{padding:66px 0 30px}
-  .hero h1{font-size:clamp(35px,5.6vw,58px)}
-  .hero h1 .em{color:var(--accent)}
-  .hero .lede{margin-top:20px;font-size:18.5px;color:var(--body)}
-  .heroflags{display:flex;flex-wrap:wrap;gap:9px;margin-top:26px}
-  .flag{font-family:var(--mono);font-size:11.5px;letter-spacing:.03em;color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:6px 13px;background:var(--card)}
-  .flag b{color:var(--ink);font-weight:600}
-
-  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow)}
-  .console{margin-top:42px;overflow:hidden}
-  .console .top{display:flex;align-items:center;gap:14px;padding:12px 16px;border-bottom:1px solid var(--line);font-family:var(--mono);font-size:11.5px;color:var(--muted);background:var(--sub)}
-  .lights{display:flex;gap:6px}
-  .lights i{width:9px;height:9px;border-radius:50%;display:block;background:var(--line2)}
-  .lights i.g{background:var(--good)} .lights i.a{background:var(--delta)} .lights i.r{background:var(--brake)}
-  .console .top .sess{margin-left:auto;letter-spacing:.03em;color:var(--faint)}
-  .tracegrid{display:grid;grid-template-columns:1fr 246px}
-  @media(max-width:760px){.tracegrid{grid-template-columns:1fr}}
-  .plot{position:relative;padding:8px 8px 0}
-  svg.trace{display:block;width:100%;height:auto}
-  .legend{display:flex;gap:16px;padding:8px 18px 15px;font-family:var(--mono);font-size:11.5px;color:var(--muted);flex-wrap:wrap}
-  .legend span{display:inline-flex;align-items:center;gap:7px}
-  .legend span::before{content:"";width:14px;height:3px;border-radius:2px;background:var(--c)}
-  .readout{border-left:1px solid var(--line);padding:16px 18px;display:flex;flex-direction:column;gap:15px}
-  @media(max-width:760px){.readout{border-left:0;border-top:1px solid var(--line);flex-direction:row;flex-wrap:wrap;gap:22px}}
-  .ro .k{font-family:var(--mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint)}
-  .ro .v{font-family:var(--mono);font-size:25px;font-weight:600;letter-spacing:-.01em;line-height:1.1;margin-top:3px;color:var(--ink)}
-  .ro .v.delta{color:var(--accent)}
-  .ro small{font-family:var(--mono);font-size:10.5px;color:var(--muted)}
-
-  .shead{max-width:70ch}
-  .shead h2{font-size:clamp(25px,3.4vw,35px);margin-top:13px}
-  .shead p{color:var(--muted);margin-top:13px;font-size:16.5px}
-
-  .board{margin-top:36px;overflow:hidden}
-  .brow{display:grid;grid-template-columns:1fr auto;align-items:center;gap:16px;padding:18px 22px;border-top:1px solid var(--line)}
-  .brow:first-child{border-top:0}
-  .brow .bt{font-weight:700;color:var(--ink);letter-spacing:-.01em}
-  .brow .bt small{display:block;font-weight:400;color:var(--muted);font-size:13.5px;margin-top:3px;font-family:var(--disp)}
-  .chip{font-family:var(--mono);font-size:11px;letter-spacing:.04em;text-transform:uppercase;font-weight:600;
-    color:var(--accent-2);background:var(--accent-soft);border:1px solid #CDE6DC;padding:4px 11px;border-radius:999px;white-space:nowrap}
-
-  .panels{margin-top:34px;display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
-  @media(max-width:860px){.panels{grid-template-columns:repeat(2,1fr)}}
-  @media(max-width:560px){.panels{grid-template-columns:1fr}}
-  .panel{border:1px solid var(--line);border-radius:12px;padding:22px;background:var(--card);display:flex;flex-direction:column;gap:10px;transition:border-color .18s,box-shadow .18s,transform .18s}
-  .panel:hover{border-color:var(--accent);box-shadow:var(--shadow);transform:translateY(-3px)}
-  .panel .pn{font-family:var(--mono);font-size:10.5px;letter-spacing:.11em;color:var(--faint)}
-  .panel h3{font-size:17.5px;letter-spacing:-.01em}
-  .panel p{margin:0;color:var(--muted);font-size:14px;line-height:1.58}
-  .panel .tag{margin-top:auto;font-family:var(--mono);font-size:11px;color:var(--accent);letter-spacing:.02em}
-
-  .layers{margin-top:32px;display:grid;gap:13px}
-  .layer{display:grid;grid-template-columns:46px 1fr 130px;gap:18px;align-items:center;border:1px solid var(--line);border-radius:12px;padding:20px 22px;background:var(--card)}
-  .layer .ln{width:40px;height:40px;border-radius:9px;background:var(--accent-soft);color:var(--accent-2);font-family:var(--mono);font-size:19px;font-weight:700;display:flex;align-items:center;justify-content:center}
-  .layer h3{font-size:17px}
-  .layer p{margin:5px 0 0;color:var(--muted);font-size:14px;line-height:1.55}
-  .layer p code{font-family:var(--mono);font-size:12.5px;color:var(--accent-2);background:var(--accent-soft);padding:1px 6px;border-radius:5px}
-  .cost{font-family:var(--mono);font-size:12px;text-align:right;color:var(--muted);letter-spacing:.02em}
-  @media(max-width:640px){.layer{grid-template-columns:40px 1fr}.layer .cost{grid-column:2;text-align:left}}
-
-  .flow{margin-top:30px;display:flex;flex-direction:column;align-items:stretch;gap:0}
-  .frow{display:grid;gap:14px}
-  .frow.two{grid-template-columns:1fr 1fr}
-  .frow.three{grid-template-columns:repeat(3,1fr)}
-  @media(max-width:640px){.frow.two,.frow.three{grid-template-columns:1fr}}
-  .fbox{background:var(--card);border:1px solid var(--line);border-radius:11px;padding:16px 18px}
-  .fbox.src{background:var(--sub)}
-  .fbox.store{background:var(--ink);border-color:var(--ink)}
-  .fbox.store .fk,.fbox.store .fd{color:#fff}
-  .fbox.store .fd{color:#B9C2CE}
-  .fbox .fk{font-family:var(--mono);font-weight:700;font-size:13.5px;color:var(--accent-2);letter-spacing:-.01em}
-  .fbox .fd{font-size:13px;color:var(--muted);margin-top:4px}
-  .fbox.cons .fk{color:var(--ink)}
-  .farrow{display:flex;justify-content:center;color:var(--faint);font-size:18px;padding:9px 0;line-height:1}
-
-  .strip{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-top:8px}
-  @media(max-width:640px){.strip{grid-template-columns:repeat(2,1fr)}}
-  .cell{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:22px 20px}
-  .cell .big{font-family:var(--mono);font-size:29px;font-weight:600;letter-spacing:-.02em;color:var(--accent)}
-  .cell .lbl{font-size:13px;color:var(--muted);margin-top:6px}
-
-  footer{border-top:1px solid var(--line);padding:38px 0 58px;color:var(--faint);font-size:13.5px;margin-top:12px}
-  footer .wrap{display:flex;gap:16px;flex-wrap:wrap;align-items:center}
-  footer .mono{font-size:12px;color:var(--muted)}
-
-  .reveal{opacity:0;transform:translateY(15px);transition:opacity .55s ease,transform .55s ease}
-  .reveal.in{opacity:1;transform:none}
-  @media(prefers-reduced-motion:reduce){.reveal{opacity:1;transform:none;transition:none}html{scroll-behavior:auto}}
-  :focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:4px}
-</style>
-
-<h2 class="sr-only" style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)">Racing Telemetry Visualiser &mdash; a full-stack iRacing telemetry platform with real-time ingest, a MoTeC-style analysis UI, and a tiered AI race engineer.</h2>
-
-<header class="bar">
-  <div class="wrap">
-    <div class="brand"><span class="mk" aria-hidden="true"></span>RTV<small>Racing&nbsp;Telemetry&nbsp;Visualiser</small></div>
-    <nav>
-      <a href="#stack">Overview</a>
-      <a href="#features">Features</a>
-      <a href="#coach">AI coach</a>
-      <a href="#arch">Architecture</a>
-    </nav>
-    <a class="ghbtn" href="https://github.com/kruslim/racing-telemetry-visualiser">GitHub &nearr;</a>
-  </div>
-</header>
-
-<main>
-<section class="hero wrap">
-  <p class="eyebrow reveal">Full-stack sim-racing telemetry platform</p>
-  <h1 class="reveal">Every channel iRacing exposes &mdash;<br><span class="em">ingested, streamed, visualised, coached.</span></h1>
-  <p class="lede reveal">A live 60&nbsp;Hz shared-memory feed and recorded <span class="mono">.ibt</span> files, stored columnar in DuckDB&nbsp;/&nbsp;Parquet, served over REST and WebSocket to a MoTeC-i2-style analysis UI &mdash; and distilled into a layered AI race engineer that refuses what it can't ground and can't hallucinate your lap advice.</p>
-  <div class="heroflags reveal">
-    <span class="flag"><b>Python</b> &middot; FastAPI &middot; uvicorn</span>
-    <span class="flag"><b>DuckDB</b> + Parquet</span>
-    <span class="flag"><b>WebSocket</b> live stream</span>
-    <span class="flag"><b>MCP</b> + multi-agent Claude</span>
-    <span class="flag"><b>LangGraph</b> coach &middot; grounded refusal</span>
-    <span class="flag"><b>Evals</b> vs ground truth</span>
-  </div>
-
-  <div class="heroflags reveal" style="margin-top:22px">
-    <a class="ghbtn" href="/app/" style="background:var(--accent,#ff9234);color:#160f06;border-color:var(--accent,#ff9234);font-weight:700">&#9658; Launch the analysis app</a>
-    <a class="ghbtn" href="https://github.com/kruslim/racing-telemetry-visualiser#quick-start">Run it locally &nearr;</a>
-    <span class="flag" style="opacity:.7">AI chat + graphs live once the backend is running (<span class="mono">uvicorn rtv.main:app</span>)</span>
-  </div>
-
-  <div class="console card reveal" aria-hidden="true">
-    <div class="top">
-      <span class="lights"><i class="g"></i><i class="a"></i><i class="r"></i></span>
-      <span>lap_dist_pct &middot; 0 &rarr; 100%</span>
-      <span class="sess">GET /channels?names=Speed,Throttle,Brake</span>
+  <!-- ===== LEFT: AI RACE ENGINEER CHAT ===== -->
+  <aside id="chat-pane">
+    <div class="chat-head">
+      <div class="chat-title">
+        <span class="chat-glyph"></span>
+        <span>RACE ENGINEER<b>AI</b></span>
+      </div>
+      <div class="chat-sub" id="chat-sub">grounded on your telemetry</div>
     </div>
-    <div class="tracegrid">
-      <div>
-        <div class="plot"><svg class="trace" viewBox="0 0 720 250" preserveAspectRatio="none" id="trace"></svg></div>
-        <div class="legend">
-          <span style="--c:var(--speed)">Speed</span>
-          <span style="--c:var(--throttle)">Throttle</span>
-          <span style="--c:var(--brake)">Brake</span>
-          <span style="--c:var(--delta)">&Delta; vs reference</span>
+    <div class="chat-scope" id="chat-scope">Analysing <b id="chat-scope-laps">—</b></div>
+    <div class="chat-messages" id="chat-messages"></div>
+    <div class="chat-suggest" id="chat-suggest"></div>
+    <form class="chat-input" id="chat-form" autocomplete="off">
+      <textarea id="chat-input" rows="1" placeholder="Ask about a corner, a brake point, where you're losing time…"></textarea>
+      <button type="submit" id="chat-send" title="Send">↑</button>
+    </form>
+    <div class="chat-foot" id="chat-foot">The coach cites the deterministic findings — it can also refuse.</div>
+  </aside>
+
+  <!-- ===== RIGHT: ANALYSIS WORKBENCH ===== -->
+  <div id="viewport">
+  <div id="app">
+
+    <!-- ===== MENU BAR ===== -->
+    <div class="menubar">
+      <div class="appmark">
+        <span class="glyph"></span>
+        <span class="appname">PITWALL <b>i2</b></span>
+        <span class="ver">v3.4</span>
+      </div>
+      <div class="menus">
+        <span class="m">File</span><span class="m">Edit</span><span class="m">View</span>
+        <span class="m">Channels</span><span class="m">Maths</span><span class="m">Tools</span><span class="m">Help</span>
+      </div>
+      <div class="mb-spacer"></div>
+      <div class="toolset">
+        <button class="tool" id="tb-reset" title="Reset zoom to full lap">⤢ FIT LAP</button>
+        <div class="tool on" style="cursor:default" title="Reference lap overlaid"><span class="sw" style="background:#34d2e3"></span>OVERLAY</div>
+        <div class="tool on" style="cursor:default" title="X-axis: distance">X · DIST</div>
+        <div class="tool" style="cursor:default" title="Logging rate">60 Hz</div>
+      </div>
+    </div>
+
+    <!-- ===== WORKSHEET TABS ===== -->
+    <div class="tabs">
+      <div class="tab on" data-ws="timedist">Time / Distance</div>
+      <div class="tab" data-ws="coach">◈ Coach</div>
+      <div class="tab" data-ws="track">Track Report</div>
+      <div class="tab" data-ws="histogram">Histogram</div>
+      <div class="tab" data-ws="susp">Suspension</div>
+      <div class="t-right">
+        <span>OUTING 2 · 04 Jun 2026</span>
+        <a href="Pitwall.html" title="Open the live pitwall console">◉ LIVE PITWALL</a>
+      </div>
+    </div>
+
+    <!-- ===== BODY ===== -->
+    <div class="body">
+
+      <!-- LEFT: session + laps -->
+      <div class="pane left">
+        <div class="block" style="flex:0 0 auto">
+          <div class="bhead"><span class="bt">Outing Details</span><span class="bm">i2 Pro</span></div>
+          <div class="bbody"><div class="session" id="session"></div></div>
+        </div>
+        <div class="block" style="flex:1">
+          <div class="bhead"><span class="bt">Lap Report</span><span class="bm" id="ll-meta"><i class="lg-m"></i>main <i class="lg-r"></i>ref</span></div>
+          <div class="bbody">
+            <div class="laplist">
+              <div class="ll-head"><span>Sel</span><span>Lap</span><span>Time</span><span>+ Best</span><span class="ll-sec-h">S1 · S2 · S3</span></div>
+              <div class="ll-rows" id="ll-rows"></div>
+            </div>
+          </div>
         </div>
       </div>
-      <div class="readout">
-        <div class="ro"><div class="k">Lap delta</div><div class="v delta tnum" id="ro-delta">&minus;0.000</div><small>main vs reference lap</small></div>
-        <div class="ro"><div class="k">Corners analysed</div><div class="v tnum" id="ro-corners">0</div><small>speed-minima detection</small></div>
-        <div class="ro"><div class="k">Points / lap</div><div class="v tnum" id="ro-points">0</div><small>distilled to ~20 findings</small></div>
+
+      <!-- ===== WORKSHEET AREA ===== -->
+      <div class="wsarea">
+
+      <!-- WS: TIME / DISTANCE -->
+      <div class="ws on" id="ws-timedist">
+      <!-- CENTER: graph stack + overview -->
+      <div class="pane center">
+        <div class="graphwrap">
+          <canvas id="graphcanvas"></canvas>
+          <div class="cx-markers" id="cx-gmarkers"></div>
+        </div>
+        <div class="overview">
+          <canvas id="overviewcanvas"></canvas>
+        </div>
       </div>
-    </div>
-  </div>
-</section>
 
-<section id="stack" class="wrap">
-  <div class="shead reveal">
-    <p class="eyebrow">The full stack</p>
-    <h2>Ingest to AI, built end to end.</h2>
-    <p>Not a single library &mdash; a complete platform. Every layer below runs today: capture, columnar storage, an HTTP and streaming API, a visual analysis UI, and a grounded AI coaching pipeline.</p>
-  </div>
-  <div class="board card reveal">
-    <div class="brow"><div class="bt">Live telemetry stream<small>Latest-frame WebSocket at up to 60&nbsp;Hz, backpressure-safe</small></div><span class="chip">Live</span></div>
-    <div class="brow"><div class="bt">REST API<small>Sessions, laps, multi-channel charts, lap compare, track maps</small></div><span class="chip">Shipped</span></div>
-    <div class="brow"><div class="bt">Web analysis UI<small>MoTeC-i2-style traces, GPS maps, histograms, live console</small></div><span class="chip">Shipped</span></div>
-    <div class="brow"><div class="bt">Runtime variable catalog<small>Read from the binary header &mdash; complete for any car or content</small></div><span class="chip">Shipped</span></div>
-    <div class="brow"><div class="bt">MCP server<small>Six tools &mdash; chat-driven coaching in Claude Desktop / Code</small></div><span class="chip">Shipped</span></div>
-    <div class="brow"><div class="bt">Multi-agent AI coach<small>Specialists per corner &rarr; synthesise &rarr; adversarially verify</small></div><span class="chip">Shipped</span></div>
-    <div class="brow"><div class="bt">LangGraph coach<small>Tool-calling loop that refuses ungrounded questions &amp; validates every figure in-loop</small></div><span class="chip">Shipped</span></div>
-    <div class="brow"><div class="bt">Hermetic eval harness<small>Grounded-truth checks + baseline-diff regression, offline, no API key</small></div><span class="chip">Shipped</span></div>
-  </div>
-</section>
+      <!-- RIGHT: track map + readout -->
+      <div class="pane right">
+        <div class="block" style="flex:0 0 318px">
+          <div class="bhead"><span class="bt">Track Map</span><span class="bm">main lap · speed</span></div>
+          <div class="bbody">
+            <div class="mapwrap">
+              <canvas id="mapcanvas"></canvas>
+              <div class="cx-mapmarks" id="cx-mapmarks"></div>
+              <div class="map-legend">
+                <span class="ml-t">SPEED</span>
+                <span><i style="background:#39d46a"></i>high</span>
+                <span><i style="background:#ffd23b"></i>mid</span>
+                <span><i style="background:#ff463a"></i>low</span>
+              </div>
+              <div class="map-foot">
+                <span class="mi">DIST <b id="map-dist">0 m</b></span>
+                <span class="mi">LAP <b id="map-pct">0.0%</b></span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="block" style="flex:1">
+          <div class="bhead"><span class="bt">Channel Report — at Cursor</span><span class="bm">main · ref · Δ</span></div>
+          <div class="bbody">
+            <div class="readout">
+              <div class="ro-head"><span>Channel</span><span>Main</span><span>Ref</span><span>Δ</span></div>
+              <div id="readout"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      </div><!-- /ws-timedist -->
 
-<section id="features" class="wrap" style="padding-top:0">
-  <div class="shead reveal">
-    <p class="eyebrow">Under the hood</p>
-    <h2>Six subsystems, each testable alone.</h2>
-  </div>
-  <div class="panels">
-    <div class="panel reveal"><span class="pn">CATALOG</span><h3>Runtime schema discovery</h3><p>The channel list is read from the binary telemetry header at runtime &mdash; nothing hard-coded &mdash; so it's complete for any car or content, with types, units and bitfield decode tables.</p><span class="tag">GET /variables</span></div>
-    <div class="panel reveal"><span class="pn">INGEST</span><h3>Live and offline</h3><p>One pipeline reads the iRacing shared-memory feed at 60&nbsp;Hz and parses recorded .ibt files in tick-window chunks, with async import jobs and status polling.</p><span class="tag">shared-mem &middot; .ibt</span></div>
-    <div class="panel reveal"><span class="pn">STORE</span><h3>Columnar, pruned per lap</h3><p>Metadata in DuckDB; high-rate telemetry as per-session/per-lap Parquet. Every chart query prunes to one or two small files instead of scanning a session.</p><span class="tag">DuckDB + Parquet</span></div>
-    <div class="panel reveal"><span class="pn">STREAM</span><h3>Backpressure-safe live</h3><p>/ws/live delivers latest-frame-only at each client's requested rate. Slow clients coalesce to the newest sample &mdash; no unbounded buffering, no lag spiral.</p><span class="tag">WebSocket fan-out</span></div>
-    <div class="panel reveal"><span class="pn">FRONTEND</span><h3>MoTeC-i2 analysis UI</h3><p>Canvas charts, GPS track maps, histograms, suspension and a live Pitwall console &mdash; plus alien-lap cross-session compare to set another driver's lap as your reference.</p><span class="tag">time / distance worksheets</span></div>
-    <div class="panel reveal"><span class="pn">COACHING</span><h3>1M points &rarr; 20 findings</h3><p>Deterministic feature extraction aligns main and reference laps, detects corners, and apportions a time-delta curve to eight diagnostics before any LLM sees the data.</p><span class="tag">GET /coaching/lap-findings</span></div>
-  </div>
-</section>
+      <!-- WS: TRACK REPORT -->
+      <div class="ws" id="ws-track">
+        <div class="pane" style="flex:1;min-width:0">
+          <div class="block" style="flex:1">
+            <div class="bhead"><span class="bt">Track Map — Time Variance vs Reference</span><span class="bm">green = gaining · red = losing</span></div>
+            <div class="bbody">
+              <div class="mapwrap">
+                <canvas id="tr-map"></canvas>
+                <div class="cx-mapmarks" id="cx-trmarks"></div>
+                <div class="tr-legend">
+                  <span><i style="background:#39d46a"></i>gaining time</span>
+                  <span><i style="background:#ff463a"></i>losing time</span>
+                  <span><i style="background:#5b6266"></i>neutral</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="block" style="flex:0 0 232px">
+            <div class="bhead"><span class="bt">Sector Comparison</span><span class="bm">main vs reference</span></div>
+            <div class="bbody"><div class="sectorbars" id="tr-sectors"></div></div>
+          </div>
+        </div>
+        <div class="pane" style="flex:0 0 560px">
+          <div class="block" style="flex:1">
+            <div class="bhead"><span class="bt">Corner Report</span><span class="bm" id="tr-cr-meta">min speed · Δ · time</span></div>
+            <div class="bbody"><div class="cornertable" id="tr-corners"></div></div>
+          </div>
+        </div>
+      </div><!-- /ws-track -->
 
-<section id="coach" class="wrap" style="padding-top:0">
-  <div class="shead reveal">
-    <p class="eyebrow">The AI race engineer</p>
-    <h2>Four layers. The LLM never sees raw telemetry.</h2>
-    <p>Heuristics find brake points and speed deltas faster and more reliably than any model &mdash; so they stay deterministic, and Claude is used only where code is weak: synthesis, prioritisation, and open-ended Q&amp;A. That same deterministic layer becomes the eval ground truth &mdash; so the graph coach can <em>refuse</em> a question the data can't answer and every figure it does state is checked against the findings, in-loop.</p>
-  </div>
-  <div class="layers">
-    <div class="layer reveal">
-      <span class="ln">1</span>
-      <div><h3>Deterministic features</h3><p>Aligns laps on a uniform distance grid, detects corners as speed minima, builds a time-delta curve and runs eight diagnostics into a compact <code>LapFindings</code> model. This is the token solution <em>and</em> the ground truth.</p></div>
-      <div class="cost">free &middot; code</div>
-    </div>
-    <div class="layer reveal">
-      <span class="ln">2</span>
-      <div><h3>MCP server</h3><p>Six tools over the API &mdash; <code>get_lap_findings</code>, <code>compare_channel</code>, <code>get_corner_detail</code> and more &mdash; driven from Claude Desktop / Code. "Review my lap 5 vs my fastest."</p></div>
-      <div class="cost">$0 &middot; subscription</div>
-    </div>
-    <div class="layer reveal">
-      <span class="ln">3a</span>
-      <div><h3>Multi-agent orchestration</h3><p>Fan-out a specialist per priority corner &rarr; synthesise a session plan &rarr; adversarially verify it, all in structured Pydantic outputs with a cached findings block.</p></div>
-      <div class="cost">~cents &middot; Claude API</div>
-    </div>
-    <div class="layer reveal">
-      <span class="ln">3b</span>
-      <div><h3>LangGraph coach + eval flywheel</h3><p>A model-driven <code>agent &rarr; tools &rarr; validate &rarr; refuse</code> graph over the same findings. It <strong>refuses</strong> questions the telemetry can't answer &mdash; citing the channels that <em>are</em> captured, never an invented number &mdash; and <strong>validates every figure in-loop</strong> against ground truth, bouncing a claim the findings don't support. A hermetic harness replays these behaviours with baseline-diff regression &mdash; offline, no key.</p></div>
-      <div class="cost">~cents &middot; Claude API</div>
-    </div>
-  </div>
-</section>
+      <!-- WS: HISTOGRAM -->
+      <div class="ws" id="ws-histogram">
+        <div class="pane" style="flex:1;min-width:0">
+          <div class="histgrid">
+            <div class="hcell"><div class="hh"><span>Ground Speed</span><b>km/h · % of lap</b></div><canvas id="hg-speed"></canvas></div>
+            <div class="hcell"><div class="hh"><span>Engine RPM</span><b>rpm · % of lap</b></div><canvas id="hg-rpm"></canvas></div>
+            <div class="hcell"><div class="hh"><span>Throttle</span><b>% applied</b></div><canvas id="hg-thr"></canvas></div>
+            <div class="hcell"><div class="hh"><span>Lateral G</span><b>g · % of lap</b></div><canvas id="hg-lat"></canvas></div>
+            <div class="hcell"><div class="hh"><span>Gear Usage</span><b>% of lap distance</b></div><canvas id="hg-gear"></canvas></div>
+            <div class="hcell"><div class="hh"><span>G-G Diagram</span><b>lat × lon · friction circle</b></div><canvas id="hg-gg"></canvas></div>
+          </div>
+        </div>
+        <div class="pane" style="flex:0 0 332px">
+          <div class="block" style="flex:1">
+            <div class="bhead"><span class="bt">Distribution Summary</span><span class="bm">main · ref</span></div>
+            <div class="bbody"><div class="histstats" id="hg-stats"></div></div>
+          </div>
+        </div>
+      </div><!-- /ws-histogram -->
 
-<section id="arch" class="wrap" style="padding-top:0">
-  <div class="shead reveal">
-    <p class="eyebrow">Architecture</p>
-    <h2>One pipeline, three consumers.</h2>
-  </div>
-  <div class="flow reveal">
-    <div class="frow two">
-      <div class="fbox src"><div class="fk">iRacing shared memory</div><div class="fd">live feed at 60&nbsp;Hz</div></div>
-      <div class="fbox src"><div class="fk">Recorded .ibt files</div><div class="fd">offline, any OS</div></div>
-    </div>
-    <div class="farrow" aria-hidden="true">&darr;</div>
-    <div class="frow two">
-      <div class="fbox"><div class="fk">ingest/</div><div class="fd">frame buffer &middot; normalize / laps &middot; sink</div></div>
-      <div class="fbox"><div class="fk">catalog/</div><div class="fd">runtime header &rarr; typed variables</div></div>
-    </div>
-    <div class="farrow" aria-hidden="true">&darr;</div>
-    <div class="frow">
-      <div class="fbox store"><div class="fk">store/</div><div class="fd">DuckDB metadata + per-lap Parquet</div></div>
-    </div>
-    <div class="farrow" aria-hidden="true">&darr;</div>
-    <div class="frow three">
-      <div class="fbox cons"><div class="fk">REST /api/v1</div><div class="fd">web frontend &mdash; charts, maps, lap compare</div></div>
-      <div class="fbox cons"><div class="fk">WebSocket /ws/live</div><div class="fd">live dashboards</div></div>
-      <div class="fbox cons"><div class="fk">coaching/</div><div class="fd">MCP · orchestrator · LangGraph coach + evals</div></div>
-    </div>
-  </div>
-  <div class="strip reveal">
-    <div class="cell"><div class="big tnum">60 Hz</div><div class="lbl">Live shared-memory poll</div></div>
-    <div class="cell"><div class="big tnum">4</div><div class="lbl">Coaching layers, one foundation</div></div>
-    <div class="cell"><div class="big tnum">65</div><div class="lbl">Tests, all fully offline</div></div>
-    <div class="cell"><div class="big tnum">0</div><div class="lbl">API keys to run the tests</div></div>
-  </div>
-</section>
-</main>
+      <!-- WS: SUSPENSION -->
+      <div class="ws" id="ws-susp">
+        <div class="pane" style="flex:1;min-width:0">
+          <div class="block" style="flex:1">
+            <div class="bhead"><span class="bt">Damper Travel &amp; Ride Height</span><span class="bm">main lap · by distance</span></div>
+            <div class="bbody"><div class="graphwrap"><canvas id="sp-graph"></canvas></div></div>
+          </div>
+        </div>
+        <div class="pane" style="flex:0 0 420px">
+          <div class="block" style="flex:0 0 340px">
+            <div class="bhead"><span class="bt">Damper Histogram</span><span class="bm">velocity · mm/s</span></div>
+            <div class="bbody"><div class="mapwrap"><canvas id="sp-hist"></canvas></div></div>
+          </div>
+          <div class="block" style="flex:1">
+            <div class="bhead"><span class="bt">Corner Loads — at Cursor</span><span class="bm">four-corner platform</span></div>
+            <div class="bbody"><div class="cornerload" id="sp-loads"></div></div>
+          </div>
+        </div>
+      </div><!-- /ws-susp -->
 
-<footer>
-  <div class="wrap">
-    <div class="brand" style="font-size:15px"><span class="mk" aria-hidden="true"></span>RTV</div>
-    <span class="mono">Racing Telemetry Visualiser &middot; iRacing telemetry platform &middot; MIT</span>
-    <a class="ghbtn" style="margin-left:auto" href="https://github.com/kruslim/racing-telemetry-visualiser">View source &nearr;</a>
+      <!-- WS: COACH -->
+      <div class="ws" id="ws-coach">
+        <div class="pane" style="flex:1;min-width:0">
+          <div class="block" style="flex:0 0 auto">
+            <div class="bhead"><span class="bt">Chief Engineer — Debrief</span><span class="bm" id="cx-meta">main vs reference</span></div>
+            <div class="bbody"><div class="chief" id="cx-chief"></div></div>
+          </div>
+          <div class="block" style="flex:1">
+            <div class="bhead"><span class="bt">Lap Walkthrough — Turn by Turn</span><span class="bm" id="cx-wt-meta">by distance</span></div>
+            <div class="bbody"><div class="walkthrough" id="cx-walk"></div></div>
+          </div>
+        </div>
+        <div class="pane" style="flex:0 0 380px">
+          <div class="block" style="flex:0 0 446px">
+            <div class="bhead"><span class="bt">Coaching Agents</span><span class="bm" id="cx-ag-meta">active</span></div>
+            <div class="bbody"><div class="agents" id="cx-agents"></div></div>
+          </div>
+          <div class="block" style="flex:1">
+            <div class="bhead"><span class="bt">Findings Map</span><span class="bm">size = time · click to inspect</span></div>
+            <div class="bbody">
+              <div class="mapwrap">
+                <canvas id="cx-map"></canvas>
+                <div class="cx-map-foot" id="cx-mapfoot"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div><!-- /ws-coach -->
+
+      </div><!-- /wsarea -->
+
+    </div>
+
+    <!-- ===== STATUS BAR ===== -->
+    <div class="statusbar">
+      <div class="sb hl" id="sb-cursor"><span class="lbl">Cursor</span><b>0 m</b></div>
+      <div class="sb" id="sb-lappct"><span class="lbl">Lap</span><b>0.0%</b></div>
+      <div class="sb" id="sb-sector"><span class="lbl">Sector</span><b>S1</b></div>
+      <div class="sb main" id="sb-main"><span class="lbl">Main</span><b>—</b></div>
+      <div class="sb ref" id="sb-ref"><span class="lbl">Ref</span><b>—</b></div>
+      <div class="sb" id="sb-var"><span class="lbl">Δt</span><b>—</b></div>
+      <div class="grow"></div>
+      <div class="sb right">scroll = zoom · drag overview = pan · ← → = step cursor</div>
+    </div>
+
   </div>
-</footer>
+  </div><!-- /viewport -->
 
-<script>
-(function(){
-  var reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  var W=720,H=250,N=240;
-  function path(fn){var d="",i,x,y;for(i=0;i<=N;i++){x=i/N*W;y=fn(i/N);d+=(i?"L":"M")+x.toFixed(1)+" "+y.toFixed(1);}return d;}
-  function speedFn(t){
-    var s=0.62+0.30*Math.sin(t*6.2831*1.0-0.6)+0.16*Math.sin(t*6.2831*2.3+1.1)+0.08*Math.sin(t*6.2831*4.7);
-    s=Math.max(0.05,Math.min(1,(s+0.15)/1.25));
-    return H*0.10 + (1-s)*H*0.50;
-  }
-  function thrFn(t){
-    var s=speedFn(t), norm=1-((s-H*0.10)/(H*0.50));
-    var thr=Math.max(0,Math.min(1, norm*1.35-0.1));
-    return H*0.66 + (1-thr)*H*0.29;
-  }
-  function brakeFn(t){
-    var b=0,c,peaks=[0.12,0.31,0.5,0.68,0.86];
-    for(var k=0;k<peaks.length;k++){c=Math.exp(-Math.pow((t-peaks[k])/0.028,2));b=Math.max(b,c);}
-    return H*0.66 + (1-b*0.9)*H*0.29;
-  }
-  function deltaFn(t){
-    var v=0.5+0.42*Math.sin(t*6.2831*1.0+0.4)+0.12*Math.sin(t*6.2831*3.1);
-    return H*0.12 + (1-Math.max(0,Math.min(1,v)))*H*0.48;
-  }
-  var svg=document.getElementById("trace");
-  if(svg){
-    var ns="http://www.w3.org/2000/svg", i;
-    for(i=1;i<6;i++){var gl=document.createElementNS(ns,"line");var gx=i/6*W;
-      gl.setAttribute("x1",gx);gl.setAttribute("x2",gx);gl.setAttribute("y1",6);gl.setAttribute("y2",H-6);
-      gl.setAttribute("stroke","#EAEDF1");gl.setAttribute("stroke-width","1");svg.appendChild(gl);}
-    function stroke(d,color,w,dash){
-      var p=document.createElementNS(ns,"path");
-      p.setAttribute("d",d);p.setAttribute("fill","none");p.setAttribute("stroke",color);
-      p.setAttribute("stroke-width",w);p.setAttribute("stroke-linejoin","round");p.setAttribute("stroke-linecap","round");
-      if(dash)p.setAttribute("stroke-dasharray",dash);
-      svg.appendChild(p);return p;}
-    var pd=stroke(path(deltaFn),"#BE8817",1.4,"5 6");pd.setAttribute("opacity","0.75");
-    stroke(path(brakeFn),"#D1394A",1.7);
-    stroke(path(thrFn),"#0C6E52",1.7);
-    stroke(path(speedFn),"#1B2430",2.3);
-    if(!reduce){
-      Array.prototype.slice.call(svg.querySelectorAll("path")).forEach(function(p,idx){
-        var len=p.getTotalLength();
-        p.style.transition="none";
-        if(!p.getAttribute("stroke-dasharray")){p.style.strokeDasharray=len;}else{p.style.strokeDasharray=len+"";}
-        p.style.strokeDashoffset=len;
-        void p.getBoundingClientRect();
-        p.style.transition="stroke-dashoffset 1.5s cubic-bezier(.4,0,.2,1) "+(idx*0.12)+"s";
-        p.style.strokeDashoffset="0";
-      });
-    }
-  }
-  function countUp(el,to,dur,fmt){
-    if(!el)return;
-    if(reduce){el.textContent=fmt(to);return;}
-    var start=null;
-    function step(ts){if(start===null)start=ts;var p=Math.min(1,(ts-start)/dur);var e=1-Math.pow(1-p,3);el.textContent=fmt(to*e);if(p<1)requestAnimationFrame(step);}
-    requestAnimationFrame(step);
-  }
-  var started=false;
-  function fire(){
-    if(started)return;started=true;
-    countUp(document.getElementById("ro-delta"),-0.412,1400,function(v){return String.fromCharCode(8722)+Math.abs(v).toFixed(3);});
-    countUp(document.getElementById("ro-corners"),14,1200,function(v){return Math.round(v);});
-    countUp(document.getElementById("ro-points"),1042000,1600,function(v){return Math.round(v).toLocaleString();});
-  }
-  var els=document.querySelectorAll(".reveal");
-  if("IntersectionObserver" in window && !reduce){
-    var io=new IntersectionObserver(function(es){es.forEach(function(en){if(en.isIntersecting){en.target.classList.add("in");io.unobserve(en.target);}});},{threshold:.14});
-    els.forEach(function(el){io.observe(el);});
-  } else { els.forEach(function(el){el.classList.add("in");}); }
-  var cons=document.querySelector(".console");
-  if(cons && "IntersectionObserver" in window){
-    var io2=new IntersectionObserver(function(es){es.forEach(function(en){if(en.isIntersecting){fire();io2.disconnect();}});},{threshold:.3});
-    io2.observe(cons);
-  } else { fire(); }
-})();
-</script>
+</div><!-- /rtv-shell -->
 
+<!-- sim.js + lapdata.js provide the offline fallback; api.js builds Laps from the
+     real backend, then injects i2graphs/worksheets/coach/i2app/i2menus/chat.js. -->
+<script src="sim.js"></script>
+<script src="lapdata.js"></script>
+<script src="api.js"></script>
 </body>
 </html>

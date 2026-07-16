@@ -2,7 +2,10 @@
 
 **A full-stack iRacing telemetry platform: real-time ingest → columnar storage → a MoTeC-i2-style web analysis UI → a tiered AI race engineer.**
 
-**▶ [Live showcase](https://kruslim.github.io/racing-telemetry-visualiser/)**
+**▶ [Live demo](https://kruslim.github.io/racing-telemetry-visualiser/)** — the actual
+analysis app running in your browser on a simulated session: scrub the traces, compare
+laps, open the Coach worksheet, and ask the AI race engineer where you're losing time.
+No backend, no key — every worksheet and the grounded chat run entirely client-side.
 
 Racing Telemetry Visualiser (RTV) captures *every* channel iRacing exposes — from
 the live 60 Hz shared-memory feed or from recorded `.ibt` files — stores it
