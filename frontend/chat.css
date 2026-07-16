@@ -12,13 +12,18 @@
    so the MoTeC stage scales to the whole window. The chat is a floating overlay
    docked bottom-right, so it no longer steals width from the workbench. */
 
+/* #viewport centres #app with flexbox; without this the flex container shrinks
+   the 1920×1080 stage below its natural width BEFORE the JS transform:scale()
+   runs, so it never fills the screen. Pin it to natural size — only scale() sizes it. */
+#viewport > #app { flex: 0 0 auto; }
+
 /* ---- chat pane: floating card, bottom-right ---- */
 #chat-pane {
   position: fixed; z-index: 40;
   right: calc(18px + env(safe-area-inset-right));
   bottom: calc(18px + env(safe-area-inset-bottom));
-  width: 380px; max-width: calc(100vw - 36px);
-  height: 560px; max-height: calc(100dvh - 36px - env(safe-area-inset-bottom));
+  width: 320px; max-width: calc(100vw - 32px);
+  height: 440px; max-height: calc(100dvh - 32px - env(safe-area-inset-bottom));
   display: flex; flex-direction: column;
   box-sizing: border-box; overflow: hidden;
   background: linear-gradient(180deg, #101316 0%, #0c0e10 100%);
