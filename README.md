@@ -97,6 +97,19 @@ no setup; an optional backend TTS provider is one env var away. The queue rules
 are a pure module with their own test suite (`frontend/audio-test.html`, or
 `node frontend/js/run-audio-tests.mjs`). See `docs/PITWALL.md`.
 
+It also has a **screen**. The server serves a live pit stand at `/` (still vanilla
+JS + canvas, still no build step): a scrolling radio feed with per-agent mutes and
+driver push-to-talk, a pit-window lap axis with the window, the fuel-limit lap and
+the finish drawn on it, a 2×2 tyre widget with trend arrows, a timing tower around
+the player with closing/opening gap arrows and blue-flag badges, a flag band that
+takes the full width the moment it stops being green, and a ticker of raw
+deterministic events beneath the AI radio so the two are never confused. Anything
+this session's catalog cannot back reads **`n/a`**, never `0.0`. The header
+switches between **Analysis** and **Pitwall**; the replay controls double as a
+zero-setup demo (`scenario`, no key, no iRacing). Its view model is a pure module
+with its own suite (`frontend/pitwall-test.html`, or
+`node frontend/js/run-pitwall-tests.mjs`).
+
 It is also built to survive a race rather than merely start one: a frame that
 raises costs a frame and is counted, never the pitwall; the agent workers and the
 event pump run under a supervisor that restarts them and *says* it did; an agent
@@ -223,7 +236,8 @@ src/rtv/
              NoopDirector). Planned -- see docs/PITWALL.md stage 5.
   services.py  wiring; main.py  app factory
 mcp_server/  Layer-2 MCP server (telemetry_coach.py)
-frontend/    vanilla-JS radio page + audio-discipline self-test (no build step)
+frontend/    vanilla-JS live pitwall UI (index.html + js/pitwall/), radio page,
+             two self-test pages -- no build step, no frameworks
 evals/       ground-truth checks, LLM judge, golden laps, runner
 docs/        VARIABLES.md (catalog reference), COACHING.md (coaching deep-dive),
              PITWALL.md (v2 pitwall), director_scenario.example.json
@@ -282,9 +296,16 @@ deterministic half — race state, events, replay, and the whole audio-disciplin
 layer — is fully live either way. `--agents` mounts the real four (needs a key),
 `--speed 1` runs it in real time, `--no-browser` just prints the URL.
 
+Open `/` in a second tab while it runs and the **live pit stand** is driven by
+the same replay: the flag band goes yellow on lap 3, the pit-window bar fills in
+on lap 5, the tyre corners and the timing tower move, and the ticker streams the
+raw events beneath it. That page shows agent radio only when the agent layer is
+actually mounted — it does not fall back to the scripted calls, and it says so.
+
 Prefer to drive it by hand? `.\run.ps1` (or `uvicorn rtv.main:app --app-dir src`)
-then open `/radio.html` and press **Replay the scripted race**. The
-audio-discipline self-test is at `/audio-test.html`.
+then open `/` and press **Start** on the replay bar with `scenario` — the whole
+pit stand fills in. `/radio.html` is the listening page on its own; the two
+self-tests are at `/audio-test.html` and `/pitwall-test.html`.
 
 ### Race with the pitwall (live)
 
@@ -297,8 +318,9 @@ $env:RTV_PITWALL_AGENTS = "true"       # opt-in: the agent layer spends money
 # then: POST http://127.0.0.1:8000/api/v1/live/start
 ```
 
-Open `/radio.html` for the voice, `GET /api/v1/pitwall/health` for one-glance
-status, and `POST /api/v1/pitwall/enabled {"enabled": false}` to stop spending
+Open `/` for the live pit stand (radio, strategy, timing tower, ticker),
+`/radio.html` for the voice on its own, `GET /api/v1/pitwall/health` for
+one-glance status, and `POST /api/v1/pitwall/enabled {"enabled": false}` to stop spending
 without stopping capture. `RTV_PITWALL_AGENTS_ONLY=strategist,spotter` runs a
 subset. If you have no key, everything except the four agents still works — the
 race-state engine, `/ws/pitwall`, the event log and the replay driver need
@@ -420,7 +442,7 @@ API, coaching features, MCP server, orchestrator, evals, the race-state engine, 
 pitwall agent layer, the radio voice and the director seam) runs **entirely
 offline** — DuckDB/PyArrow are import-guarded, the LLM layers are driven by
 scripted providers, and the suite is green whether or not `ANTHROPIC_API_KEY` is
-exported. Six offline smoke scripts back it up:
+exported. Seven offline smoke scripts back it up:
 
 | Script | What it drives end to end |
 |---|---|
@@ -430,11 +452,14 @@ exported. Six offline smoke scripts back it up:
 | `scripts/smoke_pitwall_roles.py` | all four agents over a race that keeps locking up at one corner, with a real DuckDB store attached so the coach's corner analysis reaches the genuine Layer-1 extractor |
 | `scripts/smoke_pitwall_voice.py` | the voice path, with a fake vendor transport standing in for a cloud TTS API |
 | `scripts/smoke_pitwall_director.py` | the director seam (scripted vs real safety car) and the five live-path hardening properties |
+| `scripts/smoke_pitwall_ui.py` | the pitwall UI: the shell and every module it imports served over HTTP, a scripted race over `/ws/pitwall` at 10 Hz, the replay round trip, and a session with no fuel or tyre channels degrading to `n/a` |
 
-The browser-side radio queue has its own suite with no JS toolchain at all:
-`node frontend/js/run-audio-tests.mjs`, or open `/audio-test.html`. `pytest` runs
-it when `node` happens to be on `PATH` and skips it otherwise, so the offline
-guarantee is unchanged either way.
+The browser-side modules have their own suites with no JS toolchain at all:
+`node frontend/js/run-audio-tests.mjs` (the radio queue) and
+`node frontend/js/run-pitwall-tests.mjs` (the pitwall view model), or open
+`/audio-test.html` and `/pitwall-test.html`. `pytest` runs both when `node` happens
+to be on `PATH` and skips them otherwise, so the offline guarantee is unchanged
+either way.
 
 ## Docs
 
@@ -443,7 +468,8 @@ guarantee is unchanged either way.
 - `docs/PITWALL.md` — the v2 live pitwall: race-state schema, event catalog, replay,
   the event-driven agent layer (framework, grounding, radio, and the four agents:
   strategist, vehicle engineer, spotter, coach), the TTS radio voice, the planned
-  race-director seam and the live-path hardening. Written as a build log: every
+  race-director seam, the live-path hardening and the live pitwall UI. Written as
+  a build log: every
   stage records what it built, what the next one consumes, and every deviation
   from its spec with the reasoning.
 - `docs/director_scenario.example.json` — a worked `ScenarioScript` for the

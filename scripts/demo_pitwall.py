@@ -53,7 +53,11 @@ STEPS = """
     - a pit call superseded by a newer one before it ever airs
 
   Also worth a look:
-    {base}/audio-test.html   the 20 queue-discipline cases, in-page
+    {base}/                    the live pit stand: strategy, timing tower,
+                               flag band and the deterministic event ticker,
+                               all driven by this same replay
+    {base}/audio-test.html     the 20 queue-discipline cases, in-page
+    {base}/pitwall-test.html   the 34 view-model cases, in-page
     {base}/api/v1/pitwall/health   is anything still watching?
     {base}/docs                    the whole API
 

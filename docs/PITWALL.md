@@ -11,7 +11,7 @@ its spec (with a one-line rationale).
 | **3** | Vehicle engineer / spotter / coach agents | **done** |
 | **4** | TTS radio voice | **done** |
 | **5** | Race-director seam (interfaces only) + live-path hardening + docs | **done** |
-| 6 | Pitwall UI | not started |
+| **6** | Pitwall UI | **done** |
 
 > The **race director itself is planned, not implemented.** Stage 5 ships its
 > schema, its protocol and a `NoopDirector` that injects nothing — plus a test
@@ -2052,3 +2052,381 @@ replaced with one that hands the orchestrator a `ScriptedProvider`. That is the
 same seam the evals and every smoke script use, and it is the only way this can
 be a *default* test — the suite must run with no API key and no network, and the
 agent layer is opt-in precisely so that it never mounts by accident.
+
+---
+---
+
+# Stage 6 — the pit stand
+
+Everything before this stage produced numbers and sentences. This one is the
+first that a human looks at during a race, which changes what "correct" means:
+a value that is subtly wrong is worse than one that is missing, and a value you
+have to hunt for is worse than one that is not there at all.
+
+The result is a second top-level mode of the app, switched in the header:
+
+```
+[ Analysis | Pitwall ]
+```
+
+**Analysis is untouched.** The MoTeC-i2-style worksheets are a separately built
+vanilla-JS app served on its own origin against this API (see deviation 1), so
+Analysis mode is a launcher for it plus the v1 session list — it does not
+re-implement a single worksheet, and no v1 endpoint changed.
+
+---
+
+## The screen
+
+```
++--------------------------------------------------------------------------+
+| Racing Telemetry Visualiser   [Analysis|Pitwall]          radio . api     |
++--------------------------------------------------------------------------+
+|                    YELLOW - FULL COURSE CAUTION                          |  <- 4
+| session  |  LAPS LEFT 7/12  | track/air | feed: REPLAY | AI LIVE 24/400  |
+| replay > [scenario] [4x] [Start] [Stop]              scenario . 4x . 812f |
++------------------------------+-------------------------------------------+
+| # STRATEGIST  Box this lap.. | BOX NOW . lap 5 . 3.0 L . rejoin P8       |  <- 2
+| +--------------------------+ |  |------#########--+------|   lap ^  dry  |
+| | SPOTTER  crit  L5 12:04  | |  4   5   6   7   8   9  10  11  12  13    |
+| | Yellow, yellow! Car..    | | margin -1.00 | fuel 6.00 | tank | per lap |
+| |  > why                   | | +----+----+  LF 88 ^   RF 91 -            |
+| | DRIVER   L5 12:06        | | +----+----+  LR 84     RR 85              |
+| |   `- after your message  | +-------------------------------------------+
+| |     ENGINEER  Fronts..   | | pos car   gap     last lap                |  <- 3
+| +--------------------------+ | P3  #2   +0.60   1:32.418                 |
+| [Enable audio][Radio on] vol | P4  #1   +0.30   1:32.104   <- player     |
+| [mutes x4]  [say something.] | P5  #0   -0.30   1:32.550   BLUE          |
++------------------------------+-------------------------------------------+
+| events  L4 0:42 lockup RF slip 0.42 . L5 0:50 pit window lap 5-7 . ...   |  <- 5
++--------------------------------------------------------------------------+
+```
+
+One socket feeds all five panels, with the three frame types routed by what they
+are rather than by where they are shown:
+
+```
+/ws/pitwall --+-- state  --> coalesced to <=10 Hz --> status strip / strategy / tower
+              +-- radio  --> radio feed + RadioAudioManager (stage 4, unchanged)
+              +-- event  --> ticker (+ tower warnings + the fuel sparkline)
+```
+
+State is coalesced because an old snapshot is worthless once a newer one exists;
+radio and events are never coalesced, for the reasons stages 1 and 2 already gave.
+The socket is subscribed at 10 Hz because that is also the render ceiling — asking
+for 60 would buy frames the app would only throw away, and
+`test_the_socket_subscribes_within_the_render_ceiling` pins the two together.
+
+---
+
+## `n/a` is the whole design
+
+`RaceState.capabilities` says which groups this session's catalog could actually
+back. The UI treats that as load-bearing rather than as diagnostics: **every**
+number on screen goes through a formatter that returns `n/a` for `null`, and no
+panel has a zero-valued default anywhere.
+
+| Missing | What the pit stand shows |
+|---|---|
+| no fuel channels | the pit-window bar draws its axis and says *"no fuel model — pit window unavailable"*; margin, laps of fuel and per-lap are `n/a` |
+| no tyre channels | all four corners render, all four read `n/a`, and the header says *"n/a — no tyre channels"* |
+| no `gap_basis` | every gap is `n/a` and the tower says *"gaps unavailable: no lap time or track length to convert from"* **once**, at the top |
+| no standings channels | *"n/a — this session has no per-car standings channels"* |
+| a corner nobody measured | that corner is `n/a`; the other three still show |
+| `last_lap_time == 0` | unknown, not "zero seconds" |
+
+That last row is the one that would have slipped through. A lap time of `0.0` is
+what the sim reports before a lap has been set; printing `0.000` in a timing tower
+is a number nobody can distinguish from a real one.
+
+---
+
+## Module map (added)
+
+| Module | Role |
+|--------|------|
+| `frontend/index.html` | The app shell: mode switch, status strip, the grid, the ticker, and Analysis mode. |
+| `frontend/css/app.css` | Layout and widgets, scoped under `body.app`. `pitwall.css` stays the single source of the palette. |
+| `frontend/js/pitwall-app.js` | The wiring: socket, modes, render tick, replay bar, driver input, radio controls, polls. |
+| `frontend/js/pitwall/format.js` | **Pure.** Every number-to-string in the app, and the only place `n/a` is produced. |
+| `frontend/js/pitwall/view-model.js` | **Pure.** `RaceState` → what each panel shows. Gap trends, fuel bands, the window axis, tower windowing, ticker lines. |
+| `frontend/js/pitwall/dom.js` | `el()` / `clear()` / `canvas2d()` / `cssVar()`. |
+| `frontend/js/pitwall/status-panel.js` | The strip and the flag band. |
+| `frontend/js/pitwall/strategy-panel.js` | The pit-window canvas, the fuel block, the consumption sparkline, the 2x2 tyres. |
+| `frontend/js/pitwall/tower-panel.js` | The timing tower. |
+| `frontend/js/pitwall/radio-panel.js` | The feed, the on-air strip, driver threading. |
+| `frontend/js/pitwall/ticker-panel.js` | The deterministic event strip. |
+| `frontend/js/pitwall/view-model.test.js` | The 34 assertions both the page and node run. |
+| `frontend/pitwall-test.html` | The in-page self-test. |
+| `frontend/js/run-pitwall-tests.mjs` | The headless runner. |
+
+The split is stage 4's, restated: **what a number means** is pure and tested
+without a browser; **what it looks like** is a panel that takes a view object and
+paints it. A panel with a bug renders badly; a view model with a bug tells the
+driver the wrong thing, so that is the half with the test suite.
+
+---
+
+## The four judgements worth recording
+
+### 1. The flag band is the panel
+
+Green is the absence of news, so it is a 4-pixel hairline. Anything else expands
+to a 30-pixel full-width band in that flag's colour with the phase written across
+it, and yellow and red pulse. "Is there a caution" must never be something you go
+looking for on a screen you are glancing at from a rig.
+
+### 2. A gap trend needs the same two guards the backend needed
+
+`GapTrendTracker` marks a car closing, opening or steady. It refuses to compare
+two samples less than a second apart (noise), **and** it discards any comparison
+that straddles a change of `standings.gap_basis` — when a lap time first becomes
+known, gaps stop being derived from instantaneous speed and *every* gap moves at
+once while nobody has moved. That is the exact false positive stage 3's traffic
+detector had to fix, one layer up, and it is asserted here too.
+
+### 3. The consumption sparkline is the engine's number, not a second one
+
+One point per completed lap, taken from `fuel.per_lap` — the engine's rolling
+mean over green, non-pit laps. Subtracting fuel levels client-side would have
+been easy and would have produced a second answer to "what does a lap cost",
+disagreeing with the strategist's by a tenth. There is one fuel model in this
+system.
+
+### 4. Driver messages thread, but are not called replies
+
+A message you send appears as a `DRIVER` entry, and the calls that follow it
+within 45 s of session time nest underneath — which is how a transcript reads.
+The thread is labelled **"after your message"**, not "reply", because the backend
+deliberately does not route driver messages to the agents (stage-4 deviation 1).
+An unrelated pit call presented as an answer to the driver would be exactly the
+unbacked causal claim the rest of this system refuses to make.
+
+---
+
+## The pit-window bar
+
+A lap axis with four marks, each drawn only if the state carries it:
+
+| Mark | Source | Meaning |
+|---|---|---|
+| caret + line | `player.lap` | where we are |
+| filled span | `fuel.pit_window_earliest_lap` … `_latest_lap` | the window (green when `window_open`) |
+| red edge, labelled `dry` | `player.lap + fuel.laps_remaining` | fractional; where the tank actually empties |
+| amber edge | `player.lap + fuel.laps_to_finish` | the chequered flag |
+
+The axis is computed to contain every mark it has to draw plus a lap either side.
+Drawing a window edge clamped to the end of the axis would read as a decision
+nobody made, so an axis that cannot contain its marks is not drawn at all — the
+panel says why instead. `the pit-window axis contains every mark it has to draw`
+is the check, in the JS suite.
+
+---
+
+## Replay controls, which are also the demo
+
+The replay bar appears when a replay is running **or** when nothing else is
+feeding the engine — which is the same state you start a demo from. It posts to
+the documented API (`/replay/start` with a session id and a speed, `/replay/stop`)
+and reflects `/pitwall/health`'s view of both sources, so it greys out rather than
+producing a 409 when the live poller owns the engine.
+
+Analysis mode's session list carries a **"replay on the pitwall"** button per
+session, which feeds a stored race back through the race-state engine and switches
+modes. `session_id: "scenario"` is the built-in scripted race and needs no capture
+at all — that is the zero-setup demo, and it is what the smoke script drives.
+
+Starting a replay resets the client-side accumulators (gap trends, tower warnings,
+the fuel sparkline). They are per-race by definition; a re-run that showed a
+closing arrow against the previous run's numbers would be worse than showing none.
+
+---
+
+## What the UI consumes (nothing new was added to the API)
+
+Stage 6 added **no endpoints, no env vars and no Python modules**. Everything it
+needs was already exposed by stages 1-5:
+
+| Used for | Endpoint |
+|---|---|
+| everything live | `WS /ws/pitwall` — `state` (10 Hz), `event`, `radio` |
+| ticker prefill | `GET /api/v1/racestate/events?limit=` |
+| radio prefill | `GET /api/v1/pitwall/radio?limit=` (503 = agent layer off, and the panel says so) |
+| AI badge, calls used | `GET /api/v1/pitwall/status` |
+| connection / replay / live state | `GET /api/v1/pitwall/health` |
+| role voices | `GET /api/v1/pitwall/tts` |
+| replay bar | `POST /api/v1/replay/start` · `/stop` |
+| driver input | `POST /api/v1/pitwall/driver-message` |
+| Analysis mode | `GET /api/v1/sessions` (v1) |
+
+`test_the_app_only_calls_documented_endpoints` resolves every `${API}/...` in the
+app against the app's own route table, so a UI that calls a path nobody serves
+fails the suite rather than the race.
+
+Seeded radio history is **shown but never spoken** (`speak: false` on the way into
+the audio manager): the driver has already driven past it, and a reconnect that
+read forty messages back would be its own outage.
+
+---
+
+## Testing something with no build step
+
+Three layers, none of which needed a toolchain.
+
+**1. The pure rules, in JavaScript.** 34 cases over plain objects — degradation,
+fuel bands, the window axis, tower windowing, gap trends, warning expiry, the
+sparkline, ticker lines, the strategist summary.
+
+```powershell
+node frontend/js/run-pitwall-tests.mjs          # headless; exit code is the result
+start http://127.0.0.1:8000/pitwall-test.html   # same module, rendered in-page
+```
+
+**2. The wiring, from Python.** No bundler means no compiler, so the things a
+compiler would have caught are asserted instead: every `import` in the app graph
+resolves to a file **and** is served as `text/javascript`; every element id the
+app reaches for exists on the page; every `data-role` a panel queries and every
+`data-field` a panel writes exists in the markup. A `_set('fuel-margin', ...)`
+against a field that is not there is a silent no-op — precisely the dead control
+this project has no other way of noticing.
+
+**3. The whole thing, booted.** `scripts/smoke_pitwall_ui.py` serves the real
+frontend from the real app, replays the scripted race over `/ws/pitwall` at 10 Hz,
+and checks that state and event frames arrive contract-valid, that the replay bar's
+start/stop round trip works, that all three REST polls answer with **no agent
+layer mounted**, and that a session stripped of its fuel and tyre channels reports
+that in `capabilities` rather than zeroing it.
+
+---
+
+## Deviations from the stage-6 spec
+
+Each is a conservative choice made autonomously, per `CLAUDE.md`.
+
+1. **"The existing analysis app" is not in this repo.** The spec says to add a mode
+   to it. The MoTeC-i2-style worksheets are built separately and served on their
+   own origin against this API (stage-4 deviation 2 recorded the same gap), so
+   there was no analysis UI here to add a mode *to*. The mode switcher is real and
+   both modes are top-level; Analysis mode is a launcher — the v1 session list plus
+   a field for wherever you serve the worksheets, remembered in the page URL. It
+   deliberately re-implements nothing: building a second analysis UI would have
+   been the one thing `CLAUDE.md` forbids most clearly.
+2. **The pitwall is the root page; `/radio.html` stays.** The spec's "new top-level
+   mode" wants one app, and the placeholder index this replaced said it should be.
+   Stage 4's listening page is untouched and still linked, because it is the
+   minimal reproduction when the question is *"is the audio broken or is the UI?"*.
+3. **The timing tower shows `#idx`, not a car number.** `CarState` carries
+   `idx` — the sim's car-index — and no race number; the channel contract in
+   `racestate/channels.py` has nothing that would supply one. Printing a plausible
+   number would be exactly the invented figure this codebase refuses. `#idx` is
+   honest and stable, and a real number channel can replace it without a layout
+   change.
+4. **Driver threading is labelled "after your message", not "reply".** See
+   judgement 4 above.
+5. **The replay bar appears when nothing is feeding the engine**, not only when a
+   replay is already running. The spec says "when in replay mode", but a control
+   that only exists once you are already in replay mode cannot start one — and the
+   spec also says the same control doubles as the demo. It hides itself when the
+   live poller owns the engine, which is the state where a replay would be refused
+   with a 409 anyway.
+6. **Speed applies to the next replay, not the running one.** `ReplayDriver.start`
+   takes a speed; nothing changes one mid-run, and adding an endpoint for it would
+   have been backend work this stage was not asked for. The bar says so when you
+   change it while a replay is in flight.
+7. **The fuel sparkline plots the engine's rolling mean, not per-lap deltas.** See
+   judgement 3.
+8. **No new env var for the analysis app's URL.** It lives in the page URL
+   (`?analysis=...`), like volume, mutes and mode. A server-side setting would have
+   meant a new env var, a new endpoint to read it and a restart to change it, for
+   something that is per-operator rather than per-deployment. `.env.example` is
+   therefore unchanged — stage 6 added no configuration at all.
+9. **The tower's "expand" is a toggle, not a scroll.** The spec says "P±3 at
+   minimum, expandable to full field". Collapsed is exactly P±3 around the player;
+   expanded is the whole running order in the same rows. A full field that is
+   always rendered and scrolled would have meant the player row is sometimes off
+   screen, which is the one row that must never be.
+10. **A second in-page self-test page rather than one combined with the audio
+    one.** `audio-test.html` asserts what the driver *hears*; `pitwall-test.html`
+    asserts what the driver *sees*. Merging them would have coupled two suites that
+    fail for entirely different reasons.
+11. **The pitwall does not inherit `/radio.html`'s scripted-radio fallback.** With
+    no agent layer mounted the radio column stays empty and the page says why (on
+    the AI badge, and again when you start a replay). `/radio.html` may play canned
+    calls because it labels them as scripted and its whole subject is the audio
+    queue; a panel whose entire job is showing what the agents said cannot fill
+    itself with lines no agent produced. `scripts/demo_pitwall.py` therefore still
+    opens `/radio.html` — its documented promise is the audible demo — and now
+    points at `/` as the second thing to look at, driven by the same replay.
+
+### One bug found and fixed en route
+
+The audio manager's `onChange` paints the radio panel, and applying the URL's
+mutes at boot fires it — so the panels had to be constructed **before** the
+manager, not after. In the original order it was a temporal-dead-zone
+`ReferenceError` on the first line of the app, i.e. a completely blank pitwall,
+and nothing in a Python test suite would have seen it. It was caught by booting
+the real `index.html` under a throwaway DOM shim; the ordering now carries a
+comment saying why it is what it is.
+
+---
+
+## Interfaces a later stage consumes
+
+```js
+import { statusView, strategyView, towerView, tyreView, recommendationView,
+         eventLine, marginBand, connectionView, llmView,
+         GapTrendTracker, TowerWarnings, FuelHistory } from '/js/pitwall/view-model.js';
+import { NA, isNum, num, lapTime, clock, gap, signed, trendArrow } from '/js/pitwall/format.js';
+import { el, clear, stat, setText, setClass, canvas2d, cssVar } from '/js/pitwall/dom.js';
+
+window.RTV_PITWALL   // {app, manager, speaker, panels:{status,strategy,tower,radio,ticker}}
+```
+
+A new panel is a class with `render(view)` plus a `data-role` host in
+`index.html`; a new *number* is a field on one of the view builders, which is
+where its `n/a` behaviour gets asserted. A new agent needs nothing here — the
+radio panel keys its badge colour off `RadioMessage.agent`, and an unknown agent
+gets the neutral one.
+
+When a race director is implemented (stage 5), its events already arrive on the
+ticker with a `DIRECTOR` tag: `eventLine()` reads the `injected` / `director_id`
+provenance keys, and the case *"a director-injected event keeps its provenance in
+the ticker"* pins it.
+
+---
+
+## Verification (stage 6)
+
+```powershell
+pytest                                   # 539 passed (493 stage 1-5 + 46 new), fully offline
+python scripts/smoke_pitwall_ui.py       # the UI end to end: shell, socket, replay, degradation
+node frontend/js/run-pitwall-tests.mjs   # 34/34 view-model cases
+node frontend/js/run-audio-tests.mjs     # 20/20 audio-discipline cases, unchanged
+python scripts/smoke_pitwall_director.py # stage 5, unchanged
+python scripts/smoke_pitwall_voice.py    # stage 4, unchanged
+python scripts/smoke_pitwall_roles.py    # stage 3, unchanged
+python scripts/smoke_pitwall_agents.py   # stage 2, unchanged
+python scripts/smoke_pitwall.py          # stage 1, unchanged
+python scripts/smoke_offline.py          # v1 surface, unchanged
+python evals/run_pitwall.py --dry-run    # 24 cases across 4 agents, unchanged
+ruff check src tests scripts evals
+```
+
+New test file: `tests/test_pitwall_ui_frontend.py` (46; one case skips itself when
+node is absent). Green with and without `ANTHROPIC_API_KEY` exported. No iRacing,
+no network, no API key. All 493 stage-1-to-5 tests still pass unmodified — stage 6
+added no Python outside `tests/` and `scripts/`, and touched no v1 route, no
+endpoint and no env var.
+
+## Seeing it
+
+```powershell
+uvicorn rtv.main:app          # then open http://127.0.0.1:8000/
+```
+
+Press **Enable audio** once (browsers make no sound before a gesture), then
+**Start** on the replay bar with `scenario` — the scripted race drives the whole
+screen with no key, no iRacing and no captured session. With
+`RTV_PITWALL_AGENTS=true` and a key exported, the radio column fills with live
+agent output; without them it stays empty and the AI badge says why, which is the
+honest version of a quiet radio.

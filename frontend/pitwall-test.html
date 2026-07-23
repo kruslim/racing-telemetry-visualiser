@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pitwall view model &mdash; self-test</title>
+<link rel="stylesheet" href="/css/pitwall.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='88'>&#9989;</text></svg>">
+</head>
+<body>
+<header>
+  <h1>Pitwall view model &mdash; self-test</h1>
+  <span class="sub">degradation &middot; fuel bands &middot; pit window &middot; gap trends &middot; ticker</span>
+  <nav>
+    <a href="/">pitwall</a>
+    <a href="/audio-test.html">audio self-test</a>
+  </nav>
+</header>
+
+<main>
+  <section class="panel">
+    <h2>Result</h2>
+    <div id="summary" class="summary">running&hellip;</div>
+    <p class="meta">
+      Everything that turns a <code>RaceState</code> into something on screen is a
+      pure function, so an amber margin that should be red is an assertion rather
+      than something you notice at the end of a stint. The same module runs
+      headlessly: <code>node frontend/js/run-pitwall-tests.mjs</code>.
+    </p>
+  </section>
+
+  <section class="panel">
+    <h2>Cases</h2>
+    <table class="results"><tbody id="rows"></tbody></table>
+  </section>
+</main>
+
+<script type="module">
+import { runPitwallTests } from '/js/pitwall/view-model.test.js';
+
+const report = runPitwallTests();
+const rows = document.getElementById('rows');
+for (const result of report.results) {
+  const tr = document.createElement('tr');
+  tr.className = result.ok ? 'pass' : 'fail';
+  const verdict = document.createElement('td');
+  verdict.className = 'verdict';
+  verdict.textContent = result.ok ? 'PASS' : 'FAIL';
+  const name = document.createElement('td');
+  name.textContent = result.name;
+  if (!result.ok) {
+    const error = document.createElement('div');
+    error.className = 'err';
+    error.textContent = result.error;
+    name.appendChild(error);
+  }
+  tr.append(verdict, name);
+  rows.appendChild(tr);
+}
+const summary = document.getElementById('summary');
+summary.textContent = `${report.passed}/${report.total} passed`;
+summary.className = `summary ${report.ok ? 'pass' : 'fail'}`;
+document.title = `${report.ok ? 'PASS' : 'FAIL'} — pitwall view-model self-test`;
+// Readable by any automation that later drives this page in a real browser.
+window.__RTV_PITWALL_TEST__ = report;
+</script>
+</body>
+</html>

@@ -5,33 +5,202 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Racing Telemetry Visualiser &mdash; pitwall</title>
 <link rel="stylesheet" href="/css/pitwall.css">
+<link rel="stylesheet" href="/css/app.css">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='88'>&#127950;</text></svg>">
 </head>
-<body>
+<body class="app">
+
 <header>
   <h1>Racing Telemetry Visualiser</h1>
-  <span class="sub">v2 pitwall</span>
+  <div class="mode-switch" id="mode-switch">
+    <button data-mode="analysis">Analysis</button>
+    <button data-mode="pitwall">Pitwall</button>
+  </div>
+  <nav>
+    <a href="/radio.html">Pitwall radio</a>
+    <a href="/pitwall-test.html">self-test</a>
+    <a href="/docs">api</a>
+  </nav>
 </header>
 
-<main>
-  <section class="panel">
-    <h2>Pages</h2>
-    <div class="row">
-      <a href="/radio.html"><button class="primary">🔊 Pitwall radio</button></a>
-      <a href="/audio-test.html"><button>✅ Audio-discipline self-test</button></a>
-      <a href="/docs"><button>API docs</button></a>
+<p id="app-notice" hidden></p>
+
+<!-- ==================================================================== -->
+<!-- PITWALL MODE                                                          -->
+<!-- ==================================================================== -->
+<section id="mode-pitwall" hidden>
+
+  <!-- 4. STATUS STRIP ------------------------------------------------- -->
+  <div id="status-strip" class="status-strip">
+    <div class="flag-band" data-role="flag-band"></div>
+    <div class="status-row">
+      <div class="status-cell">
+        <span class="k">session</span>
+        <span class="v" data-field="session-state">&mdash;</span>
+        <span class="sub" data-field="session-track">&mdash;</span>
+      </div>
+      <div class="status-cell big-cell">
+        <span class="k" data-field="remaining-unit">remaining</span>
+        <span class="v big" data-field="remaining">&mdash;</span>
+      </div>
+      <div class="status-cell">
+        <span class="k">track / air</span>
+        <span class="v"><span data-field="track-temp">&mdash;</span> / <span data-field="air-temp">&mdash;</span></span>
+      </div>
+      <div class="status-cell">
+        <span class="k">feed</span>
+        <span class="pill" data-field="connection">&hellip;</span>
+        <span class="sub" data-field="connection-detail"></span>
+      </div>
+      <div class="status-cell">
+        <span class="k">pitwall AI</span>
+        <span class="pill" data-field="llm">&hellip;</span>
+        <span class="sub" data-field="llm-detail"></span>
+      </div>
     </div>
-    <p class="meta" style="margin-top:14px">
-      The radio page listens to <code>/ws/pitwall</code> and speaks what the agents
-      say &mdash; browser Web Speech by default, backend TTS when
-      <code>RTV_PITWALL_TTS</code> is configured. Agents only talk when
-      <code>RTV_PITWALL_AGENTS=true</code> and a key is present; the
-      <em>synthetic scenario</em> button on that page needs neither.
-    </p>
-    <p class="meta">
-      This landing page is a placeholder: the full pitwall UI is stage 6.
-    </p>
+    <div class="replay-bar" id="replay-bar" hidden>
+      <span class="k">replay</span>
+      <input id="replay-session" type="text" value="scenario" size="16" aria-label="session id">
+      <select id="replay-speed" aria-label="replay speed">
+        <option value="1">1&times;</option>
+        <option value="2">2&times;</option>
+        <option value="4" selected>4&times;</option>
+        <option value="8">8&times;</option>
+        <option value="0">max</option>
+      </select>
+      <button id="replay-start" class="primary">&#9654; Start</button>
+      <button id="replay-stop">&#9632; Stop</button>
+      <span class="sub" id="replay-progress">idle</span>
+    </div>
+  </div>
+
+  <div class="pitwall-grid">
+
+    <!-- 1. RADIO FEED ------------------------------------------------- -->
+    <section class="panel panel-radio" id="panel-radio">
+      <h2>Radio</h2>
+      <div class="on-air-strip idle" data-role="on-air"></div>
+      <div class="meta" data-role="radio-queue">queued: &mdash;</div>
+      <div class="radio-list" data-role="radio-list">
+        <div class="muted" data-role="radio-empty">
+          Nothing on the radio yet. Agents speak when <code>RTV_PITWALL_AGENTS=true</code>
+          and a key is present; the deterministic ticker below runs regardless.
+        </div>
+      </div>
+
+      <div class="radio-controls">
+        <div class="row">
+          <button id="radio-enable" class="primary">&#128264; Enable audio</button>
+          <button id="radio-master">&#128266; Radio on</button>
+          <label class="k" for="radio-volume">vol</label>
+          <input id="radio-volume" type="range" min="0" max="1" step="0.05">
+          <span class="sub" id="radio-volume-value">90%</span>
+        </div>
+        <div class="row mutes" id="radio-mutes"></div>
+        <div class="row driver-row">
+          <input id="driver-text" type="text" placeholder="say something to the pitwall&hellip;" aria-label="driver message">
+          <button id="driver-send">Send</button>
+        </div>
+        <div class="row" id="driver-ptt-row">
+          <button id="driver-ptt">&#127908; Hold to talk</button>
+          <span class="sub">driver messages join the radio log; they are not routed to the agents</span>
+        </div>
+      </div>
+    </section>
+
+    <div class="right-column">
+
+      <!-- 2. STRATEGY ------------------------------------------------- -->
+      <section class="panel panel-strategy" id="panel-strategy">
+        <h2>Strategy</h2>
+        <div class="recommendation empty" data-role="recommendation"></div>
+
+        <canvas class="pit-window" data-role="pit-window" height="86"></canvas>
+        <div class="meta" data-role="pit-window-legend">&mdash;</div>
+
+        <div class="fuel-block">
+          <div class="stat">
+            <span class="stat-label">margin</span>
+            <span class="stat-value big band-unknown" data-field="fuel-margin">&mdash;</span>
+            <span class="sub" data-field="fuel-margin-l">&mdash;</span>
+          </div>
+          <div class="stat">
+            <span class="stat-label">laps of fuel</span>
+            <span class="stat-value" data-field="fuel-laps">&mdash;</span>
+            <span class="sub">to finish <span data-field="fuel-laps-needed">&mdash;</span></span>
+          </div>
+          <div class="stat">
+            <span class="stat-label">in tank</span>
+            <span class="stat-value" data-field="fuel-level">&mdash;</span>
+            <span class="sub">stint <span data-field="stint">&mdash;</span></span>
+          </div>
+          <div class="stat spark-stat">
+            <span class="stat-label">per lap</span>
+            <span class="stat-value" data-field="fuel-per-lap">&mdash;</span>
+            <canvas class="fuel-spark" data-role="fuel-spark" height="26"></canvas>
+            <span class="sub" data-field="fuel-per-lap-std">&mdash;</span>
+          </div>
+        </div>
+
+        <div class="tyre-head">
+          <span class="k">tyres</span>
+          <span class="sub" data-field="tyre-laps">&mdash;</span>
+        </div>
+        <div class="tyre-grid" data-role="tyre-grid"></div>
+      </section>
+
+      <!-- 3. TIMING TOWER --------------------------------------------- -->
+      <section class="panel panel-tower" id="panel-tower">
+        <h2>Timing tower <button class="ghost" data-role="tower-toggle">&#9660; full field</button></h2>
+        <div class="tower-head">
+          <span class="pos">pos</span><span class="car">car</span>
+          <span class="gap">gap</span><span class="last">last lap</span><span class="status"></span>
+        </div>
+        <div class="tower-body" data-role="tower-body"></div>
+        <div class="meta" data-role="tower-note">&mdash;</div>
+      </section>
+
+    </div>
+  </div>
+
+  <!-- 5. EVENT TICKER --------------------------------------------------- -->
+  <section class="ticker" id="panel-ticker">
+    <span class="ticker-label">events <span class="sub" data-role="ticker-count">0 events</span></span>
+    <div class="ticker-strip" data-role="ticker-strip"></div>
   </section>
-</main>
+
+</section>
+
+<!-- ==================================================================== -->
+<!-- ANALYSIS MODE                                                         -->
+<!-- ==================================================================== -->
+<section id="mode-analysis" hidden>
+  <main>
+    <section class="panel">
+      <h2>Analysis</h2>
+      <p class="meta">
+        The MoTeC-i2-style worksheets are a separate vanilla-JS app served on its own
+        origin against this API (see <code>docs/PITWALL.md</code>). Point this at it once
+        and the link lives in this page&rsquo;s URL &mdash; no storage, same as everything else here.
+      </p>
+      <div class="row">
+        <input id="analysis-url" type="text" size="46" placeholder="http://127.0.0.1:8080/Telemetry%20Analysis.html" aria-label="analysis app URL">
+        <button id="analysis-open" class="primary">Open analysis app</button>
+        <button id="analysis-refresh">&#8635; Refresh sessions</button>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Captured sessions</h2>
+      <div id="analysis-sessions" class="sessions"></div>
+      <p class="meta">
+        <code>GET /api/v1/sessions</code>. &ldquo;Replay on the pitwall&rdquo; feeds a stored
+        session back through the race-state engine and switches to Pitwall mode.
+      </p>
+    </section>
+  </main>
+</section>
+
+<script type="module" src="/js/pitwall-app.js"></script>
 </body>
 </html>
