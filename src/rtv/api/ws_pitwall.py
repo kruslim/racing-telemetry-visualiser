@@ -9,6 +9,9 @@ different value profiles:
 * ``event`` -- pushed the instant it is published and **never coalesced**. A
   lock-up or a yellow flag is a discrete fact; dropping one to save bandwidth
   would silently lie to the strategist consuming this feed.
+* ``radio`` -- an agent's call, already prioritised and de-duplicated by the
+  :class:`~rtv.pitwall.radio.RadioFeed`. Also never coalesced: the feed has
+  already decided what was worth saying, and this socket must not second-guess it.
 """
 
 from __future__ import annotations
@@ -44,6 +47,8 @@ async def pitwall_ws(ws: WebSocket) -> None:
 
     rate = {"hz": DEFAULT_RATE_HZ}
     sub = engine.bus.subscribe(name="ws-pitwall")
+    pitwall = services.pitwall
+    radio_sub = pitwall.feed.subscribe(name="ws-pitwall") if pitwall is not None else None
 
     # Open with the current state so a client is never blank while it waits.
     await _send(ws, {"type": "state", "state": engine.snapshot().to_api()})
@@ -87,14 +92,27 @@ async def pitwall_ws(ws: WebSocket) -> None:
             for event in events:
                 await _send(ws, {"type": "event", "event": event.to_api()})
 
+    async def radio_sender() -> None:
+        assert radio_sub is not None
+        while True:
+            messages = await radio_sub.next_messages(timeout=1.0)
+            for message in messages:
+                await _send(ws, {"type": "radio", "message": message.to_api()})
+
+    senders = [receiver(), state_sender(), event_sender()]
+    if radio_sub is not None:
+        senders.append(radio_sender())
+
     try:
-        await asyncio.gather(receiver(), state_sender(), event_sender())
+        await asyncio.gather(*senders)
     except WebSocketDisconnect:
         pass
     except Exception as exc:  # pragma: no cover
         log.debug("pitwall ws closed: %s", exc)
     finally:
         sub.close()
+        if radio_sub is not None:
+            radio_sub.close()
         try:
             await ws.close()
         except Exception:

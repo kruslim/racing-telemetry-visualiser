@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import os
 import threading
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -15,6 +16,9 @@ from rtv.ingest.frame import Frame
 from rtv.ingest.ibt import import_ibt
 from rtv.ingest.live import LivePoller
 from rtv.logging import get_logger
+from rtv.pitwall.orchestrator import PitwallOrchestrator
+from rtv.pitwall.radio import RadioFeed
+from rtv.racestate.detectors import DEFAULT_CONFIG
 from rtv.racestate.engine import RaceStateEngine
 from rtv.racestate.replay import ReplayDriver
 from rtv.store.duck import Database
@@ -98,6 +102,9 @@ class AppServices:
     #: v2 pitwall; both are None when RTV_PITWALL is false.
     engine: RaceStateEngine | None = None
     replay: ReplayDriver | None = None
+    #: v2 pitwall agent layer; None when RTV_PITWALL_AGENTS is false or the
+    #: ``ai`` extra / ANTHROPIC_API_KEY is absent (see build_services).
+    pitwall: PitwallOrchestrator | None = None
 
     def close(self) -> None:
         try:
@@ -120,13 +127,21 @@ def build_services(settings: Settings) -> AppServices:
 
     engine: RaceStateEngine | None = None
     replay: ReplayDriver | None = None
+    pitwall: PitwallOrchestrator | None = None
     if settings.pitwall:
         engine = RaceStateEngine(
             source="live",
             gap_interval=settings.pitwall_gap_interval,
             fuel_laps=settings.pitwall_fuel_laps,
+            config=replace(
+                DEFAULT_CONFIG,
+                stint_milestone_laps=settings.pitwall_stint_milestone_laps,
+                fuel_margin_laps=settings.pitwall_fuel_margin_laps,
+            ),
         )
         replay = ReplayDriver(engine)
+        if settings.pitwall_agents:
+            pitwall = build_pitwall(engine, settings)
 
     def on_frame(frame: Frame, catalog) -> None:
         hub.publish_frame(frame, catalog)
@@ -160,4 +175,53 @@ def build_services(settings: Settings) -> AppServices:
         imports=imports,
         engine=engine,
         replay=replay,
+        pitwall=pitwall,
+    )
+
+
+def build_pitwall(
+    engine: RaceStateEngine, settings: Settings
+) -> PitwallOrchestrator | None:
+    """Assemble the agent layer, or return None when it cannot run.
+
+    The provider is constructed lazily and defensively: with no ``anthropic``
+    package and no ``ANTHROPIC_API_KEY`` there is nothing to talk to, so the layer
+    stays unmounted rather than failing at the first race event. That is what keeps
+    the default test path free of any network dependency.
+    """
+    from rtv.pitwall.agents import build_agents
+
+    if not os.environ.get("ANTHROPIC_API_KEY"):
+        log.info(
+            "Pitwall agents disabled: ANTHROPIC_API_KEY is not set. "
+            "The deterministic race-state engine is unaffected."
+        )
+        return None
+    try:
+        from rtv.pitwall.provider import AnthropicProvider
+
+        provider = AnthropicProvider()
+    except Exception:  # pragma: no cover - the ai extra is optional
+        log.warning(
+            "Pitwall agents disabled: the 'ai' extra is not installed "
+            '(pip install -e ".[ai]").'
+        )
+        return None
+
+    agents = build_agents(
+        models={"strategist": settings.pitwall_strategist_model
+                or settings.pitwall_agent_model_reasoning}
+    )
+    agents = [replace(spec, cooldown_s=settings.pitwall_agent_cooldown_s) for spec in agents]
+    return PitwallOrchestrator(
+        engine,
+        provider,
+        agents,
+        feed=RadioFeed(history=settings.pitwall_radio_history),
+        max_inflight=settings.pitwall_max_inflight,
+        enabled=settings.pitwall_agents_live,
+        tool_config={
+            "pit_lane_loss_s": settings.pitwall_pit_lane_loss_s,
+            "standings_window": 3,
+        },
     )

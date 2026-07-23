@@ -73,6 +73,65 @@ class Settings(BaseSettings):
         description="Green laps in the rolling fuel-consumption mean.",
     )
 
+    pitwall_stint_milestone_laps: int = Field(
+        default=5,
+        ge=1,
+        description="Emit a stint_lap_milestone event every N green laps on a set. "
+        "This is the strategist's periodic wake-up, and it is lap-driven, not timed.",
+    )
+    pitwall_fuel_margin_laps: float = Field(
+        default=1.0,
+        description="Laps of slack to the finish below which fuel_margin_low fires.",
+    )
+
+    # --- pitwall agents (v2 stage 2: event-driven LLM layer) -------------
+    pitwall_agents: bool = Field(
+        default=False,
+        description="Mount the agent layer, the radio feed and /api/v1/pitwall/*. "
+        "Off by default because it spends money: a key exported for the Layer-3 "
+        "coach must not silently start billing for live race radio. Agents still "
+        "call no model until a race event fires a trigger.",
+    )
+    pitwall_agents_live: bool = Field(
+        default=True,
+        description="Global kill switch applied at startup. False mounts the agent "
+        "layer but never invokes a model (radio stays silent).",
+    )
+    pitwall_agent_model_fast: str = Field(
+        default="claude-haiku-4-5-20251001",
+        description="Model for high-frequency, low-stakes agents.",
+    )
+    pitwall_agent_model_reasoning: str = Field(
+        default="claude-sonnet-4-6",
+        description="Model for strategy-grade reasoning.",
+    )
+    pitwall_strategist_model: str = Field(
+        default="",
+        description="Override the strategist's model. Empty = the reasoning model.",
+    )
+    pitwall_max_inflight: int = Field(
+        default=2,
+        ge=1,
+        le=16,
+        description="Cap on concurrent in-flight agent LLM calls.",
+    )
+    pitwall_agent_cooldown_s: float = Field(
+        default=30.0,
+        ge=0.0,
+        description="Default minimum session-seconds between invocations per trigger type.",
+    )
+    pitwall_pit_lane_loss_s: float = Field(
+        default=25.0,
+        gt=0.0,
+        description="Seconds lost to a green-flag pit stop; the input to the "
+        "deterministic rejoin-position projection.",
+    )
+    pitwall_radio_history: int = Field(
+        default=200,
+        ge=1,
+        description="Radio messages kept in the ring buffer for late joiners.",
+    )
+
     # --- server ----------------------------------------------------------
     host: str = "127.0.0.1"
     port: int = 8000

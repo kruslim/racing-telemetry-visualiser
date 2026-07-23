@@ -40,7 +40,11 @@ class EventType(StrEnum):
     PIT_EXIT = "pit_exit"
     STINT_START = "stint_start"
     PIT_WINDOW_OPEN = "pit_window_open"
+    PIT_WINDOW_CLOSING = "pit_window_closing"
+    FUEL_MARGIN_LOW = "fuel_margin_low"
     FUEL_CRITICAL = "fuel_critical"
+    STINT_LAP_MILESTONE = "stint_lap_milestone"
+    RIVAL_PITTED = "rival_pitted"
     BLUE_FLAG = "blue_flag"
 
 

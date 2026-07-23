@@ -50,6 +50,17 @@ class DetectorConfig:
 
     # fuel
     fuel_critical_laps: float = 1.5  # laps of fuel left before it is critical
+    #: Laps of slack (laps_remaining - laps_to_finish) below which the strategist
+    #: wants to know. Fires once per stint, re-armed on refuel.
+    fuel_margin_laps: float = 1.0
+
+    # strategy triggers (deterministic; consumed by the pitwall agent layer)
+    #: Laps before the run-dry bound at which the pit window counts as closing.
+    pit_window_closing_laps: int = 1
+    #: Emit a stint milestone every N green laps on the current set.
+    stint_milestone_laps: int = 5
+    #: A rival's stop is only reported when they are within N positions.
+    rival_position_window: int = 3
 
 
 DEFAULT_CONFIG = DetectorConfig()

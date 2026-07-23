@@ -72,6 +72,16 @@ Main/Reference against your own.
 ### 6. Three-layer AI coaching
 The centrepiece. See below.
 
+### 7. A live multi-agent pitwall
+A deterministic race-state engine maintains gaps, fuel consumption, tyre trends and
+pit-window bounds at 60 Hz with **no LLM anywhere** (avg 0.03 ms/frame), and emits
+typed race events. Agents — the strategist today, more to come — are woken **only**
+when an event fires one of their triggers, so a race costs a handful of model calls
+rather than a per-tick bill. Every figure an agent says is checked in-loop against
+the data it was actually shown; one that can't be traced becomes a grounded refusal
+rather than a confident guess. Output merges into a single prioritised radio feed
+where critical calls pre-empt and stale advice supersedes. See `docs/PITWALL.md`.
+
 ---
 
 ## The AI coaching system
@@ -144,7 +154,10 @@ src/rtv/
   stream/    live hub (fan-out)
   api/       FastAPI routes + /ws/live
   coaching/  Layer-1 feature extraction, models, Layer-3 orchestrator
-  racestate/ v2 pitwall: deterministic race-state engine, detectors, event bus, replay
+  racestate/ v2 pitwall: deterministic race-state engine, detectors, event bus,
+             replay, strategy math
+  pitwall/   v2 pitwall: agent framework, tools, citation validator, radio feed,
+             orchestrator, agents/ (strategist)
   services.py  wiring; main.py  app factory
 mcp_server/  Layer-2 MCP server (telemetry_coach.py)
 evals/       ground-truth checks, LLM judge, golden laps, runner
@@ -196,6 +209,8 @@ evals.
 | POST | `/live/start` · `/live/stop` · GET `/live/status` | Live poller control |
 | GET | `/racestate` · `/racestate/events` | Live race state + event log (pitwall) |
 | POST | `/replay/start` · `/replay/stop` · GET `/replay/status` | Replay a stored or synthetic session |
+| GET | `/pitwall/status` · `/pitwall/radio` | Agent layer status + the merged radio feed |
+| POST | `/pitwall/enabled` · `/pitwall/agents/{name}/enabled` | Kill switch + per-agent flags |
 | GET | `/health` | Liveness |
 
 ### WebSocket `/ws/live`
@@ -215,32 +230,38 @@ evals.
 ### WebSocket `/ws/pitwall`
 
 Full `RaceState` snapshots at a client-chosen rate (latest-wins), plus every race
-event pushed immediately and never coalesced. See `docs/PITWALL.md`.
+event and every agent radio call pushed immediately and never coalesced. See
+`docs/PITWALL.md`.
 
 ```jsonc
 {"op":"subscribe","rate_hz":10}                        // client -> server
 {"type":"state","state":{ /* RaceState */ }}           // server -> client
 {"type":"event","event":{"key":"pit_window_open", "severity":"advisory", ...}}
+{"type":"radio","message":{"agent":"strategist","priority":"critical",
+                           "spoken_text":"Box this lap, 3.0 litres, we come out P8."}}
 ```
 
 ---
 
 ## Testing
 
-The full `pytest` suite (~110 tests across catalog, decode, store round-trip, laps,
-API, coaching features, MCP server, orchestrator, evals, and the race-state engine)
-runs **entirely offline** — DuckDB/PyArrow are import-guarded, the LLM layers are
-mocked, no iRacing install and no `ANTHROPIC_API_KEY` required. Two offline smoke
-scripts back it up: `scripts/smoke_offline.py` pushes a synthetic session through
-the real storage writer via FastAPI's `TestClient`, and `scripts/smoke_pitwall.py`
-replays a scripted synthetic race through the race-state engine and asserts the
-resulting event sequence.
+The full `pytest` suite (~200 tests across catalog, decode, store round-trip, laps,
+API, coaching features, MCP server, orchestrator, evals, the race-state engine and
+the pitwall agent layer) runs **entirely offline** — DuckDB/PyArrow are
+import-guarded, the LLM layers are driven by scripted providers, and the suite is
+green whether or not `ANTHROPIC_API_KEY` is exported. Three offline smoke scripts
+back it up: `scripts/smoke_offline.py` pushes a synthetic session through the real
+storage writer via FastAPI's `TestClient`, `scripts/smoke_pitwall.py` replays a
+scripted synthetic race through the race-state engine and asserts the resulting
+event sequence, and `scripts/smoke_pitwall_agents.py` drives the whole agent layer
+— tool loop, citation validator and radio queue — over that same race.
 
 ## Docs
 
 - `docs/VARIABLES.md` — the standard iRacing variable set and the six-type system.
 - `docs/COACHING.md` — the tiered coaching architecture in depth.
-- `docs/PITWALL.md` — the v2 live pitwall: race-state schema, event catalog, replay.
+- `docs/PITWALL.md` — the v2 live pitwall: race-state schema, event catalog, replay,
+  and the event-driven agent layer (framework, grounding, radio, strategist).
 
 ## License
 

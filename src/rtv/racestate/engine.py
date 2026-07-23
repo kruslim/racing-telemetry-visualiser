@@ -142,7 +142,12 @@ class RaceStateEngine:
             self._fuel_used: deque[float] = deque(maxlen=self._fuel_laps)
             self._fuel_at_lap_start: float | None = None
             self._pit_window_announced = False
+            self._pit_window_closing_announced = False
+            self._fuel_margin_announced = False
             self._fuel_critical_announced = False
+
+            # strategy triggers
+            self._rival_pit_state: dict[int, bool] = {}
 
             # stint / tyres
             self._lap_had_pit = False
@@ -324,7 +329,7 @@ class RaceStateEngine:
         if caps.conditions:
             self._update_conditions(values)
         if caps.standings and (state.version % self._gap_interval == 0):
-            self._update_standings(values)
+            self._update_standings(values, events)
 
         self._run_detectors(frame, events)
         self._check_lap_boundary(frame, events)
@@ -462,7 +467,9 @@ class RaceStateEngine:
             c.track_temp_trend = round(slope * 60.0, 5) if slope is not None else None
 
     # ---- standings + gaps -----------------------------------------------
-    def _update_standings(self, values: Mapping[str, Any]) -> None:
+    def _update_standings(
+        self, values: Mapping[str, Any], events: list[RaceEvent] | None = None
+    ) -> None:
         st = self._state.standings
         pcts = values.get(ch.CAR_IDX_LAP_DIST_PCT)
         if not isinstance(pcts, (list, tuple)):
@@ -549,6 +556,47 @@ class RaceStateEngine:
                         delta += 1.0
                     car.gap_to_player = round(delta * scale, 3)
         st.cars = order
+        if events is not None:
+            self._detect_rival_stops(order, player, events)
+
+    def _detect_rival_stops(
+        self, order: list[CarState], player: CarState | None, events: list[RaceEvent]
+    ) -> None:
+        """Edge-detect a nearby rival entering the pits.
+
+        Standings-derived, like the blue flag: one source of truth, and testable
+        offline without the sim having told us anything extra. Only rivals within
+        ``rival_position_window`` places matter -- a car two laps down stopping is
+        not a strategic event for us.
+        """
+        window = self.config.rival_position_window
+        player_pos = player.position if player is not None else None
+        for car in order:
+            if car.is_player or car.on_pit_road is None:
+                continue
+            was = self._rival_pit_state.get(car.idx)
+            self._rival_pit_state[car.idx] = car.on_pit_road
+            if was is not False or car.on_pit_road is not True:
+                continue  # not a green->pit edge (or the first sighting)
+            if (
+                player_pos is not None
+                and car.position is not None
+                and abs(car.position - player_pos) > window
+            ):
+                continue
+            events.append(
+                self._event(
+                    EventType.RIVAL_PITTED,
+                    Severity.ADVISORY,
+                    {
+                        "car_idx": car.idx,
+                        "position": car.position,
+                        "player_position": player_pos,
+                        "gap_to_player": car.gap_to_player,
+                        "lap": car.lap,
+                    },
+                )
+            )
 
     def _reference_lap_time(self, cars: list[CarState]) -> float | None:
         """A lap time we can defend: the player's, else the field's best."""
@@ -668,6 +716,8 @@ class RaceStateEngine:
             # A refuel re-arms the fuel warnings.
             self._fuel_critical_announced = False
             self._pit_window_announced = False
+            self._pit_window_closing_announced = False
+            self._fuel_margin_announced = False
             self._fuel_at_lap_start = self._state.fuel.level
             events.append(
                 self._event(
@@ -732,6 +782,25 @@ class RaceStateEngine:
             p.laps_on_tyres += 1
         self._roll_fuel(lap, clean, events)
         self._roll_tyres(lap, clean)
+
+        # A stint milestone is a *lap-count* event, not a timer: it is the
+        # deterministic cadence the strategist is allowed to wake up on.
+        every = self.config.stint_milestone_laps
+        if clean and every > 0 and p.laps_on_tyres > 0 and p.laps_on_tyres % every == 0:
+            events.append(
+                self._event(
+                    EventType.STINT_LAP_MILESTONE,
+                    Severity.INFO,
+                    {
+                        "lap": lap,
+                        "stint": p.stint,
+                        "laps_on_tyres": p.laps_on_tyres,
+                        "every": every,
+                        "lap_time": lap_time,
+                        "fuel_per_lap": self._state.fuel.per_lap,
+                    },
+                )
+            )
 
         # Re-arm the per-lap accumulators for the lap now starting.
         self._last_lap = completion["new_lap"]
@@ -822,6 +891,51 @@ class RaceStateEngine:
                         "earliest_lap": fuel.pit_window_earliest_lap,
                         "latest_lap": fuel.pit_window_latest_lap,
                         "laps_remaining": fuel.laps_remaining,
+                        "per_lap": per_lap,
+                    },
+                )
+            )
+
+        # The window is *closing* once the run-dry bound is within reach. Distinct
+        # from "open": open says a stop is available, closing says it is now urgent.
+        if (
+            fuel.window_open
+            and not self._pit_window_closing_announced
+            and fuel.pit_window_latest_lap is not None
+            and current_lap is not None
+            and current_lap >= fuel.pit_window_latest_lap - self.config.pit_window_closing_laps
+        ):
+            self._pit_window_closing_announced = True
+            events.append(
+                self._event(
+                    EventType.PIT_WINDOW_CLOSING,
+                    Severity.ADVISORY,
+                    {
+                        "lap": current_lap,
+                        "latest_lap": fuel.pit_window_latest_lap,
+                        "laps_remaining": fuel.laps_remaining,
+                        "per_lap": per_lap,
+                    },
+                )
+            )
+
+        # Margin is slack against the *finish*, not against running dry: it can go
+        # negative many laps before fuel_critical, and that is the strategist's cue.
+        if (
+            fuel.margin_laps is not None
+            and fuel.margin_laps < self.config.fuel_margin_laps
+            and not self._fuel_margin_announced
+        ):
+            self._fuel_margin_announced = True
+            events.append(
+                self._event(
+                    EventType.FUEL_MARGIN_LOW,
+                    Severity.ADVISORY,
+                    {
+                        "lap": current_lap,
+                        "margin_laps": fuel.margin_laps,
+                        "margin_l": fuel.margin_l,
+                        "threshold_laps": self.config.fuel_margin_laps,
                         "per_lap": per_lap,
                     },
                 )

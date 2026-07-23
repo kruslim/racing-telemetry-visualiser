@@ -31,8 +31,18 @@ from rtv.racestate.replay import (
     store_source,
 )
 from rtv.racestate.scenario import ScenarioSpec, scenario_catalog, scenario_frames
+from rtv.racestate.strategy_math import (
+    DEFAULT_PIT_LANE_LOSS_S,
+    PitOutcome,
+    fuel_projection,
+    simulate_pit_outcome,
+    standings_around_player,
+    stint_history,
+    tyre_trend,
+)
 
 __all__ = [
+    "DEFAULT_PIT_LANE_LOSS_S",
     "Capabilities",
     "CarState",
     "DetectorConfig",
@@ -40,6 +50,7 @@ __all__ = [
     "EventType",
     "FlagPhase",
     "FuelState",
+    "PitOutcome",
     "PlayerState",
     "RaceEvent",
     "RaceState",
@@ -51,9 +62,14 @@ __all__ = [
     "StandingsState",
     "Subscription",
     "TyreState",
+    "fuel_projection",
     "replay_scenario",
     "scenario_catalog",
     "scenario_frames",
     "scenario_source",
+    "simulate_pit_outcome",
+    "standings_around_player",
+    "stint_history",
     "store_source",
+    "tyre_trend",
 ]
