@@ -15,6 +15,8 @@ from rtv.ingest.frame import Frame
 from rtv.ingest.ibt import import_ibt
 from rtv.ingest.live import LivePoller
 from rtv.logging import get_logger
+from rtv.racestate.engine import RaceStateEngine
+from rtv.racestate.replay import ReplayDriver
 from rtv.store.duck import Database
 from rtv.store.repository import Repository
 from rtv.store.writer import TelemetryWriter
@@ -93,12 +95,19 @@ class AppServices:
     hub: LiveHub
     poller: LivePoller
     imports: ImportJobManager
+    #: v2 pitwall; both are None when RTV_PITWALL is false.
+    engine: RaceStateEngine | None = None
+    replay: ReplayDriver | None = None
 
     def close(self) -> None:
         try:
-            self.poller.stop()
+            if self.replay is not None:
+                self.replay.stop()
         finally:
-            self.db.close()
+            try:
+                self.poller.stop()
+            finally:
+                self.db.close()
 
 
 def build_services(settings: Settings) -> AppServices:
@@ -109,8 +118,24 @@ def build_services(settings: Settings) -> AppServices:
     coaching = CoachingService(repo)
     hub = LiveHub()
 
+    engine: RaceStateEngine | None = None
+    replay: ReplayDriver | None = None
+    if settings.pitwall:
+        engine = RaceStateEngine(
+            source="live",
+            gap_interval=settings.pitwall_gap_interval,
+            fuel_laps=settings.pitwall_fuel_laps,
+        )
+        replay = ReplayDriver(engine)
+
     def on_frame(frame: Frame, catalog) -> None:
         hub.publish_frame(frame, catalog)
+        if engine is not None:
+            # Never let a race-state fault break live capture or the /ws/live feed.
+            try:
+                engine.on_frame(frame, catalog)
+            except Exception:  # pragma: no cover - defensive on the hot path
+                log.exception("Race-state update failed at tick %s", frame.tick)
 
     def on_state(state: ConnectionState, session_id: str | None) -> None:
         hub.publish_state(state, session_id)
@@ -133,4 +158,6 @@ def build_services(settings: Settings) -> AppServices:
         hub=hub,
         poller=poller,
         imports=imports,
+        engine=engine,
+        replay=replay,
     )

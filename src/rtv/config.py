@@ -55,6 +55,24 @@ class Settings(BaseSettings):
         "The ANTHROPIC_API_KEY env var is read directly by the Anthropic SDK.",
     )
 
+    # --- pitwall (v2: deterministic race-state engine + agents) ----------
+    pitwall: bool = Field(
+        default=True,
+        description="Enable the race-state engine, /api/v1/racestate, /ws/pitwall "
+        "and the replay driver. Disable to run the v1 surface alone.",
+    )
+    pitwall_gap_interval: int = Field(
+        default=6,
+        ge=1,
+        description="Recompute standings gaps every Nth frame (6 @ 60 Hz = 10 Hz). "
+        "Everything cheaper than gaps still updates every frame.",
+    )
+    pitwall_fuel_laps: int = Field(
+        default=5,
+        ge=1,
+        description="Green laps in the rolling fuel-consumption mean.",
+    )
+
     # --- server ----------------------------------------------------------
     host: str = "127.0.0.1"
     port: int = 8000

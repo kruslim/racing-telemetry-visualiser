@@ -12,9 +12,11 @@ from rtv.api import (
     routes_catalog,
     routes_coaching,
     routes_ingest,
+    routes_racestate,
     routes_sessions,
     routes_telemetry,
     ws,
+    ws_pitwall,
 )
 from rtv.config import get_settings
 from rtv.logging import configure_logging, get_logger
@@ -68,6 +70,11 @@ def create_app() -> FastAPI:
     app.include_router(routes_coaching.router, prefix=API_PREFIX)
     app.include_router(routes_ingest.router, prefix=API_PREFIX)
     app.include_router(ws.router)  # /ws/live (no prefix)
+
+    # v2 pitwall surface, behind RTV_PITWALL. The v1 routes above are unaffected.
+    if get_settings().pitwall:
+        app.include_router(routes_racestate.router, prefix=API_PREFIX)
+        app.include_router(ws_pitwall.router)  # /ws/pitwall (no prefix)
 
     @app.get("/api/v1/health", tags=["meta"])
     def health() -> dict:

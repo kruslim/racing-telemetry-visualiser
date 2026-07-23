@@ -144,6 +144,7 @@ src/rtv/
   stream/    live hub (fan-out)
   api/       FastAPI routes + /ws/live
   coaching/  Layer-1 feature extraction, models, Layer-3 orchestrator
+  racestate/ v2 pitwall: deterministic race-state engine, detectors, event bus, replay
   services.py  wiring; main.py  app factory
 mcp_server/  Layer-2 MCP server (telemetry_coach.py)
 evals/       ground-truth checks, LLM judge, golden laps, runner
@@ -193,6 +194,8 @@ evals.
 | GET | `/coaching/lap-findings?session_id=…&main_lap=5&ref_lap=3` | Layer-1 corner findings |
 | POST | `/import` · GET `/import/{job_id}` | Async `.ibt` import + status |
 | POST | `/live/start` · `/live/stop` · GET `/live/status` | Live poller control |
+| GET | `/racestate` · `/racestate/events` | Live race state + event log (pitwall) |
+| POST | `/replay/start` · `/replay/stop` · GET `/replay/status` | Replay a stored or synthetic session |
 | GET | `/health` | Liveness |
 
 ### WebSocket `/ws/live`
@@ -209,21 +212,35 @@ evals.
 {"type":"data","tick":91234,"t":123.45,"v":{"Speed":61.2,"RPM":7400},"flags":{"SessionFlags":{"green":true}}}
 ```
 
+### WebSocket `/ws/pitwall`
+
+Full `RaceState` snapshots at a client-chosen rate (latest-wins), plus every race
+event pushed immediately and never coalesced. See `docs/PITWALL.md`.
+
+```jsonc
+{"op":"subscribe","rate_hz":10}                        // client -> server
+{"type":"state","state":{ /* RaceState */ }}           // server -> client
+{"type":"event","event":{"key":"pit_window_open", "severity":"advisory", ...}}
+```
+
 ---
 
 ## Testing
 
-The full `pytest` suite (~50 tests across catalog, decode, store round-trip, laps,
-API, coaching features, MCP server, orchestrator, and evals) runs **entirely
-offline** — DuckDB/PyArrow are import-guarded, the LLM layers are mocked, no
-iRacing install and no `ANTHROPIC_API_KEY` required. There's also an offline HTTP
-smoke test (`scripts/smoke_offline.py`) that pushes a synthetic session through the
-real storage writer via FastAPI's `TestClient`.
+The full `pytest` suite (~110 tests across catalog, decode, store round-trip, laps,
+API, coaching features, MCP server, orchestrator, evals, and the race-state engine)
+runs **entirely offline** — DuckDB/PyArrow are import-guarded, the LLM layers are
+mocked, no iRacing install and no `ANTHROPIC_API_KEY` required. Two offline smoke
+scripts back it up: `scripts/smoke_offline.py` pushes a synthetic session through
+the real storage writer via FastAPI's `TestClient`, and `scripts/smoke_pitwall.py`
+replays a scripted synthetic race through the race-state engine and asserts the
+resulting event sequence.
 
 ## Docs
 
 - `docs/VARIABLES.md` — the standard iRacing variable set and the six-type system.
 - `docs/COACHING.md` — the tiered coaching architecture in depth.
+- `docs/PITWALL.md` — the v2 live pitwall: race-state schema, event catalog, replay.
 
 ## License
 
