@@ -61,6 +61,9 @@ class ScenarioSpec:
     yellow_to_pct: float = 0.80
 
     lockup_lap: int = 4
+    #: Extra laps that lock up at the *same* corner, for the recurrence tests.
+    #: Empty by default so the ground-truth scenario stays byte-identical.
+    lockup_laps: tuple[int, ...] = ()
     lockup_from_pct: float = 0.40
     lockup_to_pct: float = 0.42
     lockup_wheel_ratio: float = 0.60  # front wheel speed as a fraction of car speed
@@ -71,6 +74,12 @@ class ScenarioSpec:
     pit_exit_pct: float = 0.15
 
     base_speed: float = 40.0  # m/s
+    #: Lap fractions carrying a scripted corner (a speed dip deep enough for the
+    #: Layer-1 corner detector to find). Empty by default: the ground-truth
+    #: scenario is a smooth sinusoid and must stay byte-identical.
+    corner_pcts: tuple[float, ...] = ()
+    corner_depth: float = 22.0  # m/s scrubbed off at the apex
+    corner_half_width_pct: float = 0.04
     lap_length_m: float = 4000.0
     player_idx: int = 0
     lap_time_spread: float = 0.05  # per-car last-lap-time increment
@@ -150,14 +159,36 @@ def scenario_catalog(spec: ScenarioSpec | None = None) -> Catalog:
 
 
 def scenario_session_info(spec: ScenarioSpec | None = None) -> dict:
-    """The session-info document the replay driver feeds to the engine."""
+    """The session-info document the replay driver feeds to the engine.
+
+    Shaped like a real iRacing document: ``WeekendInfo`` for the track,
+    ``DriverInfo`` for the car scalars and ``CarSetup`` for the setup sheet the
+    vehicle engineer's ``get_setup_snapshot`` reads.
+    """
     spec = spec or ScenarioSpec()
     return {
         "WeekendInfo": {
             "TrackName": "synthetic-circuit",
             "TrackDisplayName": "Synthetic Circuit",
             "TrackLength": f"{spec.lap_length_m / 1000.0:.2f} km",
-        }
+        },
+        "DriverInfo": {
+            "DriverCarIdx": spec.player_idx,
+            "DriverCarFuelMaxLtr": spec.fuel_capacity,
+            "DriverCarMaxFuelPct": 1.0,
+            "DriverCarRedLine": 7500.0,
+        },
+        "CarSetupUpdateCount": 1,
+        "CarSetup": {
+            "Chassis": {
+                "Front": {"BrakePressureBias": "54.0%", "ArbSize": "Medium"},
+                "LeftFront": {"ColdPressure": "165 kPa", "Camber": "-3.4 deg"},
+                "RightFront": {"ColdPressure": "165 kPa", "Camber": "-3.2 deg"},
+                "LeftRear": {"ColdPressure": "160 kPa", "Camber": "-2.1 deg"},
+                "RightRear": {"ColdPressure": "160 kPa", "Camber": "-2.0 deg"},
+            },
+            "TiresAero": {"AeroSettings": {"RearWingSetting": "7"}},
+        },
     }
 
 
@@ -170,6 +201,27 @@ def _in_span(lap: int, pct: float, at_lap: int, lo: float, hi: float) -> bool:
 
 def _after(lap: int, pct: float, at_lap: int, at_pct: float) -> bool:
     return (lap, pct) >= (at_lap, at_pct)
+
+
+def _corner_dip(pct: float, spec: ScenarioSpec) -> float:
+    """Speed scrubbed off by the nearest scripted corner, as a raised cosine.
+
+    A smooth sinusoidal lap has no local minimum prominent enough for the Layer-1
+    corner detector, so a scenario that needs a *corner* has to script one. Opt-in
+    via ``ScenarioSpec.corner_pcts``; wrapped at the start/finish line so a corner
+    can sit anywhere on the lap.
+    """
+    if not spec.corner_pcts:
+        return 0.0
+    half = spec.corner_half_width_pct
+    worst = 0.0
+    for apex in spec.corner_pcts:
+        delta = abs(pct - apex)
+        delta = min(delta, 1.0 - delta)  # the lap is a loop
+        if delta >= half:
+            continue
+        worst = max(worst, spec.corner_depth * 0.5 * (1.0 + math.cos(math.pi * delta / half)))
+    return worst
 
 
 def scenario_frames(spec: ScenarioSpec | None = None) -> Iterator[Frame]:
@@ -199,8 +251,10 @@ def scenario_frames(spec: ScenarioSpec | None = None) -> Iterator[Frame]:
             # --- scripted phases ---------------------------------------
             yellow = _in_span(lap, pct, spec.yellow_lap, spec.yellow_from_pct,
                               spec.yellow_to_pct)
-            locking = _in_span(lap, pct, spec.lockup_lap, spec.lockup_from_pct,
-                               spec.lockup_to_pct)
+            locking = any(
+                _in_span(lap, pct, at, spec.lockup_from_pct, spec.lockup_to_pct)
+                for at in (spec.lockup_lap, *spec.lockup_laps)
+            )
             in_pits = _after(lap, pct, spec.pit_entry_lap, spec.pit_entry_pct) and not (
                 _after(lap, pct, spec.pit_exit_lap, spec.pit_exit_pct)
             )
@@ -228,7 +282,8 @@ def scenario_frames(spec: ScenarioSpec | None = None) -> Iterator[Frame]:
                 speed = spec.base_speed
                 throttle, brake = 0.0, 0.9
             else:
-                speed = spec.base_speed + 8.0 * math.sin(angle)
+                dip = _corner_dip(pct, spec)
+                speed = max(8.0, spec.base_speed + 8.0 * math.sin(angle) - dip)
                 throttle = max(0.0, math.sin(angle))
                 brake = max(0.0, -math.sin(angle)) * 0.5
 

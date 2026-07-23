@@ -46,6 +46,12 @@ class EventType(StrEnum):
     STINT_LAP_MILESTONE = "stint_lap_milestone"
     RIVAL_PITTED = "rival_pitted"
     BLUE_FLAG = "blue_flag"
+    #: A one-off lockup is noise; the same one at the same corner three laps
+    #: running is a finding. Aggregated deterministically before any agent wakes.
+    RECURRING_ISSUE = "recurring_issue"
+    TYRE_OUT_OF_BAND = "tyre_out_of_band"
+    CAR_HEALTH_WARNING = "car_health_warning"
+    TRAFFIC_CLOSE = "traffic_close"
 
 
 class FlagPhase(StrEnum):

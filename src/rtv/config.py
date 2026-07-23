@@ -84,6 +84,52 @@ class Settings(BaseSettings):
         description="Laps of slack to the finish below which fuel_margin_low fires.",
     )
 
+    # --- deterministic aggregation (stage 3 agent triggers) --------------
+    pitwall_corner_buckets: int = Field(
+        default=20,
+        ge=4,
+        le=100,
+        description="Lap fractions the track is split into when deciding whether two "
+        "lockups happened at 'the same corner'. 20 = 5%% of a lap.",
+    )
+    pitwall_recurrence_min: int = Field(
+        default=3,
+        ge=2,
+        description="Repeats of one issue at one corner before recurring_issue fires. "
+        "This is what keeps a single lockup from costing an LLM call.",
+    )
+    pitwall_recurrence_window_laps: int = Field(
+        default=5,
+        ge=1,
+        description="Only repeats within this many laps of each other count.",
+    )
+    pitwall_tyre_temp_trend_c: float = Field(
+        default=3.0,
+        gt=0.0,
+        description="Degrees per lap of sustained tyre-temperature drift across a "
+        "stint before tyre_out_of_band fires.",
+    )
+    pitwall_tyre_axle_imbalance_c: float = Field(
+        default=15.0,
+        gt=0.0,
+        description="Left-to-right tyre temperature spread across one axle that "
+        "counts as out of band. Relative, so it needs no per-car knowledge.",
+    )
+    pitwall_oil_temp_max_c: float = Field(
+        default=130.0,
+        description="Oil temperature above which car_health_warning fires.",
+    )
+    pitwall_water_temp_max_c: float = Field(
+        default=105.0,
+        description="Water temperature above which car_health_warning fires.",
+    )
+    pitwall_traffic_gap_s: float = Field(
+        default=1.5,
+        gt=0.0,
+        description="Track-position gap inside which a car counts as close, for the "
+        "spotter's traffic_close trigger.",
+    )
+
     # --- pitwall agents (v2 stage 2: event-driven LLM layer) -------------
     pitwall_agents: bool = Field(
         default=False,
@@ -108,6 +154,21 @@ class Settings(BaseSettings):
     pitwall_strategist_model: str = Field(
         default="",
         description="Override the strategist's model. Empty = the reasoning model.",
+    )
+    pitwall_vehicle_engineer_model: str = Field(
+        default="",
+        description="Override the vehicle engineer's model. Empty = the fast model.",
+    )
+    pitwall_spotter_model: str = Field(
+        default="", description="Override the spotter's model. Empty = the fast model."
+    )
+    pitwall_coach_model: str = Field(
+        default="", description="Override the live coach's model. Empty = the fast model."
+    )
+    pitwall_agents_only: str = Field(
+        default="",
+        description="Comma-separated agent names to mount. Empty mounts all of them; "
+        "'strategist,spotter' is how a deployment runs a subset without code changes.",
     )
     pitwall_max_inflight: int = Field(
         default=2,

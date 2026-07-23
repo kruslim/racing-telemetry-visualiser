@@ -1,9 +1,16 @@
-"""Deterministic ground-truth checks for the STRATEGIST — no LLM, no network.
+"""Deterministic ground-truth checks for the pitwall agents — no LLM, no network.
 
 The same idea as :mod:`evals.checks`, applied to a decision instead of a lap
 report. The race-state engine already knows the truth: what the pit window is,
-what a stop on a given lap would actually cost, whether a caution is out. So a
-strategist's call is scoreable arithmetic, not a vibe:
+what a stop on a given lap would actually cost, whether a caution is out, which
+corner the lockups were at. So an agent's call is scoreable arithmetic, not a vibe.
+
+The strategist's checks are below; the vehicle engineer's, the spotter's and the
+coach's are at the bottom of the file, dispatched by :func:`check_for_agent`.
+Grounding and radio discipline are identical for all four; everything else is
+scored against what that role's deterministic trigger actually said.
+
+For the strategist:
 
 ===========================  ================================================
 grounding                    every figure it said traces to the state or a tool
@@ -171,22 +178,295 @@ def cross_check(
 
 
 def aggregate(rows: list[dict]) -> dict:
-    """Roll per-case results up into headline metrics."""
+    """Roll per-case results up into headline metrics.
+
+    The check keys differ per agent, so they are discovered from the rows rather
+    than hard-coded -- a mixed run reports the union and simply omits a rate for
+    an agent that does not carry that check.
+    """
     if not rows:
         return {"cases": 0}
     n = len(rows)
-    keys = (
-        "grounding_ok",
-        "radio_ok",
-        "decision_ok",
-        "window_ok",
-        "rejoin_ok",
-        "refusal_ok",
-    )
+    keys = [k for k in dict.fromkeys(k for r in rows for k in r) if k.endswith("_ok")]
     out: dict[str, Any] = {"cases": n}
     for key in keys:
-        out[key.replace("_ok", "_rate")] = sum(1 for r in rows if r[key]) / n
+        scored = [r for r in rows if key in r]
+        out[key.replace("_ok", "_rate")] = (
+            sum(1 for r in scored if r[key]) / len(scored) if scored else 0.0
+        )
     out["mean_score"] = sum(r["score"] for r in rows) / n
     out["total_ungrounded"] = sum(len(r["ungrounded"]) for r in rows)
     out["clean_cases"] = sum(1 for r in rows if not r["issues"])
     return out
+
+
+# ==========================================================================
+# stage 3: the vehicle engineer / spotter / coach
+# ==========================================================================
+#
+# Same idea, different ground truth. A pit call is scored against arithmetic; a
+# role call is scored against *what the deterministic trigger actually said*. The
+# engine already decided that three lockups happened at C08 and that the LF trend
+# is 2.0 C/lap, so an engineer that answers "rears are graining at C13" is wrong
+# by comparison, not by opinion.
+
+#: What each agent is allowed to conclude from each kind of trigger. A band, not
+#: one right answer -- the same recurrence is legitimately a brake or a tyre
+#: finding -- but "the fronts are cooking" is not a defensible answer to a tow.
+ENGINEER_FINDINGS: dict[str, set[str]] = {
+    "lockup": {"brake_lockup", "tyre_temps", "none"},
+    "wheelspin": {"traction", "tyre_temps", "none"},
+    "offtrack": {"traction", "brake_lockup", "none"},
+    "tyre_temp": {"tyre_temps", "none"},
+    "tyre_temp_trend": {"tyre_temps", "none"},
+    "tyre_axle_imbalance": {"tyre_temps", "none"},
+    "tyre_pressure": {"tyre_pressures", "none"},
+    "tyre_pressure_trend": {"tyre_pressures", "none"},
+    "engine_warning": {"car_health", "damage"},
+    "tow": {"damage", "car_health"},
+    "oil_temp": {"car_health"},
+    "water_temp": {"car_health"},
+}
+
+SPOTTER_THREATS: dict[str, set[str]] = {
+    "traffic_close": {"car_closing", "clear"},
+    "blue_flag": {"lapped_traffic", "clear"},
+    "flag_change": {"hazard", "clear"},
+    "incident": {"hazard", "clear"},
+}
+
+COACH_THEMES: dict[str, set[str]] = {
+    "lockup": {"braking", "line", "tyre_management", "none"},
+    "wheelspin": {"throttle", "line", "tyre_management", "none"},
+    "offtrack": {"line", "braking", "consistency", "none"},
+    "stint_lap_milestone": {
+        "braking",
+        "throttle",
+        "line",
+        "consistency",
+        "tyre_management",
+        "none",
+    },
+}
+
+#: A spotter call is shorter than radio generally: ten words is already long.
+SPOTTER_WORD_LIMIT = 14
+
+
+def _base_checks(result: dict, facts: FactSet | None, state: RaceState) -> tuple[dict, list]:
+    """Grounding and radio discipline, which every agent is held to identically."""
+    issues: list[str] = []
+    spoken = result.get("spoken_text", "") or ""
+    detail = result.get("detail_text", "") or ""
+    if facts is None:
+        facts = FactSet()
+        facts.add("race_state", state.to_api())
+    report = validate_output(spoken, detail, facts)
+    if report.unsupported:
+        issues.append(
+            "ungrounded figures: " + ", ".join(report.unsupported) + " (not in the race state)"
+        )
+    if report.over_word_limit:
+        issues.append(f"spoken_text is {report.word_count} words; radio limit is 25")
+    return (
+        {
+            "grounding_ok": not report.unsupported,
+            "radio_ok": not report.over_word_limit,
+            "_report": report,
+            "_spoken": spoken,
+        },
+        issues,
+    )
+
+
+def _finish(checks: dict, issues: list[str], extra: dict) -> dict:
+    report = checks.pop("_report")
+    checks.pop("_spoken", None)
+    scored = {k: v for k, v in checks.items() if k.endswith("_ok")}
+    return {
+        **scored,
+        "score": sum(1 for v in scored.values() if v) / len(scored),
+        "numbers": len(report.numbers),
+        "ungrounded": list(report.unsupported),
+        "issues": issues,
+        **extra,
+    }
+
+
+def engineer_check(
+    result: dict[str, Any],
+    state: RaceState,
+    event,
+    *,
+    facts: FactSet | None = None,
+    setup_available: bool = False,
+) -> dict:
+    """Score one vehicle-engineer advisory against the trigger that caused it."""
+    checks, issues = _base_checks(result, facts, state)
+    data = result.get("data") or result
+    payload = getattr(event, "payload", {}) or {}
+    finding = data.get("finding")
+
+    kind = payload.get("issue") or payload.get("measure") or ""
+    allowed = ENGINEER_FINDINGS.get(kind)
+    checks["finding_ok"] = allowed is None or finding in allowed
+    if not checks["finding_ok"]:
+        issues.append(
+            f"finding {finding!r} is outside the defensible set {sorted(allowed)} "
+            f"for a {kind!r} trigger"
+        )
+
+    # A corner is a fact the event carries. Naming a different one is invention.
+    corner = data.get("corner")
+    event_corner = payload.get("corner")
+    checks["corner_ok"] = (
+        corner is None or event_corner is None or str(corner) == str(event_corner)
+    )
+    if not checks["corner_ok"]:
+        issues.append(f"named corner {corner!r} but the event is at {event_corner!r}")
+
+    # Setup advice without a setup sheet is the classic ungrounded engineer.
+    checks["setup_ok"] = setup_available or not data.get("setup_note")
+    if not checks["setup_ok"]:
+        issues.append("recommended a setup change but no CarSetup was available")
+
+    # With no tyre channels, a tyre finding cannot be backed by anything.
+    tyre_blind = not state.capabilities.tyres
+    checks["refusal_ok"] = not (
+        tyre_blind and finding in ("tyre_temps", "tyre_pressures")
+    )
+    if not checks["refusal_ok"]:
+        issues.append("claimed a tyre finding but this session has no tyre channels")
+
+    return _finish(
+        checks, issues, {"finding": finding, "allowed_findings": sorted(allowed or [])}
+    )
+
+
+def spotter_check(
+    result: dict[str, Any],
+    state: RaceState,
+    event,
+    *,
+    facts: FactSet | None = None,
+) -> dict:
+    """Score one spotter call: right threat, right car, right side, few words."""
+    checks, issues = _base_checks(result, facts, state)
+    spoken = checks["_spoken"]
+    data = result.get("data") or result
+    payload = getattr(event, "payload", {}) or {}
+    threat = data.get("threat")
+
+    allowed = SPOTTER_THREATS.get(event.event_type.value)
+    checks["threat_ok"] = allowed is None or threat in allowed
+    if not checks["threat_ok"]:
+        issues.append(
+            f"threat {threat!r} is outside the defensible set {sorted(allowed)} "
+            f"for {getattr(event, 'key', '?')}"
+        )
+
+    claimed = data.get("car_idx")
+    known = {c.idx for c in state.standings.cars}
+    event_car = payload.get("car_idx")
+    if claimed is None:
+        checks["car_ok"] = True
+    elif event_car is not None:
+        checks["car_ok"] = int(claimed) == int(event_car)
+    else:
+        checks["car_ok"] = int(claimed) in known
+    if not checks["car_ok"]:
+        issues.append(f"named car {claimed} but the event is about car {event_car}")
+
+    side = data.get("side", "unknown")
+    event_side = payload.get("side")
+    checks["side_ok"] = (
+        side == "unknown" or event_side is None or side == event_side
+    )
+    if not checks["side_ok"]:
+        issues.append(f"said {side!r} but the event says {event_side!r}")
+
+    words = len(spoken.split())
+    checks["brevity_ok"] = words <= SPOTTER_WORD_LIMIT
+    if not checks["brevity_ok"]:
+        issues.append(f"spotter call is {words} words; the limit is {SPOTTER_WORD_LIMIT}")
+
+    # No gap basis means the seconds do not exist for this session.
+    checks["refusal_ok"] = bool(state.standings.gap_basis) or not _quotes_a_gap(result)
+    if not checks["refusal_ok"]:
+        issues.append("quoted a gap in seconds but this session has no gap basis")
+
+    return _finish(checks, issues, {"threat": threat, "allowed_threats": sorted(allowed or [])})
+
+
+def _quotes_a_gap(result: dict[str, Any]) -> bool:
+    text = f"{result.get('spoken_text', '')} {result.get('detail_text', '')}".lower()
+    return any(word in text for word in ("second", "sec ", "secs", "s behind", "s back"))
+
+
+def coach_check(
+    result: dict[str, Any],
+    state: RaceState,
+    event,
+    *,
+    facts: FactSet | None = None,
+    telemetry_available: bool = False,
+) -> dict:
+    """Score one coaching cue: right theme, right corner, one instruction."""
+    checks, issues = _base_checks(result, facts, state)
+    data = result.get("data") or result
+    payload = getattr(event, "payload", {}) or {}
+    theme = data.get("theme")
+
+    kind = payload.get("issue") or event.event_type.value
+    allowed = COACH_THEMES.get(kind)
+    checks["theme_ok"] = allowed is None or theme in allowed
+    if not checks["theme_ok"]:
+        issues.append(
+            f"theme {theme!r} is outside the defensible set {sorted(allowed)} for {kind!r}"
+        )
+
+    corner = data.get("corner")
+    event_corner = payload.get("corner")
+    checks["corner_ok"] = (
+        corner is None
+        or event_corner is None
+        or str(corner) == str(event_corner)
+        or str(corner).startswith("T")  # a Layer-1 label from get_corner_detail
+    )
+    if not checks["corner_ok"]:
+        issues.append(f"coached corner {corner!r} but the pattern is at {event_corner!r}")
+
+    checks["telemetry_ok"] = telemetry_available or not data.get("from_telemetry")
+    if not checks["telemetry_ok"]:
+        issues.append("claimed a telemetry-backed cue but no corner trace was available")
+
+    cue = (data.get("cue") or "").strip()
+    checks["one_cue_ok"] = bool(cue) if theme != "none" else True
+    if not checks["one_cue_ok"]:
+        issues.append("gave a theme but no cue the driver can act on")
+
+    return _finish(checks, issues, {"theme": theme, "allowed_themes": sorted(allowed or [])})
+
+
+#: agent name -> its scorer. ``cross_check`` keeps the strategist's signature so
+#: the stage-2 harness and its tests are untouched.
+ROLE_CHECKS = {
+    "vehicle_engineer": engineer_check,
+    "spotter": spotter_check,
+    "coach": coach_check,
+}
+
+
+def check_for_agent(
+    agent: str,
+    result: dict[str, Any],
+    state: RaceState,
+    event,
+    **kwargs: Any,
+) -> dict:
+    """Score one answer with whichever checker that agent's role calls for."""
+    if agent in ROLE_CHECKS:
+        return ROLE_CHECKS[agent](result, state, event, **kwargs)
+    kwargs.pop("setup_available", None)
+    kwargs.pop("telemetry_available", None)
+    return cross_check(result, state, **kwargs)

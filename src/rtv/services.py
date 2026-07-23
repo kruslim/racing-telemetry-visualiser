@@ -137,11 +137,19 @@ def build_services(settings: Settings) -> AppServices:
                 DEFAULT_CONFIG,
                 stint_milestone_laps=settings.pitwall_stint_milestone_laps,
                 fuel_margin_laps=settings.pitwall_fuel_margin_laps,
+                corner_buckets=settings.pitwall_corner_buckets,
+                recurrence_min=settings.pitwall_recurrence_min,
+                recurrence_window_laps=settings.pitwall_recurrence_window_laps,
+                tyre_temp_trend_c_per_lap=settings.pitwall_tyre_temp_trend_c,
+                tyre_axle_imbalance_c=settings.pitwall_tyre_axle_imbalance_c,
+                oil_temp_max_c=settings.pitwall_oil_temp_max_c,
+                water_temp_max_c=settings.pitwall_water_temp_max_c,
+                traffic_gap_s=settings.pitwall_traffic_gap_s,
             ),
         )
         replay = ReplayDriver(engine)
         if settings.pitwall_agents:
-            pitwall = build_pitwall(engine, settings)
+            pitwall = build_pitwall(engine, settings, coaching=coaching, repo=repo)
 
     def on_frame(frame: Frame, catalog) -> None:
         hub.publish_frame(frame, catalog)
@@ -154,6 +162,20 @@ def build_services(settings: Settings) -> AppServices:
 
     def on_state(state: ConnectionState, session_id: str | None) -> None:
         hub.publish_state(state, session_id)
+        if engine is None or not session_id:
+            return
+        # Name the live session on the engine, and pick the session-info document
+        # up out of the store the poller has just written it to. Doing it here
+        # rather than adding a callback keeps LivePoller (v1 ingest) untouched,
+        # and it is what makes get_setup_snapshot and the Layer-1 half of
+        # get_corner_detail work live rather than only in replay.
+        try:
+            engine.set_session_id(session_id)
+            info = repo.get_session_info(session_id)
+            if info:
+                engine.set_session_info(info)
+        except Exception:  # pragma: no cover - never break the live feed
+            log.exception("Could not attach session info for %s", session_id)
 
     poller = LivePoller(
         writer,
@@ -180,7 +202,11 @@ def build_services(settings: Settings) -> AppServices:
 
 
 def build_pitwall(
-    engine: RaceStateEngine, settings: Settings
+    engine: RaceStateEngine,
+    settings: Settings,
+    *,
+    coaching: CoachingService | None = None,
+    repo: Repository | None = None,
 ) -> PitwallOrchestrator | None:
     """Assemble the agent layer, or return None when it cannot run.
 
@@ -208,10 +234,27 @@ def build_pitwall(
         )
         return None
 
+    fast = settings.pitwall_agent_model_fast
+    only = [n.strip() for n in settings.pitwall_agents_only.split(",") if n.strip()]
     agents = build_agents(
-        models={"strategist": settings.pitwall_strategist_model
-                or settings.pitwall_agent_model_reasoning}
+        models={
+            "strategist": settings.pitwall_strategist_model
+            or settings.pitwall_agent_model_reasoning,
+            "vehicle_engineer": settings.pitwall_vehicle_engineer_model or fast,
+            "spotter": settings.pitwall_spotter_model or fast,
+            "coach": settings.pitwall_coach_model or fast,
+        },
+        only=only or None,
     )
+    if not agents:
+        log.warning(
+            "Pitwall agents disabled: RTV_PITWALL_AGENTS_ONLY=%r matched no agent.",
+            settings.pitwall_agents_only,
+        )
+        return None
+    # RTV_PITWALL_AGENT_COOLDOWN_S is the *fallback* for a trigger that names no
+    # cooldown of its own; every trigger currently names one, so the per-agent
+    # cadences below (45 s engineer, 15 s spotter, 120 s coach) are what apply.
     agents = [replace(spec, cooldown_s=settings.pitwall_agent_cooldown_s) for spec in agents]
     return PitwallOrchestrator(
         engine,
@@ -223,5 +266,11 @@ def build_pitwall(
         tool_config={
             "pit_lane_loss_s": settings.pitwall_pit_lane_loss_s,
             "standings_window": 3,
+            "corner_buckets": settings.pitwall_corner_buckets,
+            "oil_temp_max_c": settings.pitwall_oil_temp_max_c,
+            "water_temp_max_c": settings.pitwall_water_temp_max_c,
         },
+        # The Layer-1 coaching service and its repository, so get_corner_detail
+        # reads the *same* deterministic corner analysis the v1 endpoints serve.
+        tool_extras={"coaching": coaching, "repo": repo},
     )

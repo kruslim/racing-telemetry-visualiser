@@ -8,7 +8,7 @@ its spec (with a one-line rationale).
 |-------|-------|--------|
 | **1** | Deterministic race-state engine + event bus + replay | **done** |
 | **2** | Agent framework + orchestrator + strategist | **done** |
-| 3 | Vehicle engineer / spotter / coach agents | not started |
+| **3** | Vehicle engineer / spotter / coach agents | **done** |
 | 4 | TTS radio voice | not started |
 | 5 | Director + stub hardening | not started |
 | 6 | Pitwall UI | not started |
@@ -127,6 +127,10 @@ except for flag changes which render as `flag_change:<phase>`.
 | `stint_lap_milestone` | info | every N green laps on the current set | `stint`, `laps_on_tyres`, `every`, `lap_time` |
 | `rival_pitted` | advisory | a nearby car's `CarIdxOnPitRoad` goes false→true | `car_idx`, `position`, `gap_to_player` |
 | `blue_flag` | advisory | a car ≥0.7 laps up is closing within 2.5 s | `car_idx`, `gap`, `laps_ahead` |
+| `recurring_issue` | advisory | *N* of the same issue at the same corner inside *W* laps | `issue`, `corner`, `occurrences`, `laps[]`, `worst_slip` |
+| `tyre_out_of_band` | advisory | a tyre measure leaves its band (see stage 3) | `measure`, `corner`, `value`, `threshold` |
+| `car_health_warning` | critical / advisory | an engine warning bit, a tow, or oil/water over the limit | `measure`, `warnings[]`, `value`, `threshold` |
+| `traffic_close` | advisory | a car is inside the gap threshold *and* closing | `car_idx`, `gap`, `side`, `closing_rate_s_per_s` |
 
 The five events added in stage 2 exist so the strategist can be woken by *facts*
 rather than by a clock. `stint_lap_milestone` in particular is the periodic
@@ -139,9 +143,15 @@ next to. "Open" says a stop is *available*; "closing" says it is now urgent.
 before `fuel_critical` (slack against **running dry**) — which is exactly the
 lead time a strategist needs.
 
-**Latching.** Continuous detectors (lockup, wheelspin, blue flag) fire once per
-episode: they re-arm only after the condition clears, with a cooldown floor. Edge
-detectors (pit, off-track, incident, lap, flag) are naturally one-shot.
+**Latching.** Continuous detectors (lockup, wheelspin, blue flag, traffic) fire
+once per episode: they re-arm only after the condition clears, with a cooldown
+floor. Edge detectors (pit, off-track, incident, lap, flag) are naturally
+one-shot. `tyre_out_of_band` and `car_health_warning` latch by **measure**, so an
+oil warning after a water one still fires; the tyre latch re-arms on new rubber.
+
+The last four rows were added in stage 3 and are all **aggregates**: they exist so
+an agent is never woken by a single observation. See "Deterministic aggregation"
+below.
 
 ---
 
@@ -603,7 +613,8 @@ python evals/run_pitwall.py             # the real strategist (needs a key)
 ## Interfaces stage 3 consumes
 
 Adding the vehicle engineer, spotter and coach is **one new module plus one
-registry entry**:
+registry entry**. (Stage 3 did exactly that — the real specs are below; the sketch
+here is what stage 2 predicted, kept because the prediction held.)
 
 ```python
 # src/rtv/pitwall/agents/spotter.py
@@ -721,3 +732,393 @@ New test files: `tests/test_strategy_math.py` (17), `tests/test_pitwall_framewor
 `tests/test_pitwall_agents_api.py` (11). Green with and without
 `ANTHROPIC_API_KEY` exported. No iRacing, no network. All 110 stage-1 tests still
 pass unmodified.
+
+---
+---
+
+# Stage 3 — the rest of the pitwall
+
+Three more agents: the **vehicle engineer**, the **spotter** and the live
+**coach**. The stage-2 claim was that this would be configuration rather than
+framework work, and it very nearly was: three new modules under
+`src/rtv/pitwall/agents/`, one registry line, four new tools, four new
+deterministic events — and exactly one field added to the framework.
+
+## The four agents, and why they cannot say each other's sentences
+
+| agent | owns | wakes on | model tier |
+|---|---|---|---|
+| `strategist` | when we stop and what we take on | fuel, flags, rivals | reasoning |
+| `vehicle_engineer` | what state the car is in | recurrence, tyres, health, stint end | fast |
+| `spotter` | what is around us right now | traffic, blue flags, hazards | fast |
+| `coach` | how the car is being driven | repeated mistakes, offs, stint pace | fast |
+
+Separation is enforced three ways, none of which is a prompt instruction:
+
+1. **The state slice is a permission.** The spotter is handed flags, the player
+   and the running order — no fuel, no tyres, no car health. It is not that it is
+   *told* not to quote a fuel number; the number is not in its fact set, so the
+   validator rejects it and the call becomes a grounded refusal. Same for the
+   engineer (no standings, no fuel) and the coach (no standings, no fuel).
+2. **The tool list is a permission.** No role agent can reach
+   `simulate_pit_outcome` or `get_fuel_projection`. A model that calls one anyway
+   gets `{"error": "Unknown tool ..."}` back, and nothing it would have returned
+   ever enters the fact set. Both halves are asserted in
+   `tests/test_pitwall_roles.py`.
+3. **The subject key scopes supersede.** The engineer's subject is the *system*
+   (`tyres` / `grip` / `car_health`), so two tyre advisories collapse but a tyre
+   note and an oil note both survive. The coach's is a single `coaching` slot: one
+   cue stands at a time.
+
+---
+
+## Deterministic aggregation — where the money is saved
+
+This is the substantive stage-3 idea. Stage 2 established that an agent is woken by
+an *event*; the trouble is that a driver on a bad set locks the fronts twenty times
+a stint, and twenty LLM calls to say "you're locking the fronts" is both expensive
+and terrible radio.
+
+So the aggregation happens in the engine, before any agent exists:
+
+```
+lockup (lap 1, C08)   --+
+lockup (lap 2, C08)   --+-->  CornerRecurrence  -->  recurring_issue
+lockup (lap 4, C08)   --+      (3 in 5 laps)          (one event, one call)
+```
+
+`racestate/detectors.CornerRecurrence` buckets lap distance into corners, counts
+repeats per `(issue, corner)`, and returns a payload only on the *N*-th inside a
+*W*-lap window. The singles still reach the bus — the UI wants them — but no
+trigger references them. `scripts/smoke_pitwall_roles.py` asserts this directly:
+three scripted lockups wake **nobody**, and the one aggregate wakes two agents.
+
+Re-arming is by **new repeats since the last call**, not by running total. A
+running-total rule ("fire again at 2N") can never fire twice, because the lap
+window caps the total at *W*. Getting that wrong would have turned a recurring
+problem into a one-time notification for the rest of the race.
+
+| Knob | Env var | Default |
+|---|---|---|
+| corner buckets per lap | `RTV_PITWALL_CORNER_BUCKETS` | 20 (5 % of a lap) |
+| repeats before it is a finding | `RTV_PITWALL_RECURRENCE_MIN` | 3 |
+| lap window they must fall in | `RTV_PITWALL_RECURRENCE_WINDOW_LAPS` | 5 |
+
+**Corner labels are `C00`–`C19`, not circuit corner numbers.** Without a track map
+we do not know where T7 is, and naming it would be exactly the unbacked figure the
+rest of this system refuses to produce. The payload carries the lap-fraction range
+so a UI can point at it, and every prompt says so explicitly.
+
+### Tyre bands without inventing a "normal" tyre temperature
+
+`detect_tyre_condition` reports the worst single way a set is out of band. The
+absolute limits (`tyre_temp_max_c` and friends) are **`None` by default**: a
+correct operating window is a per-car number nobody told us, and picking one would
+be a guess dressed as a threshold. What is on by default are the two *relative*
+measures, which need no per-car knowledge:
+
+- **drift** — |per-lap trend| across the current stint, ≥ 3 °C/lap or 2 kPa/lap,
+  and only once at least three stint laps have been completed;
+- **axle imbalance** — left-to-right spread across one axle ≥ 15 °C.
+
+An operator who knows their car sets the absolute band and gets that as well.
+
+### Car health
+
+The sim's own `EngineWarnings` bits come first, because that is the car speaking
+rather than us inferring — minus `pit_speed_limiter` and `rev_limiter_active`,
+which are normal driving. Then a tow (`PlayerCarTowTime > 0`, the closest thing to
+a damage channel this catalog has), then oil/water over their configured limits.
+The payload says which it was, so the engineer can distinguish "the car is telling
+us" from "we think", and the prompt requires it to.
+
+### Traffic
+
+`traffic_close` needs the car to be inside `RTV_PITWALL_TRAFFIC_GAP_S` **and**
+closing at ≥ 0.15 s per second, measured against a gap sampled a second earlier.
+Proximity alone is not news — in a tight race someone is within a second for the
+whole stint.
+
+One subtlety worth recording: the sample is discarded when `gap_basis` changed
+between the two readings. When a lap time first becomes known, gaps stop being
+derived from instantaneous speed and *every* gap moves at once while no car moved.
+Before this guard, the scripted race produced a phantom "car closing at 3.4 s/s"
+on lap 1.
+
+---
+
+## New tools
+
+| Tool | Returns | Unavailable when |
+|---|---|---|
+| `get_recent_detector_events` | filtered slice of the event ring buffer | nothing of those types yet |
+| `get_car_health` | health scalars **plus the thresholds they were judged against** | no health channels in the catalog |
+| `get_setup_snapshot` | `CarSetup` verbatim from the session-info YAML | no document, or no `CarSetup` section |
+| `get_corner_detail` | live detector events at that corner **and** the Layer-1 corner analysis | nothing recorded / fewer than two clean laps |
+
+`get_corner_detail` is the one that reaches outside `racestate`. Its `telemetry`
+half calls the **same** `rtv.coaching.features.CoachingService` the v1 coaching
+endpoints call — minimum speed against a reference lap, brake point, throttle
+application, time lost — so the live coach and the post-hoc coach share a source of
+truth rather than a re-implementation. It returns two halves on purpose:
+
+```jsonc
+{"requested_lap_dist_pct": 0.4033,
+ "live":      {"corner": "C08", "count": 3, "events": [ /* the lockups here */ ]},
+ "telemetry": {"available": true, "main_lap": 4, "ref_lap": 1,
+               "corner": {"label":"T1","min_speed_kmh":75.4,"diagnostics":[...]}}}
+```
+
+The `live` half always works. The `telemetry` half needs a *written* session, so it
+is unavailable during the opening laps and in any deployment that is not recording
+— and says so with a reason rather than degrading quietly. `CoachCall.from_telemetry`
+records which half the cue rested on, and the eval harness checks that a coach
+never claims a trace it was not shown.
+
+`get_setup_snapshot` returns the setup **verbatim**. Setup sections differ per car,
+so flattening them into a fixed schema would either drop fields or invent them.
+
+---
+
+## The agents in detail
+
+### VEHICLE ENGINEER
+
+| Trigger | Predicate | Cooldown |
+|---|---|---|
+| `recurring_issue` | issue in {lockup, wheelspin, offtrack} | 45 s |
+| `tyre_out_of_band` | — | 60 s |
+| `car_health_warning` | — | 30 s |
+| `pit_entry` | only when tyre data exists | 0 s |
+
+Tools: `get_tyre_trend`, `get_recent_detector_events`, `get_corner_detail`,
+`get_car_health`, `get_setup_snapshot`, `get_race_state_slice`.
+
+`EngineerCall`: `finding` in {`tyre_temps`, `tyre_pressures`, `brake_lockup`,
+`traction`, `car_health`, `damage`, `none`}, plus `corner`, `affected[]`, `trend`,
+`driver_action`, `setup_note`, `confidence`, `rationale`. `none` is a real answer:
+the trigger turned out to be benign.
+
+**No numeric fields in the payload, deliberately.** Structured numbers are matched
+*exactly* against raw facts (stage-2 deviation 7). There is no number the pitwall
+UI needs from the engineer badly enough to be worth that, and everything
+quantitative it says belongs in prose, where a rounded form is legitimate.
+
+### SPOTTER
+
+| Trigger | Predicate | Cooldown |
+|---|---|---|
+| `traffic_close` | — | 15 s |
+| `blue_flag` | — | 10 s |
+| `flag_change` | into yellow or red only | 10 s |
+| `incident` | — | 10 s |
+
+Tools: `get_standings_around_player`, `get_recent_detector_events`. Two tool
+rounds, not four, and a 700-token budget: a spotter call that lands after the
+corner is worthless.
+
+`SpotterCall`: `threat` in {`lapped_traffic`, `car_closing`, `hazard`, `clear`},
+`side` in {`ahead`, `behind`, `unknown`}, `car_idx`, `action`, `confidence`.
+
+`car_idx` *is* a numeric payload field, and that is the point: it must be copied
+from the event or the standings tool exactly, so a spotter that names a car nobody
+mentioned is refused.
+
+### COACH
+
+| Trigger | Predicate | Cooldown |
+|---|---|---|
+| `recurring_issue` | issue in {lockup, wheelspin, offtrack} | 120 s |
+| `offtrack` | under green only | 90 s |
+| `stint_lap_milestone` | under green, at least 2 laps on the set | 180 s |
+
+Tools: `get_corner_detail`, `get_recent_detector_events`, `get_stint_history`,
+`get_tyre_trend`.
+
+`CoachCall`: `theme` in {`braking`, `throttle`, `line`, `consistency`,
+`tyre_management`, `none`}, `corner`, `cue`, `from_telemetry`, `confidence`,
+`rationale`.
+
+The coach and the engineer **share** the `recurring_issue` trigger, which is
+intentional: three lockups at one corner is simultaneously a brake-bias question
+and a technique question, and those are different sentences from different people.
+The cooldowns are what bound the cost — the coach speaks at most a third as often,
+so the car's advocate gets there first. Never coaching under a caution is the same
+judgement: the driver has other things to think about.
+
+---
+
+## Deterministic evals for judgement calls
+
+`evals/pitwall_cases.py` now generates a golden set **per agent**, using that
+agent's own `AgentRuntime.match()` — so a case exists exactly when the live path
+would have woken it, and there is no second, hand-maintained trigger list to
+drift. The role scenario is the scripted race with two extra knobs
+(`lockup_laps=(1,2)`, `corner_pcts=(0.44,)`) so that it actually contains a
+repeated mistake at a real corner; both are opt-in, so the stage-1 ground-truth
+scenario stays byte-identical.
+
+`evals/pitwall_checks.py` scores each role against what the deterministic trigger
+*said*. Grounding and radio discipline are identical for everyone; the rest is
+role-specific:
+
+| Agent | Checks beyond grounding + radio |
+|---|---|
+| `vehicle_engineer` | `finding_ok` (inside the band for that trigger), `corner_ok` (the event's corner, not another), `setup_ok` (no setup advice without a setup sheet), `refusal_ok` (no tyre finding without tyre channels) |
+| `spotter` | `threat_ok`, `car_ok` (the car named in the event), `side_ok`, `brevity_ok` (14 words, tighter than radio), `refusal_ok` (no seconds without a gap basis) |
+| `coach` | `theme_ok`, `corner_ok`, `telemetry_ok` (no claimed trace it never saw), `one_cue_ok` |
+
+```powershell
+python evals/run_pitwall.py --dry-run            # 24 cases across 4 agents, no key
+python evals/run_pitwall.py --agent spotter      # one agent (needs a key)
+python evals/run_pitwall.py                      # all four
+```
+
+`aggregate()` discovers its keys from the rows, so a mixed run reports the union
+and omits a rate for an agent that does not carry that check.
+
+---
+
+## Configuration added
+
+| Env var | Default | Meaning |
+|---|---|---|
+| `RTV_PITWALL_CORNER_BUCKETS` | `20` | Lap fractions used to decide "the same corner". |
+| `RTV_PITWALL_RECURRENCE_MIN` | `3` | Repeats before `recurring_issue` fires. |
+| `RTV_PITWALL_RECURRENCE_WINDOW_LAPS` | `5` | Lap window those repeats must fall in. |
+| `RTV_PITWALL_TYRE_TEMP_TREND_C` | `3.0` | Degrees per lap of sustained drift. |
+| `RTV_PITWALL_TYRE_AXLE_IMBALANCE_C` | `15.0` | Left-to-right spread across an axle. |
+| `RTV_PITWALL_OIL_TEMP_MAX_C` | `130` | Oil limit for `car_health_warning`. |
+| `RTV_PITWALL_WATER_TEMP_MAX_C` | `105` | Water limit. |
+| `RTV_PITWALL_TRAFFIC_GAP_S` | `1.5` | Gap inside which a car counts as close. |
+| `RTV_PITWALL_VEHICLE_ENGINEER_MODEL` | *(empty)* | Per-agent override; empty = the fast tier. |
+| `RTV_PITWALL_SPOTTER_MODEL` | *(empty)* | " |
+| `RTV_PITWALL_COACH_MODEL` | *(empty)* | " |
+| `RTV_PITWALL_AGENTS_ONLY` | *(empty)* | Comma-separated subset to mount. Empty = all four. |
+
+Absolute tyre bands are intentionally *not* shipped as live values in
+`.env.example` — see "Tyre bands" above.
+
+---
+
+## Interfaces stage 4 consumes
+
+Nothing about the radio contract changed, which is the point: stage 4's TTS layer
+hangs off the same hook and now receives four agents' worth of traffic on it.
+
+```python
+from rtv.pitwall.agents import (
+    AGENT_REGISTRY, STRATEGIST, VEHICLE_ENGINEER, SPOTTER, COACH, build_agents,
+)
+from rtv.pitwall.agents.vehicle_engineer import EngineerCall
+from rtv.pitwall.agents.spotter import SpotterCall
+from rtv.pitwall.agents.coach import CoachCall
+
+orch.feed.subscribe_callback(fn)      # every agent's output, one channel
+orch.feed.pump(session_time)          # deterministic, replay-stable pacing
+orch.tool_extras                      # {"engine", "coaching", "repo"}
+
+engine.setup_snapshot()               # CarSetup + car scalars, or a stated reason
+engine.set_session_id(session_id)     # name a live session without resetting it
+
+from rtv.racestate.detectors import (
+    CornerRecurrence, corner_label,
+    detect_tyre_condition, detect_car_health, detect_closing_traffic,
+)
+```
+
+For a UI (stage 6): `RadioMessage.agent` is the channel label, `.subject` is the
+supersede key, and `.data` is that agent's own contract — `EngineerCall`,
+`SpotterCall` and `CoachCall` are all UI-ready payloads with no numeric fields to
+mis-render except the spotter's `car_idx`.
+
+---
+
+## Deviations from the stage-3 spec
+
+Each is a conservative choice made autonomously, per `CLAUDE.md`.
+
+1. **One framework change: `ToolContext.extras`.** The spec's tool list includes
+   `get_corner_detail` ("reuse coaching Layer-1") and `get_setup_snapshot` ("from
+   session-info YAML"), and neither is reachable from a `RaceState` snapshot. So
+   `ToolContext` gained one optional `extras` mapping, threaded through
+   `AgentRuntime(tool_extras=...)` and `PitwallOrchestrator(tool_extras=...)`.
+   The orchestrator always injects `engine`; `services.build_pitwall` adds
+   `coaching` and `repo`. The alternative — putting the setup and the store handle
+   on `RaceState` — would have widened *every* agent's citable fact set with setup
+   numbers, which is precisely what the state slice exists to prevent.
+2. **There is no `stint_end` event; the trigger is `pit_entry`.** The spec lists
+   `stint_end` as a trigger. Pit entry *is* the end of a stint, and it already
+   carries the lap, the stint number and the fuel remaining. A second event on the
+   same edge would have been two names for one fact.
+3. **Corner identity is a lap-distance bucket, not a corner number.** Naming "T7"
+   needs a track map the engine does not have. `C00`–`C19` is honest and stable;
+   the payload carries the lap-fraction range, and `get_corner_detail` maps it onto
+   the Layer-1 label (`T1`) when a stored session is attached.
+4. **Absolute tyre bands default to off.** The spec says "tyre temp/pressure
+   drifting out of band". A default band for an unknown car would be a guess
+   presented as a threshold — the exact failure this codebase refuses elsewhere.
+   Drift and axle imbalance are relative, need no per-car knowledge and are on by
+   default; absolute bands are one env var away.
+5. **"Damage events" are `PlayerCarTowTime` plus the engine-warning bits.** The
+   catalog contract in `racestate/channels.py` has no damage channels, so there was
+   nothing else to detect. Reported under `car_health_warning` with
+   `measure: "tow"`, so a real damage channel can be added later without a new
+   event type.
+6. **The coach shares `recurring_issue` with the engineer** rather than getting
+   triggers of its own. Two agents on one event costs two calls, which is a real
+   cost; but "your brake bias is wrong" and "brake ten metres earlier" are
+   different sentences, and collapsing them would have meant one agent owning both
+   the car and the driver. The 120 s vs 45 s cooldown split is how the cost is
+   bounded.
+7. **`lockup` / `wheelspin` payloads gained `wheel` and `lap_dist_pct`.** The
+   existing `corner` key on those events means the *wheel* (LF/RF) and predates the
+   track-corner labels, so it stays for compatibility; `wheel` is the unambiguous
+   name, and `lap_dist_pct` is what the recurrence aggregator keys on.
+8. **The scripted scenario gained two opt-in knobs, not new defaults.**
+   `lockup_laps` (repeat the lockup on further laps) and `corner_pcts` (a speed dip
+   deep enough for the Layer-1 corner detector to find — the default sinusoidal lap
+   has no sufficiently prominent local minimum). Both default to empty, so the
+   stage-1 ground-truth race is byte-identical and every stage-1/2 test is
+   untouched.
+9. **Session identity is attached in `services.on_state`, not in `LivePoller`.**
+   `get_corner_detail`'s Layer-1 half needs the live session id and
+   `get_setup_snapshot` needs the session-info document. Both are already written to
+   the store by the poller *before* it announces the session, so services reads them
+   back out. This closes stage-1 deviation 4 for the live path without touching v1
+   ingest.
+10. **`CornerRecurrence` is stateful, inside a module of pure functions.** The spec
+    put the aggregator in `detectors.py` and that is where it belongs — it is a
+    detector whose window is laps rather than frames — but it is the one object in
+    that module that holds state. It still only *returns a payload*; constructing
+    the `RaceEvent`, latching and cooldowns remain the engine's job, as for every
+    other detector.
+
+### A false positive found and fixed en route
+
+The first traffic detector reported a car "closing at 3.4 s/s" on lap 1 of the
+scripted race. Nobody had moved: the gap *basis* had switched from
+`lap_length_speed` to `lap_time_pct` as soon as a lap time became known, and every
+gap changed at once. `_check_traffic` now stores the basis alongside the sample and
+discards a comparison across a change of it. Worth knowing for anything else that
+differentiates a `RaceState` field over time.
+
+---
+
+## Verification (stage 3)
+
+```powershell
+pytest                                   # 309 passed (202 stage 1+2 + 107 new), fully offline
+python scripts/smoke_pitwall_roles.py    # all four agents, real store, real Layer-1
+python scripts/smoke_pitwall_agents.py   # stage 2, unchanged
+python scripts/smoke_pitwall.py          # stage 1, unchanged
+python scripts/smoke_offline.py          # v1 surface, unchanged
+python evals/run_pitwall.py --dry-run    # 24 cases across 4 agents + their ground truth
+ruff check src tests scripts evals
+```
+
+New test files: `tests/test_racestate_recurrence.py` (40),
+`tests/test_pitwall_roles.py` (67). Green with and without `ANTHROPIC_API_KEY`
+exported. No iRacing, no network. All 202 stage-1/2 tests still pass unmodified,
+and the scripted race still produces the same 19 events it did in stage 1 — none of
+the four new event types fires when nothing is wrong.

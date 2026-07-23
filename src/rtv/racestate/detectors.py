@@ -8,6 +8,11 @@ is what makes "lockup fires, near-miss doesn't" a two-line unit test.
 
 A detector whose channels are missing from the window returns ``None`` rather
 than guessing: no data, no finding.
+
+One exception, added in stage 3: :class:`CornerRecurrence` holds state, because
+its window is *laps* rather than frames. It is still a detector by the definition
+that matters -- it returns a payload and never constructs an event -- and it is
+what stops a single lockup ever waking an agent.
 """
 
 from __future__ import annotations
@@ -61,6 +66,50 @@ class DetectorConfig:
     stint_milestone_laps: int = 5
     #: A rival's stop is only reported when they are within N positions.
     rival_position_window: int = 3
+
+    # --- corner recurrence (the vehicle engineer's / coach's wake-up) -----
+    #: Lap fractions the track is divided into when labelling "the same corner".
+    #: 20 buckets = 5 % of a lap, roughly one corner on a typical road course.
+    corner_buckets: int = 20
+    #: Repeats of the same issue at the same corner before it is a finding.
+    recurrence_min: int = 3
+    #: Only repeats within this many laps of each other count.
+    recurrence_window_laps: int = 5
+
+    # --- tyre bands ------------------------------------------------------
+    #: Absolute bands are car-specific, so they are OFF unless an operator sets
+    #: them. Everything below them is *relative* and needs no per-car knowledge.
+    tyre_temp_max_c: float | None = None
+    tyre_temp_min_c: float | None = None
+    tyre_pressure_max: float | None = None
+    tyre_pressure_min: float | None = None
+    #: Sustained per-lap drift across the current stint (from TyreState trends).
+    tyre_temp_trend_c_per_lap: float = 3.0
+    tyre_pressure_trend_per_lap: float = 2.0
+    #: Left-to-right spread across one axle. Relative, so no band is needed.
+    tyre_axle_imbalance_c: float = 15.0
+    #: Trends need at least this many completed stint laps to mean anything.
+    tyre_min_stint_laps: int = 3
+
+    # --- car health ------------------------------------------------------
+    oil_temp_max_c: float = 130.0
+    water_temp_max_c: float = 105.0
+    #: Engine-warning bits that are faults. The limiter bits are normal driving.
+    engine_fault_bits: tuple[str, ...] = (
+        "water_temp_warning",
+        "fuel_pressure_warning",
+        "oil_pressure_warning",
+        "oil_temp_warning",
+        "engine_stalled",
+    )
+
+    # --- traffic (the spotter's wake-up) ---------------------------------
+    #: A car is "close" inside this many seconds of track-position gap.
+    traffic_gap_s: float = 1.5
+    #: ...and only interesting if it is actually closing, this fast (s per s).
+    traffic_closing_rate: float = 0.15
+    #: Seconds between the gap samples the closing rate is measured over.
+    traffic_sample_s: float = 1.0
 
 
 DEFAULT_CONFIG = DetectorConfig()
@@ -162,13 +211,22 @@ def detect_lockup(window: Window, cfg: DetectorConfig = DEFAULT_CONFIG) -> dict 
             return None
         if ratio < worst_ratio:
             worst_ratio = ratio
+            wheel = (
+                ch.FRONT_WHEELS[speeds.index(slowest)]
+                if len(speeds) == len(ch.FRONT_WHEELS)
+                else None
+            )
             worst = {
                 "speed": round(speed, 3),
                 "brake": round(brake, 3),
                 "wheel_speed": round(slowest, 3),
-                "corner": ch.FRONT_WHEELS[speeds.index(slowest)]
-                if len(speeds) == len(ch.FRONT_WHEELS)
-                else None,
+                # ``corner`` here is the *wheel* (LF/RF) and predates the
+                # track-corner labels; ``wheel`` is the unambiguous name, and
+                # ``lap_dist_pct`` is where on the lap it happened, which is what
+                # the corner-recurrence aggregator keys on.
+                "corner": wheel,
+                "wheel": wheel,
+                "lap_dist_pct": as_float(values, ch.LAP_DIST_PCT),
             }
     if worst is None:
         return None
@@ -198,13 +256,18 @@ def detect_wheelspin(window: Window, cfg: DetectorConfig = DEFAULT_CONFIG) -> di
             return None
         if ratio > worst_ratio:
             worst_ratio = ratio
+            wheel = (
+                ch.REAR_WHEELS[speeds.index(fastest)]
+                if len(speeds) == len(ch.REAR_WHEELS)
+                else None
+            )
             worst = {
                 "speed": round(speed, 3),
                 "throttle": round(throttle, 3),
                 "wheel_speed": round(fastest, 3),
-                "corner": ch.REAR_WHEELS[speeds.index(fastest)]
-                if len(speeds) == len(ch.REAR_WHEELS)
-                else None,
+                "corner": wheel,
+                "wheel": wheel,
+                "lap_dist_pct": as_float(values, ch.LAP_DIST_PCT),
             }
     if worst is None:
         return None
@@ -321,3 +384,307 @@ def detect_blue_flag(standings, cfg: DetectorConfig = DEFAULT_CONFIG) -> dict | 
                 "laps_ahead": round(laps_ahead, 3),
             }
     return best
+
+
+def detect_closing_traffic(
+    standings,
+    previous: Mapping[int, float],
+    dt: float,
+    cfg: DetectorConfig = DEFAULT_CONFIG,
+) -> dict | None:
+    """The nearest car that is both close *and* actually closing on us.
+
+    Proximity alone is useless as a trigger: in a tight race someone is within a
+    second for the whole stint, and a spotter that says so every lap is noise. The
+    rate is measured against a gap sampled ``cfg.traffic_sample_s`` ago, which the
+    engine holds -- this function stays pure.
+    """
+    if standings is None or standings.player_idx is None or not standings.gap_basis:
+        return None
+    if dt <= 0:
+        return None
+    best: dict[str, Any] | None = None
+    for car in standings.cars:
+        if car.is_player or car.gap_to_player is None or car.on_pit_road:
+            continue
+        gap = abs(car.gap_to_player)
+        if gap > cfg.traffic_gap_s:
+            continue
+        was = previous.get(car.idx)
+        if was is None:
+            continue
+        rate = (abs(was) - gap) / dt
+        if rate < cfg.traffic_closing_rate:
+            continue
+        if best is None or gap < best["gap"]:
+            best = {
+                "car_idx": car.idx,
+                "gap": round(gap, 3),
+                "side": "ahead" if car.gap_to_player > 0 else "behind",
+                "closing_rate_s_per_s": round(rate, 3),
+                "position": car.position,
+                "threshold_gap_s": cfg.traffic_gap_s,
+            }
+    return best
+
+
+# --------------------------------------------------------------------------
+# car condition (state-derived, evaluated at lap boundaries)
+# --------------------------------------------------------------------------
+def detect_tyre_condition(tyres, cfg: DetectorConfig = DEFAULT_CONFIG) -> dict | None:
+    """The worst single way the tyres are outside their band, or ``None``.
+
+    Absolute bands (``tyre_temp_max_c`` and friends) are per-car numbers, so they
+    default to ``None`` and are simply skipped -- inventing a "normal" tyre
+    temperature for an unknown car would be exactly the kind of unbacked figure
+    the rest of this package refuses to produce. The relative measures below need
+    no per-car knowledge: a 4 C-per-lap climb and a 20 C spread across one axle
+    are findings whatever the car is.
+    """
+    if tyres is None:
+        return None
+    temps, press = dict(tyres.temps), dict(tyres.pressures)
+
+    def _band(values: dict[str, float], lo, hi, measure: str, unit: str):
+        worst = None
+        for corner, value in values.items():
+            if hi is not None and value > hi:
+                excess, limit = value - hi, hi
+            elif lo is not None and value < lo:
+                excess, limit = lo - value, lo
+            else:
+                continue
+            if worst is None or excess > worst["excess"]:
+                worst = {
+                    "measure": measure,
+                    "corner": corner,
+                    "value": round(value, 3),
+                    "threshold": limit,
+                    "excess": round(excess, 3),
+                    "unit": unit,
+                }
+        return worst
+
+    finding = _band(temps, cfg.tyre_temp_min_c, cfg.tyre_temp_max_c, "tyre_temp", "C")
+    finding = finding or _band(
+        press, cfg.tyre_pressure_min, cfg.tyre_pressure_max, "tyre_pressure", "kPa"
+    )
+
+    if finding is None and tyres.stint_laps >= cfg.tyre_min_stint_laps:
+        finding = _trend_finding(
+            tyres.temp_trend, cfg.tyre_temp_trend_c_per_lap, "tyre_temp_trend", "C/lap"
+        ) or _trend_finding(
+            tyres.pressure_trend,
+            cfg.tyre_pressure_trend_per_lap,
+            "tyre_pressure_trend",
+            "kPa/lap",
+        )
+
+    if finding is None:
+        finding = _axle_imbalance(temps, cfg.tyre_axle_imbalance_c)
+
+    if finding is None:
+        return None
+    return {
+        **finding,
+        "temps_c": temps,
+        "pressures": press,
+        "temp_trend_c_per_lap": dict(tyres.temp_trend),
+        "pressure_trend_per_lap": dict(tyres.pressure_trend),
+        "stint_laps": tyres.stint_laps,
+    }
+
+
+def _trend_finding(
+    trends: Mapping[str, float], threshold: float, measure: str, unit: str
+) -> dict | None:
+    worst = None
+    for corner, slope in trends.items():
+        if abs(slope) < threshold:
+            continue
+        if worst is None or abs(slope) > abs(worst["value"]):
+            worst = {
+                "measure": measure,
+                "corner": corner,
+                "value": round(slope, 4),
+                "threshold": threshold,
+                "excess": round(abs(slope) - threshold, 4),
+                "unit": unit,
+            }
+    return worst
+
+
+def _axle_imbalance(temps: Mapping[str, float], threshold: float) -> dict | None:
+    worst = None
+    for axle, (left, right) in (("front", ("LF", "RF")), ("rear", ("LR", "RR"))):
+        if left not in temps or right not in temps:
+            continue
+        spread = abs(temps[left] - temps[right])
+        if spread < threshold:
+            continue
+        if worst is None or spread > worst["value"]:
+            worst = {
+                "measure": "tyre_axle_imbalance",
+                "corner": left if temps[left] > temps[right] else right,
+                "axle": axle,
+                "value": round(spread, 3),
+                "threshold": threshold,
+                "excess": round(spread - threshold, 3),
+                "unit": "C",
+            }
+    return worst
+
+
+def detect_car_health(health, cfg: DetectorConfig = DEFAULT_CONFIG) -> dict | None:
+    """Engine faults, a tow, or a temperature over its limit -- worst one wins.
+
+    The sim's own warning bits come first because they are the car saying it, not
+    us inferring it. ``pit_speed_limiter`` and ``rev_limiter_active`` are normal
+    driving and are excluded by ``cfg.engine_fault_bits``.
+    """
+    if health is None:
+        return None
+    faults = [w for w in health.engine_warnings if w in cfg.engine_fault_bits]
+    if faults:
+        return {
+            "measure": "engine_warning",
+            "warnings": faults,
+            "oil_temp_c": health.oil_temp,
+            "water_temp_c": health.water_temp,
+            "critical": True,
+        }
+    if health.tow_time is not None and health.tow_time > 0:
+        return {
+            "measure": "tow",
+            "tow_time_s": round(health.tow_time, 3),
+            "critical": True,
+        }
+    for measure, value, limit, unit in (
+        ("oil_temp", health.oil_temp, cfg.oil_temp_max_c, "C"),
+        ("water_temp", health.water_temp, cfg.water_temp_max_c, "C"),
+    ):
+        if value is not None and value > limit:
+            return {
+                "measure": measure,
+                "value": round(value, 3),
+                "threshold": limit,
+                "excess": round(value - limit, 3),
+                "unit": unit,
+                "oil_temp_c": health.oil_temp,
+                "water_temp_c": health.water_temp,
+                "critical": False,
+            }
+    return None
+
+
+# --------------------------------------------------------------------------
+# corner recurrence
+# --------------------------------------------------------------------------
+def corner_label(lap_dist_pct: float | None, buckets: int) -> str | None:
+    """A stable name for "the same place on the track", from lap distance alone.
+
+    Deliberately not a real corner number: without the track map we do not know
+    where T7 is, and naming one would be a figure we cannot back. A bucket index
+    is honest, reproducible, and enough to say "this keeps happening here". The
+    payload carries the lap-fraction range so a UI can point at it.
+    """
+    if lap_dist_pct is None or buckets <= 0:
+        return None
+    pct = float(lap_dist_pct) % 1.0
+    index = min(buckets - 1, max(0, int(pct * buckets)))
+    return f"C{index:02d}"
+
+
+#: Issues worth aggregating by corner. All three are driver-facing repeats.
+RECURRING_ISSUE_TYPES = ("lockup", "wheelspin", "offtrack")
+
+
+class CornerRecurrence:
+    """Counts repeats of an issue at the same corner and reports the third one.
+
+    The one stateful object in this module, and it is here rather than in the
+    engine on purpose: it *is* a detector, just one whose window is laps instead
+    of frames. It builds a payload and returns it; constructing the
+    :class:`~rtv.racestate.models.RaceEvent` is still the engine's job.
+
+    Why aggregate at all: one lockup is a driver having a moment, and waking an
+    LLM for it would be both noisy and expensive. Three at the same corner inside
+    five laps is a brake bias or a technique problem, and that is worth a radio
+    call. The threshold is deterministic, so the agent never sees the singles.
+    """
+
+    def __init__(self, cfg: DetectorConfig = DEFAULT_CONFIG) -> None:
+        self.cfg = cfg
+        self._hits: dict[tuple[str, str], list[dict[str, Any]]] = {}
+        self._announced: dict[tuple[str, str], int] = {}
+
+    def reset(self) -> None:
+        self._hits.clear()
+        self._announced.clear()
+
+    def record(
+        self,
+        issue: str,
+        *,
+        lap: int | None,
+        session_time: float,
+        lap_dist_pct: float | None,
+        payload: Mapping[str, Any] | None = None,
+    ) -> dict | None:
+        """Log one occurrence; return a finding when it crosses the threshold."""
+        corner = corner_label(lap_dist_pct, self.cfg.corner_buckets)
+        if corner is None or lap is None:
+            return None  # no lap distance => no notion of "the same corner"
+        key = (issue, corner)
+        payload = payload or {}
+        hits = self._hits.setdefault(key, [])
+        hits.append(
+            {
+                "lap": lap,
+                "session_time": round(session_time, 3),
+                "lap_dist_pct": round(float(lap_dist_pct), 4),
+                "slip": payload.get("slip"),
+                "speed": payload.get("speed"),
+            }
+        )
+        window = self.cfg.recurrence_window_laps
+        recent = [h for h in hits if lap - h["lap"] < window]
+        self._hits[key] = recent
+
+        count = len(recent)
+        if count < self.cfg.recurrence_min:
+            return None
+        # Report at the threshold, then only after another full threshold's worth
+        # of *new* repeats, so a driver locking up every lap gets one call rather
+        # than one per lap. Counting new hits since the last call rather than the
+        # running total matters: the total is capped by the window, so a "total
+        # reaches 2x" rule would never fire a second time.
+        since = self._announced.get(key)
+        if since is not None:
+            fresh = sum(1 for h in recent if h["lap"] > since)
+            if fresh < self.cfg.recurrence_min:
+                return None
+        self._announced[key] = lap
+
+        laps = sorted({h["lap"] for h in recent})
+        slips = [h["slip"] for h in recent if h["slip"] is not None]
+        speeds = [h["speed"] for h in recent if h["speed"] is not None]
+        pcts = [h["lap_dist_pct"] for h in recent]
+        finding: dict[str, Any] = {
+            "issue": issue,
+            "corner": corner,
+            "occurrences": count,
+            "threshold": self.cfg.recurrence_min,
+            "window_laps": window,
+            "laps": laps,
+            "first_lap": laps[0],
+            "last_lap": laps[-1],
+            "lap_dist_pct_from": round(min(pcts), 4),
+            "lap_dist_pct_to": round(max(pcts), 4),
+        }
+        if slips:
+            finding["worst_slip"] = round(max(slips), 4)
+            finding["mean_slip"] = round(sum(slips) / len(slips), 4)
+        if speeds:
+            finding["mean_speed"] = round(sum(speeds) / len(speeds), 3)
+        return finding

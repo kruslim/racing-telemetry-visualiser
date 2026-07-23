@@ -111,6 +111,10 @@ class RaceStateEngine:
         self._state.session.source = source
         self._catalog: Catalog | None = None
         self._schema_hash: str | None = None
+        #: The raw session-info YAML, when a caller has supplied it. Kept outside
+        #: RaceState: it is static per session, so putting it in the 60 Hz object
+        #: (and therefore in every agent's citable fact set) would be wasteful.
+        self._session_info: dict[str, Any] = {}
         self.reset()
 
     # ------------------------------------------------------------------
@@ -148,6 +152,12 @@ class RaceStateEngine:
 
             # strategy triggers
             self._rival_pit_state: dict[int, bool] = {}
+
+            # vehicle-engineer / spotter triggers
+            self._recurrence = det.CornerRecurrence(self.config)
+            self._traffic_sample: tuple[float, dict[int, float], str] | None = None
+            self._health_latched: str | None = None
+            self._tyre_latched: str | None = None
 
             # stint / tyres
             self._lap_had_pit = False
@@ -188,6 +198,16 @@ class RaceStateEngine:
                 or "none",
             )
 
+    def set_session_id(self, session_id: str | None) -> None:
+        """Name the session without disturbing anything else.
+
+        Distinct from :meth:`bind_catalog`, which resets every accumulator: a
+        session id arriving from the poller must not throw away the fuel model.
+        It is what lets ``get_corner_detail`` find this session in the store.
+        """
+        with self._lock:
+            self._state.session.session_id = session_id
+
     def set_session_info(self, info: Mapping[str, Any] | None) -> None:
         """Feed the session-info YAML so track length (and names) are known.
 
@@ -197,6 +217,7 @@ class RaceStateEngine:
             return
         weekend = info.get("WeekendInfo") or {}
         with self._lock:
+            self._session_info = dict(info)
             length = _parse_track_length(weekend.get("TrackLength"))
             if length is not None:
                 self._state.session.lap_length_m = length
@@ -204,6 +225,52 @@ class RaceStateEngine:
             name = weekend.get("TrackDisplayName") or weekend.get("TrackName")
             if name:
                 self._state.session.track_name = str(name)
+
+    def setup_snapshot(self) -> dict[str, Any]:
+        """The car setup as the sim reported it, or a stated reason it is absent.
+
+        Read straight out of the session-info YAML with no interpretation: setup
+        sections differ per car, so flattening them into a fixed schema would
+        either lose fields or invent them. What is returned is exactly what the
+        sim said, which is what makes it citable.
+        """
+        with self._lock:
+            info = dict(self._session_info)
+        if not info:
+            return {
+                "available": False,
+                "unavailable": "No session-info document has been supplied for this session.",
+            }
+        setup = info.get("CarSetup")
+        driver_info = info.get("DriverInfo") or {}
+        out: dict[str, Any] = {
+            "available": bool(setup),
+            "car_id": self._state.session.car_id,
+            "track_name": self._state.session.track_name,
+            "lap_length_m": self._state.session.lap_length_m,
+        }
+        car_scalars = {
+            key: driver_info[key]
+            for key in (
+                "DriverCarFuelMaxLtr",
+                "DriverCarMaxFuelPct",
+                "DriverCarRedLine",
+                "DriverCarIdleRPM",
+                "DriverCarSLShiftRPM",
+            )
+            if key in driver_info
+        }
+        if car_scalars:
+            out["car"] = car_scalars
+        if setup:
+            out["setup"] = setup
+            out["update_count"] = info.get("CarSetupUpdateCount")
+        else:
+            out["unavailable"] = (
+                "This session's info document carries no CarSetup section "
+                "(iRacing omits it for some cars and for spectated sessions)."
+            )
+        return out
 
     # ------------------------------------------------------------------
     # capability probing
@@ -629,6 +696,7 @@ class RaceStateEngine:
     def _run_detectors(self, frame: Frame, events: list[RaceEvent]) -> None:
         caps = self._state.capabilities
         window = self._window
+        first_new = len(events)
 
         if caps.lockup:
             self._latching(
@@ -663,6 +731,87 @@ class RaceStateEngine:
                 Severity.ADVISORY,
                 cooldown=5.0,
             )
+            self._check_traffic(events)
+        if caps.car_health:
+            self._check_car_health(events)
+        self._aggregate_recurrence(events, first_new)
+
+    def _aggregate_recurrence(self, events: list[RaceEvent], first_new: int) -> None:
+        """Fold this frame's one-off findings into per-corner recurrence.
+
+        Deliberately downstream of the detectors: the singles still reach the bus
+        (the UI wants them), but an agent is only woken by the aggregate.
+        """
+        p = self._state.player
+        found: list[RaceEvent] = []
+        for event in events[first_new:]:
+            if event.event_type.value not in det.RECURRING_ISSUE_TYPES:
+                continue
+            payload = self._recurrence.record(
+                event.event_type.value,
+                lap=p.lap,
+                session_time=self._state.session_time,
+                lap_dist_pct=p.lap_dist_pct,
+                payload=event.payload,
+            )
+            if payload is not None:
+                found.append(
+                    self._event(EventType.RECURRING_ISSUE, Severity.ADVISORY, payload)
+                )
+        events.extend(found)
+
+    def _check_traffic(self, events: list[RaceEvent]) -> None:
+        """Nearest car that is close *and* closing, sampled about once a second."""
+        now = self._state.session_time
+        basis = self._state.standings.gap_basis
+        gaps = {
+            car.idx: car.gap_to_player
+            for car in self._state.standings.cars
+            if car.gap_to_player is not None and not car.is_player
+        }
+        if not gaps or basis is None:
+            return
+        previous = self._traffic_sample
+        if previous is None:
+            self._traffic_sample = (now, gaps, basis)
+            return
+        dt = now - previous[0]
+        if dt < self.config.traffic_sample_s:
+            return
+        self._traffic_sample = (now, gaps, basis)
+        if previous[2] != basis:
+            # The gap *basis* changed (a lap time became known, so gaps stopped
+            # being derived from instantaneous speed). Every gap moved at once and
+            # none of the cars did: comparing across that is measuring our own
+            # arithmetic, not the race.
+            return
+        self._latching(
+            "traffic_close",
+            det.detect_closing_traffic(
+                self._state.standings, previous[1], dt, self.config
+            ),
+            events,
+            EventType.TRAFFIC_CLOSE,
+            Severity.ADVISORY,
+            cooldown=10.0,
+        )
+
+    def _check_car_health(self, events: list[RaceEvent]) -> None:
+        """Latched by *measure*: a water-temp warning after an oil one still fires."""
+        payload = det.detect_car_health(self._state.car_health, self.config)
+        if payload is None:
+            self._health_latched = None
+            return
+        if self._health_latched == payload["measure"]:
+            return
+        self._health_latched = payload["measure"]
+        events.append(
+            self._event(
+                EventType.CAR_HEALTH_WARNING,
+                Severity.CRITICAL if payload.get("critical") else Severity.ADVISORY,
+                payload,
+            )
+        )
 
     def _latching(
         self,
@@ -713,6 +862,7 @@ class RaceStateEngine:
             self._state.tyres.stint_laps = 0
             self._state.tyres.temp_trend = {}
             self._state.tyres.pressure_trend = {}
+            self._tyre_latched = None  # a new set is a new band question
             # A refuel re-arms the fuel warnings.
             self._fuel_critical_announced = False
             self._pit_window_announced = False
@@ -782,6 +932,7 @@ class RaceStateEngine:
             p.laps_on_tyres += 1
         self._roll_fuel(lap, clean, events)
         self._roll_tyres(lap, clean)
+        self._check_tyre_band(events)
 
         # A stint milestone is a *lap-count* event, not a timer: it is the
         # deterministic cadence the strategist is allowed to wake up on.
@@ -958,6 +1109,25 @@ class RaceStateEngine:
                     },
                 )
             )
+
+    def _check_tyre_band(self, events: list[RaceEvent]) -> None:
+        """Evaluated at the lap boundary, because that is when a trend changes.
+
+        Latched by measure and re-armed on new rubber, so a stint that runs hot
+        produces one advisory rather than one per lap.
+        """
+        if not self._state.capabilities.tyres:
+            return
+        payload = det.detect_tyre_condition(self._state.tyres, self.config)
+        if payload is None:
+            self._tyre_latched = None
+            return
+        if self._tyre_latched == payload["measure"]:
+            return
+        self._tyre_latched = payload["measure"]
+        events.append(
+            self._event(EventType.TYRE_OUT_OF_BAND, Severity.ADVISORY, payload)
+        )
 
     def _roll_tyres(self, lap: int, clean: bool) -> None:
         t = self._state.tyres

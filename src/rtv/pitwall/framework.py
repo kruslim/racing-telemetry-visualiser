@@ -134,6 +134,12 @@ class ToolContext:
     events: list[RaceEvent] = field(default_factory=list)
     #: Operator-tunable constants (pit-lane loss, standings window, ...).
     config: Mapping[str, Any] = field(default_factory=dict)
+    #: Handles a tool may need beyond the snapshot -- the live engine (for the
+    #: session-info YAML) and the Layer-1 coaching service (for post-hoc corner
+    #: detail). Deliberately untyped and optional: a tool that finds its handle
+    #: missing must return a stated "unavailable", never a guess. See
+    #: :mod:`rtv.pitwall.tools`.
+    extras: Mapping[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -251,12 +257,14 @@ class AgentRuntime:
         provider: Any,
         *,
         tool_config: Mapping[str, Any] | None = None,
+        tool_extras: Mapping[str, Any] | None = None,
         clock: Callable[[], float] | None = None,
         repair_attempts: int = 1,
     ) -> None:
         self.spec = spec
         self.provider = provider
         self.tool_config = dict(tool_config or {})
+        self.tool_extras = dict(tool_extras or {})
         self._clock = clock
         self._repair_attempts = repair_attempts
         self._last_fired: dict[str, float] = {}
@@ -312,7 +320,11 @@ class AgentRuntime:
         facts.add("event", event.payload)
 
         ctx = ToolContext(
-            state=state, event=event, events=list(events), config=self.tool_config
+            state=state,
+            event=event,
+            events=list(events),
+            config=self.tool_config,
+            extras=self.tool_extras,
         )
         system = self._system_blocks(slice_)
         messages: list[dict[str, Any]] = [

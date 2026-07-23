@@ -51,15 +51,26 @@ class PitwallOrchestrator:
         max_inflight: int = DEFAULT_MAX_INFLIGHT,
         enabled: bool = True,
         tool_config: Mapping[str, Any] | None = None,
+        tool_extras: Mapping[str, Any] | None = None,
         clock: Callable[[], float] | None = time.time,
     ) -> None:
         self.engine = engine
         self.feed = feed or RadioFeed()
         self.tool_config = dict(tool_config or {})
+        # The engine is always available to tools that need more than a snapshot
+        # (the session-info YAML, for instance). Anything else -- the Layer-1
+        # coaching service -- is injected by services.build_pitwall.
+        self.tool_extras = {"engine": engine, **dict(tool_extras or {})}
         self._enabled = enabled
         self._max_inflight = max(1, max_inflight)
         self.runtimes: dict[str, AgentRuntime] = {
-            spec.name: AgentRuntime(spec, provider, tool_config=self.tool_config, clock=clock)
+            spec.name: AgentRuntime(
+                spec,
+                provider,
+                tool_config=self.tool_config,
+                tool_extras=self.tool_extras,
+                clock=clock,
+            )
             for spec in agents
         }
         self._agent_enabled = {spec.name: spec.enabled for spec in agents}
