@@ -1,11 +1,11 @@
-# CLAUDE.md — RTV v2 Pitwall build
+# CLAUDE.md - RTV v2 Pitwall build
 
 This repo is being upgraded in staged headless prompts from v1 (post-hoc telemetry
 analysis + tiered AI coach) to v2 (live multi-agent AI pitwall: race-state engine,
 strategist / vehicle engineer / spotter / coach agents, TTS radio, live pitwall UI).
 
 ## Before any work
-- Read `docs/PITWALL.md` first — it is the shared state between build stages
+- Read `docs/PITWALL.md` first - it is the shared state between build stages
   (what exists so far, public interfaces, deviations). If it doesn't exist yet,
   you are stage 1.
 - Skim `README.md`, `docs/COACHING.md`, and the packages you will touch under
@@ -33,6 +33,6 @@ strategist / vehicle engineer / spotter / coach agents, TTS radio, live pitwall 
 5. Existing v1 behaviour untouched (analysis UI, coaching endpoints, MCP server).
 
 ## Never
-- Never stop to ask the user a question — choose conservatively and log it.
+- Never stop to ask the user a question - choose conservatively and log it.
 - Never delete or rewrite existing passing tests to make new code pass.
 - Never introduce a network/API dependency into the default test path.
