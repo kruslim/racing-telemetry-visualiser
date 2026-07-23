@@ -20,12 +20,13 @@ timer and never per tick. All the continuous mathematics already happened in
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, computed_field
 
 from rtv.logging import get_logger
 from rtv.pitwall.validator import FactSet, GroundingReport, validate_output
@@ -116,6 +117,38 @@ class RadioMessage(BaseModel):
     #: Tools the agent actually called, for the pitwall's audit panel.
     tools_used: list[str] = Field(default_factory=list)
     model: str = ""
+    #: False for anything that is *shown* but must not be *said* -- the driver's
+    #: own push-to-talk transcript, for instance. The audio manager drops these.
+    speak: bool = True
+    #: Set when a backend TTS provider is configured; ``None`` means "use the
+    #: browser's Web Speech API". See :mod:`rtv.pitwall.tts`.
+    audio_url: str | None = None
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def message_id(self) -> str:
+        """A stable, content-derived id -- the key for audio and de-duplication.
+
+        Derived rather than random for the same reason the event log has no
+        wall-clock field: a replayed race must produce the same ids, so a cached
+        audio clip and a UI de-dup both stay meaningful across a re-run.
+
+        Deliberately *not* a function of :attr:`seq`. The sequence number is
+        assigned when the feed accepts the message, which is after the point
+        where its audio URL is stamped -- an id that changed between those two
+        moments would produce a URL that resolves to nothing. Agent, triggering
+        event and words are enough: two messages that agree on all three are the
+        same call, and should share one clip.
+        """
+        raw = "|".join(
+            (
+                self.agent,
+                self.event_ref.key,
+                str(self.event_ref.tick),
+                self.spoken_text,
+            )
+        )
+        return hashlib.sha1(raw.encode("utf-8")).hexdigest()[:16]
 
     def to_api(self) -> dict[str, Any]:
         return self.model_dump(mode="json")

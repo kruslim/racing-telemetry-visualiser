@@ -24,8 +24,15 @@ from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
 from rtv.logging import get_logger
-from rtv.pitwall.framework import AgentRuntime, AgentSpec, RadioMessage
+from rtv.pitwall.framework import (
+    AgentRuntime,
+    AgentSpec,
+    EventRef,
+    RadioMessage,
+    RadioPriority,
+)
 from rtv.pitwall.radio import RadioFeed
+from rtv.pitwall.tts import RadioTTS
 from rtv.racestate.engine import RaceStateEngine
 from rtv.racestate.models import RaceEvent, RaceState, Severity
 
@@ -53,9 +60,14 @@ class PitwallOrchestrator:
         tool_config: Mapping[str, Any] | None = None,
         tool_extras: Mapping[str, Any] | None = None,
         clock: Callable[[], float] | None = time.time,
+        tts: RadioTTS | None = None,
     ) -> None:
         self.engine = engine
         self.feed = feed or RadioFeed()
+        #: Optional backend voice. When it can speak, every published message
+        #: carries an ``audio_url``; when it cannot, the field stays ``None`` and
+        #: the browser's Web Speech API does the talking.
+        self.tts = tts
         self.tool_config = dict(tool_config or {})
         # The engine is always available to tools that need more than a snapshot
         # (the session-info YAML, for instance). Anything else -- the Layer-1
@@ -131,7 +143,53 @@ class PitwallOrchestrator:
                 log.exception("Agent worker %s failed", name)
                 continue
             if message is not None:
-                self.feed.publish(message)
+                self.publish(message)
+
+    # ---- the radio ------------------------------------------------------
+    def publish(self, message: RadioMessage) -> RadioMessage:
+        """Stamp a message with its audio URL and put it on the channel.
+
+        The stamp is a URL, not audio: synthesis happens when a browser fetches
+        it, so a message superseded before it airs costs nothing. Everything an
+        agent says goes through here, which is why the URL and the route that
+        serves it cannot disagree about ids.
+        """
+        if self.tts is not None and message.speak and message.audio_url is None:
+            message.audio_url = self.tts.url_for(message)
+        self.feed.publish(message)
+        return message
+
+    def driver_message(self, text: str, *, source: str = "voice") -> RadioMessage:
+        """Record something the driver said onto the channel.
+
+        Emitted rather than queued: the driver has *already* used the airtime, so
+        making the transcript wait behind an advisory would misrepresent when it
+        happened. ``speak=False`` -- the pitwall does not read the driver's own
+        words back to them; it is here so the UI can show it and so the agents
+        see it in their recent-radio context.
+        """
+        state = self.engine.snapshot()
+        message = RadioMessage(
+            agent="driver",
+            priority=RadioPriority.INFO,
+            spoken_text=text.strip(),
+            detail_text=f"Driver push-to-talk ({source}).",
+            data={"source": source},
+            event_ref=EventRef(
+                event_type="driver_message",
+                key="driver_message",
+                tick=state.tick,
+                session_time=state.session_time,
+                lap=state.player.lap,
+                state_version=state.version,
+            ),
+            session_time=state.session_time,
+            subject="driver",
+            speak=False,
+        )
+        self.feed.emit(message)
+        log.info("Driver: %s", message.spoken_text)
+        return message
 
     # ---- routing ---------------------------------------------------------
     def dispatch(self, event: RaceEvent, state: RaceState | None = None) -> list[str]:
@@ -212,7 +270,7 @@ class PitwallOrchestrator:
         for name in self.dispatch(event, state):
             message = await self._run_agent(name, event)
             if message is not None:
-                self.feed.publish(message)
+                self.publish(message)
                 messages.append(message)
         return messages
 
@@ -250,6 +308,7 @@ class PitwallOrchestrator:
             "dispatched": self.dispatched,
             "skipped_busy": self.skipped_busy,
             "radio": self.feed.stats(),
+            "tts": self.tts.describe() if self.tts is not None else None,
             "agents": [
                 {
                     **runtime.spec.describe(),

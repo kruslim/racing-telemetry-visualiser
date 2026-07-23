@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from rtv import __version__
 from rtv.api import (
@@ -92,7 +95,45 @@ def create_app() -> FastAPI:
     def health() -> dict:
         return {"status": "ok", "version": __version__}
 
+    _mount_frontend(app)
     return app
+
+
+#: Vanilla JS + canvas/DOM, no build step. Served from the repo root so the
+#: pitwall radio page and its self-test are one URL away from the API they talk
+#: to -- no second server, no CORS dance, no bundler.
+FRONTEND_DIR = Path(__file__).resolve().parents[2] / "frontend"
+
+
+class FrontendFiles(StaticFiles):
+    """``StaticFiles`` that answers 404 rather than 405 for a non-GET.
+
+    A catch-all mount on ``/`` sits behind every router, so it is what an
+    unmatched request finally reaches. Starlette's default is a 405 ("this file
+    server only does GET"), which would turn every unknown ``POST /api/v1/...``
+    into a method error instead of the "no such endpoint" the API has always
+    returned. Mounting a frontend must not change what the API says about paths
+    it does not have.
+    """
+
+    async def get_response(self, path: str, scope):  # type: ignore[override]
+        if scope["method"] not in ("GET", "HEAD"):
+            raise StarletteHTTPException(status_code=404)
+        return await super().get_response(path, scope)
+
+
+def _mount_frontend(app: FastAPI) -> None:
+    """Serve ``frontend/`` at the root, if it is there.
+
+    Mounted **after** every router, so an unmatched ``/api/v1/...`` path still
+    reaches FastAPI's own 404 rather than the static handler's, and the v1
+    surface is unchanged whether or not this directory exists.
+    """
+    directory = FRONTEND_DIR
+    if not directory.is_dir():  # pragma: no cover - a source checkout always has it
+        log.info("No frontend/ directory at %s; serving the API only.", directory)
+        return
+    app.mount("/", FrontendFiles(directory=str(directory), html=True), name="frontend")
 
 
 app = create_app()

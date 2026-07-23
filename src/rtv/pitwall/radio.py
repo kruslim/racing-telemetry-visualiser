@@ -272,6 +272,23 @@ class RadioFeed:
             items = list(self._history)
         return items[-limit:] if limit else items
 
+    def find(self, message_id: str) -> RadioMessage | None:
+        """Look a message up by its content-derived id.
+
+        Searches what has aired *and* what is still queued: audio for a message
+        can legitimately be fetched before it reaches the front of the channel.
+        """
+        if not message_id:
+            return None
+        with self._lock:
+            for message in reversed(self._history):
+                if message.message_id == message_id:
+                    return message
+            for message in self._pending:
+                if message.message_id == message_id:
+                    return message
+        return None
+
     def clear(self) -> None:
         with self._lock:
             self._pending.clear()

@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Racing Telemetry Visualiser &mdash; pitwall</title>
+<link rel="stylesheet" href="/css/pitwall.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='88'>&#127950;</text></svg>">
+</head>
+<body>
+<header>
+  <h1>Racing Telemetry Visualiser</h1>
+  <span class="sub">v2 pitwall</span>
+</header>
+
+<main>
+  <section class="panel">
+    <h2>Pages</h2>
+    <div class="row">
+      <a href="/radio.html"><button class="primary">🔊 Pitwall radio</button></a>
+      <a href="/audio-test.html"><button>✅ Audio-discipline self-test</button></a>
+      <a href="/docs"><button>API docs</button></a>
+    </div>
+    <p class="meta" style="margin-top:14px">
+      The radio page listens to <code>/ws/pitwall</code> and speaks what the agents
+      say &mdash; browser Web Speech by default, backend TTS when
+      <code>RTV_PITWALL_TTS</code> is configured. Agents only talk when
+      <code>RTV_PITWALL_AGENTS=true</code> and a key is present; the
+      <em>synthetic scenario</em> button on that page needs neither.
+    </p>
+    <p class="meta">
+      This landing page is a placeholder: the full pitwall UI is stage 6.
+    </p>
+  </section>
+</main>
+</body>
+</html>

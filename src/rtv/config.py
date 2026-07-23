@@ -193,6 +193,48 @@ class Settings(BaseSettings):
         description="Radio messages kept in the ring buffer for late joiners.",
     )
 
+    # --- pitwall TTS (v2 stage 4: the radio's voice) ---------------------
+    # The default voice is the *browser's* Web Speech API, which costs nothing
+    # and needs no configuration. Everything below is the optional premium path;
+    # with it unset, RadioMessage.audio_url stays None and the frontend speaks.
+    pitwall_tts: str = Field(
+        default="",
+        description="Backend TTS provider name (see rtv.pitwall.tts registry: "
+        "'none', 'rest', 'openai'). Empty = browser Web Speech only.",
+    )
+    pitwall_tts_url: str = Field(
+        default="",
+        description="Speech endpoint for the 'rest'/'openai' provider, e.g. "
+        "https://api.openai.com/v1/audio/speech.",
+    )
+    pitwall_tts_api_key: str = Field(
+        default="",
+        description="Bearer token for the TTS endpoint. Absent = the provider "
+        "reports itself unavailable and the browser does the talking.",
+    )
+    pitwall_tts_model: str = Field(
+        default="", description="Vendor TTS model id. Empty = the provider's default."
+    )
+    pitwall_tts_format: str = Field(
+        default="mp3", description="Vendor audio format requested (mp3, opus, wav)."
+    )
+    pitwall_tts_media_type: str = Field(
+        default="audio/mpeg", description="Content-Type served for that format."
+    )
+    pitwall_tts_voices: str = Field(
+        default="",
+        description="Per-agent vendor voice overrides, e.g. "
+        "'strategist=onyx,spotter=fable'. Empty = the built-in role voices.",
+    )
+    pitwall_tts_timeout_s: float = Field(
+        default=8.0, gt=0.0, description="Timeout on one synthesis request."
+    )
+    pitwall_tts_cache: int = Field(
+        default=64,
+        ge=0,
+        description="Synthesised clips kept in memory, keyed by message id.",
+    )
+
     # --- server ----------------------------------------------------------
     host: str = "127.0.0.1"
     port: int = 8000

@@ -83,7 +83,16 @@ woken until the *same* one has happened at the *same* corner three times inside
 five laps. Every figure an agent says is checked in-loop against
 the data it was actually shown; one that can't be traced becomes a grounded refusal
 rather than a confident guess. Output merges into a single prioritised radio feed
-where critical calls pre-empt and stale advice supersedes. See `docs/PITWALL.md`.
+where critical calls pre-empt and stale advice supersedes.
+
+That feed has a **voice**: the server ships a small vanilla-JS page (`frontend/`,
+served at `/radio.html`) that speaks the radio through the browser's Web Speech
+API — a distinct voice per role, a radio click ahead of critical calls, a
+critical spotter shout that cancels an advisory mid-sentence, per-agent mutes,
+and push-to-talk back to the pitwall where the browser supports it. Zero cost and
+no setup; an optional backend TTS provider is one env var away. The queue rules
+are a pure module with their own test suite (`frontend/audio-test.html`, or
+`node frontend/js/run-audio-tests.mjs`). See `docs/PITWALL.md`.
 
 ---
 

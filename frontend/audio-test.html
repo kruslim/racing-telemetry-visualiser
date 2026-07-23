@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pitwall audio discipline &mdash; self-test</title>
+<link rel="stylesheet" href="/css/pitwall.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='88'>&#9989;</text></svg>">
+</head>
+<body>
+<header>
+  <h1>Audio discipline &mdash; self-test</h1>
+  <span class="sub">queue &middot; priority &middot; supersede &middot; staleness &middot; mutes</span>
+  <nav><a href="/radio.html">radio</a></nav>
+</header>
+
+<main>
+  <section class="panel">
+    <h2>Result</h2>
+    <div id="summary" class="summary">running&hellip;</div>
+    <p class="meta">
+      The rules that decide what the driver hears are pure functions over a fake
+      speaker and an injected clock, so they can be asserted rather than listened
+      for. The same module runs headlessly:
+      <code>node frontend/js/run-audio-tests.mjs</code>.
+    </p>
+  </section>
+
+  <section class="panel">
+    <h2>Cases</h2>
+    <table class="results"><tbody id="rows"></tbody></table>
+  </section>
+
+  <section class="panel">
+    <h2>Audible check</h2>
+    <p class="meta">
+      The assertions above prove the ordering; this proves you can hear it. Six
+      scripted calls: a strategist advisory, an engineer advisory, then a
+      <strong>critical spotter shout that cuts the current call off mid-sentence</strong>,
+      a superseded pit call, and an info cue that only airs if the channel is free.
+    </p>
+    <div class="row">
+      <button id="play" class="primary">▶ Play the scenario aloud</button>
+      <button id="stop">■ Stop</button>
+      <span class="pill" id="engine">&hellip;</span>
+    </div>
+    <div id="now" class="now" style="margin-top:12px">channel clear</div>
+    <div class="meta">queued: <span id="queue">&mdash;</span></div>
+    <div class="meta" id="counters"></div>
+    <p id="notice" hidden></p>
+  </section>
+</main>
+
+<script type="module">
+import { runAudioTests } from '/js/audio-manager.test.js';
+import { RadioAudioManager } from '/js/audio-manager.js';
+import { RadioSpeaker } from '/js/speech.js';
+
+// --- the assertions -------------------------------------------------------
+const report = runAudioTests();
+const rows = document.getElementById('rows');
+for (const result of report.results) {
+  const tr = document.createElement('tr');
+  tr.className = result.ok ? 'pass' : 'fail';
+  const verdict = document.createElement('td');
+  verdict.className = 'verdict';
+  verdict.textContent = result.ok ? 'PASS' : 'FAIL';
+  const name = document.createElement('td');
+  name.textContent = result.name;
+  if (!result.ok) {
+    const error = document.createElement('div');
+    error.className = 'err';
+    error.textContent = result.error;
+    name.appendChild(error);
+  }
+  tr.append(verdict, name);
+  rows.appendChild(tr);
+}
+const summary = document.getElementById('summary');
+summary.textContent = `${report.passed}/${report.total} passed`;
+summary.className = `summary ${report.ok ? 'pass' : 'fail'}`;
+document.title = `${report.ok ? 'PASS' : 'FAIL'} — audio discipline self-test`;
+// Readable by any automation that later drives this page in a real browser.
+window.__RTV_AUDIO_TEST__ = report;
+
+// --- the audible half -----------------------------------------------------
+const speaker = new RadioSpeaker({
+  onEnd: (id) => manager.finished(id),
+  onNotice: (text) => {
+    const notice = document.getElementById('notice');
+    notice.textContent = text;
+    notice.hidden = !text;
+  },
+});
+const manager = new RadioAudioManager({ speaker, volume: 0.9, onChange: render });
+setInterval(() => manager.tick(), 500);
+
+const SCENARIO = [
+  { at: 0, agent: 'strategist', priority: 'advisory', subject: 'pit_stop',
+    spoken_text: 'Fuel window opens lap five, we are planning fuel only, no tyres this stop.' },
+  { at: 300, agent: 'vehicle_engineer', priority: 'advisory', subject: 'tyres',
+    spoken_text: 'Left front is climbing three degrees a lap across the stint.' },
+  { at: 2200, agent: 'spotter', priority: 'critical', subject: 'traffic',
+    spoken_text: 'Yellow, yellow! Car stopped at turn four, slow down.' },
+  { at: 2400, agent: 'strategist', priority: 'advisory', subject: 'pit_stop',
+    spoken_text: 'Box this lap under the yellow, three litres.' },
+  { at: 2700, agent: 'strategist', priority: 'advisory', subject: 'pit_stop',
+    spoken_text: 'Correction, box next lap, three point two litres.' },
+  { at: 3000, agent: 'coach', priority: 'info', subject: 'coaching',
+    spoken_text: 'Braking five metres early into turn one.' },
+];
+
+let run = 0;
+document.getElementById('play').onclick = () => {
+  speaker.prime();
+  const mine = ++run;
+  manager.clear();
+  SCENARIO.forEach((item, index) => {
+    setTimeout(() => {
+      if (mine !== run) return;
+      const { at, ...message } = item;
+      manager.push({ ...message, message_id: `demo-${mine}-${index}` });
+    }, item.at);
+  });
+};
+document.getElementById('stop').onclick = () => {
+  run += 1;
+  manager.clear();
+};
+
+function render(snapshot) {
+  const now = document.getElementById('now');
+  now.textContent = snapshot.speaking
+    ? `${snapshot.speaking.agent}: ${snapshot.speaking.spoken_text}`
+    : 'channel clear';
+  now.className = snapshot.speaking ? `now ${snapshot.speaking.priority}` : 'now';
+  document.getElementById('queue').textContent = snapshot.queue.length
+    ? snapshot.queue.map((m) => `${m.agent} (${m.priority})`).join('  ·  ')
+    : '—';
+  const c = snapshot.counters;
+  document.getElementById('counters').textContent =
+    `spoken ${c.spoken} · superseded ${c.superseded} · interrupted ${c.interrupted} · stale ${c.droppedStale}`;
+}
+
+const engine = speaker.describe();
+document.getElementById('engine').textContent = engine.webSpeech
+  ? `web speech · ${engine.voices} voices`
+  : 'no speech engine (text only)';
+render(manager.snapshot());
+</script>
+</body>
+</html>

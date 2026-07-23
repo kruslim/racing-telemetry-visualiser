@@ -9,7 +9,7 @@ its spec (with a one-line rationale).
 | **1** | Deterministic race-state engine + event bus + replay | **done** |
 | **2** | Agent framework + orchestrator + strategist | **done** |
 | **3** | Vehicle engineer / spotter / coach agents | **done** |
-| 4 | TTS radio voice | not started |
+| **4** | TTS radio voice | **done** |
 | 5 | Director + stub hardening | not started |
 | 6 | Pitwall UI | not started |
 
@@ -1122,3 +1122,423 @@ New test files: `tests/test_racestate_recurrence.py` (40),
 exported. No iRacing, no network. All 202 stage-1/2 tests still pass unmodified,
 and the scripted race still produces the same 19 events it did in stage 1 — none of
 the four new event types fires when nothing is wrong.
+
+---
+---
+
+# Stage 4 — the voice
+
+Stages 1–3 built something that decides what to say. This one makes it audible,
+and the interesting half is not the speech engine — it is the **discipline**.
+Four agents, one driver, one pair of ears: something has to decide what gets
+said, what waits, what is replaced, and what is thrown away unheard.
+
+That decision is made **twice on purpose**, once on each side of the socket:
+
+| | `RadioFeed` (backend) | `RadioAudioManager` (browser) |
+|---|---|---|
+| unit | a message | an *utterance in progress* |
+| pre-emption | critical sorts first in the queue | critical **cancels mid-sentence** |
+| supersede | same `(agent, subject)`, while queued | same, on the browser's own queue |
+| ageing | none | info is dropped after 15 s unheard |
+| mutes | — | per agent + master |
+
+The backend cannot do the browser's half: it has no idea a sentence is
+*currently being spoken*, only that a message was emitted. The browser cannot do
+the backend's half: it never sees the messages an agent superseded before they
+aired. Two queues, two jobs — the second is not a re-implementation of the first.
+
+---
+
+## Module map (added)
+
+| Module | Role |
+|--------|------|
+| `src/rtv/pitwall/tts.py` | Provider interface, registry, `NullProvider`, the REST reference impl, `RadioTTS` (clip cache + URLs). |
+| `frontend/js/audio-manager.js` | **Pure** queue/priority/supersede/staleness/mute logic. No `speechSynthesis`, no DOM, no timers. |
+| `frontend/js/speech.js` | The noisy half: Web Speech, backend audio, the WebAudio radio click, push-to-talk. |
+| `frontend/js/radio-voices.js` | The offline copy of the role voice table. |
+| `frontend/js/pitwall-radio.js` | Wiring: socket → manager, controls, PTT. |
+| `frontend/radio.html` | The listening page. |
+| `frontend/audio-test.html` | The in-page self-test (see *Testing the rules*). |
+| `frontend/js/audio-manager.test.js` | The 20 assertions both the page and node run. |
+
+## The default engine is the browser
+
+`speechSynthesis` costs nothing, needs no key, works with the network unplugged,
+and is already installed. It is not the fallback — it is **the** engine. The
+backend path exists for deployments that want a particular voice, and every
+failure in it lands back here rather than in silence.
+
+Per role, the browser gets a voice, a rate and a pitch:
+
+| agent | voice hints | rate | pitch |
+|---|---|---|---|
+| strategist | George / Daniel / *en-GB* | 0.98 | 0.85 |
+| vehicle_engineer | Ryan / Arthur / *en-GB* | 1.02 | 1.00 |
+| spotter | Guy / Christopher / *en-US* | 1.22 | 1.18 |
+| coach | Sonia / Libby / *en-GB* | 0.95 | 1.10 |
+
+Named voices differ by browser and OS, so the hint list is best-effort and the
+resolver falls back to spreading roles deterministically across whatever voices
+exist. **Rate and pitch are the guarantee**: every engine supports them, so two
+roles that land on the same underlying voice are still told apart by ear. The
+table lives in `rtv.pitwall.tts.DEFAULT_VOICES`, is served at
+`GET /api/v1/pitwall/tts`, and is mirrored in `radio-voices.js` for when that
+call fails — `tests/test_pitwall_audio_frontend.py` parses the JS literal and
+asserts the two are identical, so they cannot drift.
+
+## The premium path, and why it is lazy
+
+```python
+provider = build_tts_provider(TTSConfig(provider="rest", url=..., api_key=...))
+service  = RadioTTS(provider, cache_size=64)
+message.audio_url = service.url_for(message)     # a URL, not audio
+clip = await service.clip_for(message)           # bytes, on demand, cached
+```
+
+`PitwallOrchestrator.publish()` stamps every message with an `audio_url` the
+moment it is published, but **synthesises nothing**. The bytes are produced when
+a browser fetches `GET /api/v1/pitwall/audio/{message_id}`. A message that gets
+superseded before it airs therefore costs zero vendor calls, which is the common
+case for a chatty strategist under a safety car.
+
+`message_id` is a **content-derived** SHA-1 prefix of
+`(agent, event key, tick, spoken_text)`. Not random, for the same reason the
+event log has no wall-clock field: a replayed race must produce the same ids, so
+a cached clip stays valid and the UI's de-duplication stays meaningful across a
+re-run. It deliberately excludes `seq` — the sequence number is assigned when the
+feed accepts the message, i.e. *after* the URL is stamped, and an id that changed
+between those two moments would produce a URL resolving to nothing. (It did, for
+about ten minutes; the test named
+`test_a_published_message_carries_its_audio_url_when_a_provider_can_speak` is
+that bug's tombstone.)
+
+### The registry is the extension point
+
+Vendors disagree about request bodies in ways no single config schema survives
+(OpenAI puts the voice in the JSON, ElevenLabs puts it in the path). So a new
+vendor is a factory registered under a name, not a branch:
+
+```python
+register_tts_provider("elevenlabs", lambda config: MyProvider(config))
+# RTV_PITWALL_TTS=elevenlabs
+```
+
+`RestTTSProvider` is the shipped reference — an OpenAI-compatible
+`/audio/speech` body with a bearer token — and doubles as the worked example. Its
+HTTP call goes through an injected `Transport`, which is how the whole REST path
+is asserted offline: the tests check the exact body it *would* send without
+sending one.
+
+**Unavailable is a first-class state.** No provider configured, no URL, no key,
+no `httpx`, unknown name, factory raised — every one of those yields a
+`NullProvider` carrying the reason. `build_tts_provider` never raises. The
+frontend sees no `audio_url`, uses Web Speech, and the operator sees *why* on
+`/api/v1/pitwall/tts` instead of a silent radio.
+
+---
+
+## Audio discipline, in detail
+
+`RadioAudioManager` (`frontend/js/audio-manager.js`) is constructed with a
+speaker and a clock and nothing else:
+
+```js
+const manager = new RadioAudioManager({ speaker, now: () => Date.now() });
+manager.push(message);            // -> {action: 'speaking'|'queued'|'interrupted'|'dropped', reason}
+manager.finished(message_id);     // the host reports an utterance ended
+manager.tick();                   // drop stale info, start anything waiting
+manager.setAgentMuted('coach', true);
+manager.setMasterMuted(true);
+manager.setVolume(0.6);
+manager.snapshot();               // {speaking, queue, volume, masterMuted, muted, counters}
+```
+
+The rules, and the judgement in each:
+
+- **Single speaker.** One utterance at a time, always.
+- **Critical interrupts** — `speaker.cancel()` then straight into the critical.
+  The cut-off message is **discarded, not requeued**: re-reading half a stale
+  advisory after a "car left!" is worse radio than dropping it. It is kept on
+  `lastInterrupted` so the UI can show what was lost.
+- **Critical never interrupts critical.** Two urgent calls are both urgent; the
+  second waits. This is the browser twin of the backend's "a critical message is
+  never superseded and never dropped".
+- **Advisory queues** by priority then arrival, and **never ages out**. A
+  decision is still a decision ten minutes later.
+- **Info is opportunistic**: spoken only if the channel is idle, and dropped once
+  it has waited **15 s**. Stale context read out three corners later is worse
+  than nothing.
+- **Supersede** on `(agent, subject)` while queued, mirroring `RadioFeed`.
+- **Mutes drop at the door.** A muted agent's calls are never queued, so unmuting
+  does not unleash a backlog of history the driver has already driven past.
+- **`speak: false` is never spoken** — that is the driver's own transcript.
+- **De-duplication by `message_id`**, so a socket reconnect that replays the log
+  does not say everything twice.
+
+A **radio click** (two clipped WebAudio blips, no asset files) plays ahead of a
+critical call only. The manager decides — it passes `{cue: true}` — so the rule
+is testable and the noise is not.
+
+**Volume and mutes live in the URL** (`?volume=0.6&master=1&muted=coach,spotter`)
+and in memory. No `localStorage`, no `sessionStorage`, anywhere; a test greps the
+whole frontend for them.
+
+### Push-to-talk
+
+`PushToTalk` (`speech.js`) wraps `SpeechRecognition` / `webkitSpeechRecognition`,
+feature-detected: where it is absent the button is **hidden**, not disabled and
+not broken. A transcript is POSTed to `/api/v1/pitwall/driver-message`, which
+puts it on the channel as `agent: "driver"`, `speak: false`.
+
+Driver messages are **emitted, not queued**: the driver has already used the
+airtime, so making the transcript wait behind an advisory would misrepresent when
+it happened. They join the radio ring buffer, which means agents see them in
+their recent-radio context for free.
+
+---
+
+## API surface (added; stages 1–3 and all of v1 untouched)
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/api/v1/pitwall/tts` | Provider, availability + reason, the role voice table, `engine: backend` or `webspeech` |
+| GET | `/api/v1/pitwall/audio/{message_id}` | Synthesised audio bytes for one message |
+| POST | `/api/v1/pitwall/driver-message` | `{text, source}` — push-to-talk onto the channel |
+
+`GET /pitwall/tts` answers whether or not the agent layer is mounted, because a
+browser needs the voice table before it needs a radio message.
+
+`GET /pitwall/audio/{id}` is deliberately **not** a "speak this text" endpoint.
+The only thing that can be synthesised is something an agent actually put on the
+radio, looked up by its content-derived id — there is no path from arbitrary text
+to the driver's ear, which keeps the grounding discipline intact all the way to
+the speaker.
+
+| Status | Means | The frontend does |
+|---|---|---|
+| 200 | audio bytes (`Cache-Control: immutable`) | plays them |
+| 404 | no such message in the ring buffer | speaks it itself |
+| 502 | the vendor failed | speaks it itself |
+| 503 | no backend provider (the default) | speaks it itself |
+
+Every non-200 has the same consequence — the browser's voice — so a flaky vendor
+costs a change of voice, never a missed call.
+
+### `RadioMessage` gained three fields
+
+```jsonc
+{"type":"radio","message":{
+  "message_id":"9bda500fde3f6475",     // content-derived; audio key + UI de-dup
+  "speak": true,                        // false = show it, never say it
+  "audio_url": null,                    // null = use the browser's Web Speech API
+  "agent":"strategist", "priority":"critical", "spoken_text":"...", ...
+}}
+```
+
+Everything else about the radio contract is unchanged, and `/pitwall/status`
+gained a `tts` block (`null` when no `RadioTTS` is attached).
+
+### Serving the frontend
+
+`create_app()` now mounts `frontend/` at `/` — vanilla JS, no build step, no
+frameworks, no CDN. It is mounted **after** every router, and through a
+`FrontendFiles` subclass that answers **404 rather than 405** for a non-GET:
+a catch-all mount is what an unmatched request finally reaches, and Starlette's
+default would have turned every unknown `POST /api/v1/...` into a method error.
+Mounting a frontend must not change what the API says about paths it does not
+have (`test_pitwall_routes_absent_when_disabled` caught exactly that).
+
+| Page | What it is |
+|---|---|
+| `/` | placeholder index; the real pitwall UI is stage 6 |
+| `/radio.html` | the listening page: live radio, mutes, volume, PTT, demo |
+| `/audio-test.html` | the audio-discipline self-test, in-page |
+
+---
+
+## Testing the rules
+
+The queue logic is the part that can be subtly wrong in a way you only discover
+mid-race, so it is pure and it is asserted — 20 cases against a fake speaker and
+an injected clock, in `frontend/js/audio-manager.test.js`:
+
+```powershell
+node frontend/js/run-audio-tests.mjs        # headless; exit code is the result
+start http://127.0.0.1:8000/audio-test.html # same module, rendered in-page
+```
+
+The repo has **no JS toolchain and did not gain one**: the runner is node plus ES
+modules, no `package.json`, no dependencies. `pytest` runs it when a `node`
+binary happens to be on PATH and skips it otherwise, so the suite's offline
+guarantee is unchanged either way. The page also publishes
+`window.__RTV_AUDIO_TEST__` for any later browser automation, and puts
+`PASS`/`FAIL` in `document.title`.
+
+What the JS cases pin down, beyond the happy path: a critical cuts an advisory
+off and the advisory is *not* requeued; a critical does not cut off a critical;
+a queued critical is never superseded; info ages out at 15 s but an advisory
+never does; unmuting replays no backlog; a replayed `message_id` is spoken once;
+a late `onend` from a cancelled utterance cannot steal the channel.
+
+Python covers the rest: `tests/test_pitwall_tts.py` (36) for the registry and the
+providers, `tests/test_pitwall_audio_api.py` (19) for the HTTP contract,
+`tests/test_pitwall_audio_frontend.py` (29) for the files being served, the two
+voice tables agreeing, and the house rules (no storage APIs, no build step, the
+audio manager importing nothing from a browser).
+
+---
+
+## Configuration added
+
+| Env var | Default | Meaning |
+|---|---|---|
+| `RTV_PITWALL_TTS` | *(empty)* | Provider name. Empty = browser Web Speech only. |
+| `RTV_PITWALL_TTS_URL` | *(empty)* | Speech endpoint for `rest`/`openai`. |
+| `RTV_PITWALL_TTS_API_KEY` | *(empty)* | Bearer token. Missing means the provider reports unavailable. |
+| `RTV_PITWALL_TTS_MODEL` | *(empty)* | Vendor model id. |
+| `RTV_PITWALL_TTS_FORMAT` | `mp3` | Requested audio format. |
+| `RTV_PITWALL_TTS_MEDIA_TYPE` | `audio/mpeg` | Content-Type served for it. |
+| `RTV_PITWALL_TTS_VOICES` | *(empty)* | `strategist=onyx,spotter=fable` overrides. |
+| `RTV_PITWALL_TTS_TIMEOUT_S` | `8` | Timeout on one synthesis request. |
+| `RTV_PITWALL_TTS_CACHE` | `64` | Clips kept in memory, keyed by `message_id`. |
+
+---
+
+## Hearing it
+
+```powershell
+uvicorn rtv.main:app                      # then open http://127.0.0.1:8000/radio.html
+```
+
+Press **Enable audio** once (browsers make no sound before a gesture), then:
+
+- **Play synthetic scenario** — six scripted calls with a critical spotter shout
+  landing mid-sentence and a superseded pit call. Needs no key and no agents.
+- **Replay the scripted race** — drives `POST /api/v1/replay/start` with
+  `session_id: "scenario"`. With `RTV_PITWALL_AGENTS=true` and a key, the radio
+  is live agent output. Without them the page **says so** and plays the scripted
+  calls instead, labelled as scripted — a canned line presented as an agent's
+  call would be exactly the ungrounded claim this codebase refuses everywhere
+  else.
+
+Mute buttons, the volume slider and the master mute all take effect on the next
+utterance boundary (master mute and muting the speaking agent stop the current
+one immediately).
+
+---
+
+## Interfaces stage 5 consumes
+
+```python
+from rtv.pitwall.tts import (
+    RadioTTS, TTSConfig, TTSProvider, VoiceProfile, NullProvider, RestTTSProvider,
+    build_radio_tts, build_tts_provider, register_tts_provider, tts_provider_names,
+    DEFAULT_VOICES, AUDIO_URL_PREFIX, TTSError, TTSUnavailable,
+)
+
+services.tts                          # RadioTTS, always present (usually NullProvider)
+orch.publish(message)                 # stamp audio_url + queue -- use this, not feed.publish
+orch.driver_message(text, source=...) # push-to-talk onto the channel
+orch.tts                              # RadioTTS | None
+feed.find(message_id)                 # history then pending
+message.message_id                    # content-derived, replay-stable
+message.speak / message.audio_url
+```
+
+```js
+import { RadioAudioManager } from '/js/audio-manager.js';   // pure, testable
+import { RadioSpeaker, PushToTalk } from '/js/speech.js';   // browser adapters
+```
+
+A director agent (stage 5) that wants to hold the channel should publish through
+`orch.publish` like everything else; the browser's manager will apply the same
+discipline to it with no frontend change. A new agent gets a voice automatically
+(`FALLBACK_VOICE`) and a distinct one by adding a row to `DEFAULT_VOICES` **and**
+`radio-voices.js` — the test that compares them will insist.
+
+---
+
+## Deviations from the stage-4 spec
+
+Each is a conservative choice made autonomously, per `CLAUDE.md`.
+
+1. **`POST /api/v1/pitwall/driver-message` did not exist; this stage added it.**
+   The spec calls it "existing". It was not in stage 2 or 3, so it is implemented
+   here as the smallest honest thing: the transcript joins the radio log as
+   `agent: "driver"`, `speak: false`, emitted rather than queued. It is
+   deliberately **not** routed to the agents — waking a model on a driver
+   utterance is a trigger design decision, and inventing one at the end of a TTS
+   stage would have been the wrong place to make it.
+2. **There was no `frontend/` directory to build in.** `CLAUDE.md` describes one
+   and the v1 analysis UI is built separately, outside this repo. So this stage
+   created it, mounted it at `/`, and kept it to what stage 4 needs plus a
+   placeholder index — the real pitwall UI is stage 6, and this should be
+   replaced rather than extended.
+3. **The static mount answers 404, not 405, for a non-GET.** See "Serving the
+   frontend": a catch-all mount changes what the API says about unknown paths,
+   and an existing stage-1 test was right to object.
+4. **The interrupted message is discarded, not requeued.** The spec says
+   "critical interrupts current playback (cancel + play)" and is silent on the
+   victim. Resuming a half-spoken advisory after an emergency call is worse radio
+   than losing it; it is preserved on `lastInterrupted` for the UI.
+5. **Master mute silences criticals too.** A mute the driver set that a critical
+   could override is not a mute. The control for "only the important ones" is the
+   per-agent toggles.
+6. **Only one cloud provider shape ships.** The spec asks for "one reference
+   implementation stubbed for a cloud TTS (e.g. OpenAI/ElevenLabs-style REST)".
+   An ElevenLabs body written from memory would be a guess presented as an
+   integration; `RestTTSProvider` implements the OpenAI-compatible shape it can
+   be honest about, and the registry — with a test proving a third-party provider
+   is one registration — is the seam for the rest.
+7. **Synthesis is lazy and cached, not eager on publish.** The spec says
+   "backend synthesises to audio bytes served at GET ...". Synthesising at publish
+   time would pay for every superseded message and put a vendor round-trip on the
+   agent's critical path. The URL is stamped at publish; the bytes are made on
+   first fetch and cached by `message_id`.
+8. **`message_id` excludes `seq`.** See "The premium path" — including it made
+   the stamped URL unresolvable.
+9. **A backend-audio failure falls back to Web Speech rather than being retried.**
+   Same reasoning as the 502 mapping: a different voice is a much smaller failure
+   than a missed radio call.
+10. **The replay button plays the scripted radio when no agents are mounted**, and
+    labels it as scripted in the UI. Without this the definition-of-done demo is
+    silent on a machine with no API key, which is every machine this suite runs
+    on; without the label it would be a fake pit call presented as a real one.
+11. **`pytest` runs the JS suite only when `node` is on PATH.** Making node a hard
+    dependency of the Python suite would break the offline guarantee on a machine
+    that has no reason to have it. The same assertions are always reachable in a
+    browser via `audio-test.html`.
+
+### A Chrome quirk worth recording
+
+`speechSynthesis.cancel()` followed by `speak()` in the same tick silently drops
+the new utterance in Chrome — and that is *exactly* the interrupt path a critical
+call takes, so the one thing this stage exists to demonstrate would have failed
+there. `_playWebSpeech` schedules the new utterance one frame (40 ms) after the
+cancel, guarded so a second interrupt inside that frame still wins. There is also
+a 5 s pause/resume keepalive, because Chrome stops speaking after ~15 s.
+
+---
+
+## Verification (stage 4)
+
+```powershell
+pytest                                   # 393 passed (309 stage 1-3 + 84 new), fully offline
+node frontend/js/run-audio-tests.mjs     # 20/20 audio-discipline cases
+python scripts/smoke_pitwall_voice.py    # the voice path end to end, fake vendor transport
+python scripts/smoke_pitwall_roles.py    # stage 3, unchanged
+python scripts/smoke_pitwall_agents.py   # stage 2, unchanged
+python scripts/smoke_pitwall.py          # stage 1, unchanged
+python scripts/smoke_offline.py          # v1 surface, unchanged
+python evals/run_pitwall.py --dry-run    # 24 cases across 4 agents, unchanged
+ruff check src tests scripts evals
+```
+
+New test files: `tests/test_pitwall_tts.py` (36), `tests/test_pitwall_audio_api.py`
+(19), `tests/test_pitwall_audio_frontend.py` (29; one case skips itself when node
+is absent). Green with and without `ANTHROPIC_API_KEY` exported. No iRacing, no
+network, no API key. All 309 stage-1/2/3 tests still pass unmodified, and the
+scripted race still produces the same 19 events and the same radio log it did
+before — the message ids are new metadata on it, not a change to it.
