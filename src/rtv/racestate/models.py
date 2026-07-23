@@ -52,6 +52,15 @@ class EventType(StrEnum):
     TYRE_OUT_OF_BAND = "tyre_out_of_band"
     CAR_HEALTH_WARNING = "car_health_warning"
     TRAFFIC_CLOSE = "traffic_close"
+    #: Director-only (see :mod:`rtv.director`). No detector emits these two: the
+    #: catalog contract in ``racestate/channels.py`` has no channel that would
+    #: say "rain is coming in ten minutes" or "a mandatory stop is now required",
+    #: and inferring one from a temperature drift would be the invented figure
+    #: this codebase refuses everywhere else. They exist so a scripted scenario
+    #: can express a weather step or a regulation change *as an ordinary event*,
+    #: which is what makes the director seam need no special case downstream.
+    WEATHER_CHANGE = "weather_change"
+    REGULATION_CHANGE = "regulation_change"
 
 
 class FlagPhase(StrEnum):
@@ -262,6 +271,12 @@ class RaceState(BaseModel):
     tick: int = 0
     session_time: float = 0.0
     wall_time: float | None = None
+    #: True when telemetry stopped arriving (iRacing quit, the sim was paused,
+    #: the session ended). Every number below is then the *last known* value, not
+    #: a current one -- a distinction a pitwall cannot afford to blur, so it is a
+    #: field rather than something a consumer has to infer from a frame counter.
+    stale: bool = False
+    stale_reason: str | None = None
     session: SessionSummary = Field(default_factory=SessionSummary)
     flags: FlagState = Field(default_factory=FlagState)
     standings: StandingsState = Field(default_factory=StandingsState)

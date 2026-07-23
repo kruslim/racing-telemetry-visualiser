@@ -1,0 +1,94 @@
+{
+  "name": "Late safety car, rain, and a mandatory stop",
+  "version": 1,
+  "description": "A worked ScenarioScript for the PLANNED race-director layer (src/rtv/director). It rehearses the one race a strategist is worst at: a full-course yellow that lands just before the fuel window opens, weather that turns the tyre call over, and a regulation change that removes the option of staying out. Stage 5 ships the schema, the DirectorEngine protocol and the NoopDirector default -- nothing here fires until a director implementation walks the script. Loading it validates it: ScenarioScript.load('docs/director_scenario.example.json').",
+  "injections": [
+    {
+      "id": "fcy_lap_3",
+      "kind": "flag",
+      "event_type": "flag_change",
+      "severity": "critical",
+      "when": {
+        "at_lap": 3,
+        "at_lap_dist_pct": 0.3
+      },
+      "payload": {
+        "from": "green",
+        "to": "yellow",
+        "active": ["yellow", "caution"]
+      },
+      "note": "Full-course yellow a third of the way round lap 3. Payload keys are the real detector's keys, so the strategist's flag_change trigger and the spotter's both fire exactly as they would for a yellow the sim threw."
+    },
+    {
+      "id": "green_again",
+      "kind": "flag",
+      "event_type": "flag_change",
+      "severity": "info",
+      "when": {
+        "after": "fcy_lap_3",
+        "delay_s": 90.0
+      },
+      "payload": {
+        "from": "yellow",
+        "to": "green",
+        "active": ["green"]
+      },
+      "note": "Ninety session-seconds of caution, then the restart. Session seconds, not wall clock: a 4x replay must rehearse the same race."
+    },
+    {
+      "id": "rain_arrives",
+      "kind": "weather",
+      "event_type": "weather_change",
+      "severity": "advisory",
+      "when": {
+        "after": "green_again",
+        "delay_s": 120.0,
+        "while_flag": "green"
+      },
+      "payload": {
+        "measure": "track_wetness",
+        "from": 0.0,
+        "to": 0.35,
+        "air_temp": 17.5,
+        "track_temp": 24.0,
+        "forecast_minutes": 8
+      },
+      "note": "weather_change is a director-only event type: no iRacing channel announces rain that has not arrived, so nothing deterministic can emit it (see rtv.racestate.models.EventType). Guarded by while_flag so it does not land during the caution, where nobody could react to it."
+    },
+    {
+      "id": "mandatory_stop",
+      "kind": "regulation",
+      "event_type": "regulation_change",
+      "severity": "advisory",
+      "when": {
+        "at_lap": 5
+      },
+      "payload": {
+        "regulation": "mandatory_pit_stop",
+        "applies_from_lap": 5,
+        "applies_to_lap": 9,
+        "requires": ["tyre_change"],
+        "penalty": "drive_through"
+      },
+      "note": "Forced pit regulation: the stop is no longer optional, so 'extend' and 'stay_out' stop being defensible answers and the strategist's decision band changes. This is the entry that makes the script worth running against an eval set."
+    },
+    {
+      "id": "debris_hazard",
+      "kind": "hazard",
+      "event_type": "traffic_close",
+      "severity": "advisory",
+      "when": {
+        "at_session_time": 420.0,
+        "while_flag": "green",
+        "once": true
+      },
+      "payload": {
+        "car_idx": 11,
+        "gap": 0.9,
+        "side": "ahead",
+        "closing_rate_s_per_s": 0.4
+      },
+      "note": "A hazard expressed with an existing detector event type rather than a new one. The spotter needs no change to handle it, which is the whole argument for the director producing ordinary events."
+    }
+  ]
+}

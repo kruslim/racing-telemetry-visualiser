@@ -192,6 +192,37 @@ class Settings(BaseSettings):
         ge=1,
         description="Radio messages kept in the ring buffer for late joiners.",
     )
+    pitwall_max_calls_per_session: int = Field(
+        default=400,
+        ge=0,
+        description="Hard ceiling on billable model calls in one session, counted "
+        "across every agent. Generous on purpose: it is a runaway guard, not a "
+        "budget (a normal race hour is a low-tens number). 0 = unlimited. The "
+        "counter is exposed on GET /api/v1/pitwall/status.",
+    )
+    pitwall_retry_backoff_s: float = Field(
+        default=0.5,
+        ge=0.0,
+        description="Pause before the single retry of a failed model call. One "
+        "retry only: a pit call that lands three corners late is worse than none.",
+    )
+    pitwall_agent_failure_limit: int = Field(
+        default=3,
+        ge=0,
+        description="Consecutive failed invocations before an agent is taken off "
+        "the air automatically. 0 disables the circuit breaker. A revoked key "
+        "would otherwise cost one doomed call per race event for a whole race.",
+    )
+
+    # --- race director (v2 stage 5: planned; interfaces only) ------------
+    pitwall_director_script: str = Field(
+        default="",
+        description="Path to a ScenarioScript JSON file (see "
+        "docs/director_scenario.example.json). Loaded and VALIDATED at startup, "
+        "then bound to the default NoopDirector -- which injects nothing, because "
+        "the race-director layer ships as interfaces only. Pointing at a script "
+        "is currently a way to lint it, not to run it.",
+    )
 
     # --- pitwall TTS (v2 stage 4: the radio's voice) ---------------------
     # The default voice is the *browser's* Web Speech API, which costs nothing

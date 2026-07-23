@@ -11,6 +11,7 @@ from pathlib import Path
 
 from rtv.coaching.features import CoachingService
 from rtv.config import Settings
+from rtv.director import NoopDirector, ScenarioScript
 from rtv.domain.models import ConnectionState
 from rtv.ingest.frame import Frame
 from rtv.ingest.ibt import import_ibt
@@ -137,6 +138,12 @@ def build_services(settings: Settings) -> AppServices:
     if settings.pitwall:
         engine = RaceStateEngine(
             source="live",
+            # The live path must not be able to stop. A fault on one frame is
+            # counted in metrics.dropped_frames and swallowed; a pitwall that
+            # dies at 250 km/h is worse than one that is missing 16 ms of state.
+            # Off by default in the constructor, so tests and replays still fail
+            # loudly on a real bug.
+            resilient=True,
             gap_interval=settings.pitwall_gap_interval,
             fuel_laps=settings.pitwall_fuel_laps,
             config=replace(
@@ -162,7 +169,10 @@ def build_services(settings: Settings) -> AppServices:
     def on_frame(frame: Frame, catalog) -> None:
         hub.publish_frame(frame, catalog)
         if engine is not None:
-            # Never let a race-state fault break live capture or the /ws/live feed.
+            # The engine is built resilient=True, so it counts and swallows its
+            # own per-frame faults. This is the outer net for anything that could
+            # still escape it: live capture and the v1 /ws/live feed must not be
+            # reachable from a race-state bug.
             try:
                 engine.on_frame(frame, catalog)
             except Exception:  # pragma: no cover - defensive on the hot path
@@ -170,7 +180,25 @@ def build_services(settings: Settings) -> AppServices:
 
     def on_state(state: ConnectionState, session_id: str | None) -> None:
         hub.publish_state(state, session_id)
-        if engine is None or not session_id:
+        if engine is None:
+            return
+        # iRacing came or went. The engine has no clock of its own, so a
+        # disconnect does not corrupt the race state -- it silently freezes it,
+        # which is worse: "P4, 2.1 s behind" reads the same whether it is current
+        # or four minutes old. Flag it, and stand the agents down so none of them
+        # reasons over a race that has stopped.
+        try:
+            if state is ConnectionState.IN_SESSION:
+                engine.mark_live()
+                if pitwall is not None:
+                    pitwall.resume()
+            else:
+                engine.mark_stale(f"iRacing telemetry {state.value}")
+                if pitwall is not None:
+                    pitwall.suspend(f"iRacing telemetry {state.value}")
+        except Exception:  # pragma: no cover - never break the live feed
+            log.exception("Could not apply connection state %s", state)
+        if not session_id:
             return
         # Name the live session on the engine, and pick the session-info document
         # up out of the store the poller has just written it to. Doing it here
@@ -273,6 +301,10 @@ def build_pitwall(
         feed=RadioFeed(history=settings.pitwall_radio_history),
         max_inflight=settings.pitwall_max_inflight,
         enabled=settings.pitwall_agents_live,
+        director=build_director(settings),
+        failure_limit=settings.pitwall_agent_failure_limit,
+        max_calls_per_session=settings.pitwall_max_calls_per_session,
+        retry_backoff_s=settings.pitwall_retry_backoff_s,
         tool_config={
             "pit_lane_loss_s": settings.pitwall_pit_lane_loss_s,
             "standings_window": 3,
@@ -285,3 +317,27 @@ def build_pitwall(
         tool_extras={"coaching": coaching, "repo": repo},
         tts=tts,
     )
+
+
+def build_director(settings: Settings) -> NoopDirector:
+    """Load and validate the configured scenario script, then bind it to a no-op.
+
+    The race-director layer is **planned**: stage 5 ships the schema, the
+    protocol and this default, and no walker. So what
+    ``RTV_PITWALL_DIRECTOR_SCRIPT`` buys today is validation -- point the server
+    at a script and a malformed one fails at boot with a line number instead of
+    three laps into a demo.
+
+    A bad path is a warning, not a crash. Losing the rehearsal is a smaller
+    failure than refusing to start the pitwall, and the reason is reported on
+    ``/api/v1/pitwall/status``.
+    """
+    path = (settings.pitwall_director_script or "").strip()
+    if not path:
+        return NoopDirector()
+    try:
+        script = ScenarioScript.load(path)
+    except (OSError, ValueError) as exc:
+        log.warning("Could not load the director script %s: %s", path, exc)
+        return NoopDirector()
+    return NoopDirector(script)

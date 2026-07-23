@@ -92,6 +92,7 @@
   .brow .bt small{display:block;font-weight:400;color:var(--muted);font-size:13.5px;margin-top:3px;font-family:var(--disp)}
   .chip{font-family:var(--mono);font-size:11px;letter-spacing:.04em;text-transform:uppercase;font-weight:600;
     color:var(--accent-2);background:var(--accent-soft);border:1px solid #CDE6DC;padding:4px 11px;border-radius:999px;white-space:nowrap}
+  .chip.planned{color:#8A7A55;background:#FBF6E8;border-color:#E8DCBB}
 
   .panels{margin-top:34px;display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
   @media(max-width:860px){.panels{grid-template-columns:repeat(2,1fr)}}
@@ -200,7 +201,7 @@
   <div class="shead reveal">
     <p class="eyebrow">The full stack</p>
     <h2>Ingest to AI, built end to end.</h2>
-    <p>Not a single library &mdash; a complete platform. Every layer below runs today: capture, columnar storage, an HTTP and streaming API, a visual analysis UI, and a grounded AI coaching pipeline.</p>
+    <p>Not a single library &mdash; a complete platform. Everything marked shipped runs today: capture, columnar storage, an HTTP and streaming API, a visual analysis UI, a grounded AI coaching pipeline, and a live multi-agent pitwall. What is still planned says so.</p>
   </div>
   <div class="board card reveal">
     <div class="brow"><div class="bt">Live telemetry stream<small>Latest-frame WebSocket at up to 60&nbsp;Hz, backpressure-safe</small></div><span class="chip">Live</span></div>
@@ -210,6 +211,8 @@
     <div class="brow"><div class="bt">MCP server<small>Six tools &mdash; chat-driven coaching in Claude Desktop / Code</small></div><span class="chip">Shipped</span></div>
     <div class="brow"><div class="bt">Multi-agent AI coach<small>Specialists per corner &rarr; synthesise &rarr; adversarially verify</small></div><span class="chip">Shipped</span></div>
     <div class="brow"><div class="bt">Evals harness<small>Every claimed figure checked against deterministic ground truth</small></div><span class="chip">Shipped</span></div>
+    <div class="brow"><div class="bt">Live multi-agent pitwall<small>Race-state engine at 60&nbsp;Hz &rarr; four event-driven agents &rarr; one spoken radio channel</small></div><span class="chip">Shipped</span></div>
+    <div class="brow"><div class="bt">Race director<small>Scripted safety cars, weather and regulations &mdash; schema and seam built, scheduler not yet</small></div><span class="chip planned">Planned</span></div>
   </div>
 </section>
 

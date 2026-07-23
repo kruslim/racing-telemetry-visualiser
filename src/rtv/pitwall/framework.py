@@ -20,7 +20,9 @@ timer and never per tick. All the continuous mathematics already happened in
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
+import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from enum import StrEnum
@@ -36,6 +38,8 @@ log = get_logger("pitwall.framework")
 
 #: Radio is a scarce channel; a message longer than this stops being radio.
 SPOKEN_WORD_LIMIT = 25
+#: Pause before the single retry of a failed model call.
+RETRY_BACKOFF_S = 0.5
 
 
 class RadioPriority(StrEnum):
@@ -293,6 +297,8 @@ class AgentRuntime:
         tool_extras: Mapping[str, Any] | None = None,
         clock: Callable[[], float] | None = None,
         repair_attempts: int = 1,
+        retry_attempts: int = 1,
+        retry_backoff_s: float = RETRY_BACKOFF_S,
     ) -> None:
         self.spec = spec
         self.provider = provider
@@ -300,10 +306,24 @@ class AgentRuntime:
         self.tool_extras = dict(tool_extras or {})
         self._clock = clock
         self._repair_attempts = repair_attempts
+        #: One retry on a *transport* failure, then give up. A pit call that
+        #: lands three corners late is worse than no call, so this is not a
+        #: general retry policy -- it is the single attempt that covers a dropped
+        #: connection without turning a vendor outage into a queue of stale advice.
+        self._retry_attempts = max(0, retry_attempts)
+        self._retry_backoff_s = max(0.0, retry_backoff_s)
         self._last_fired: dict[str, float] = {}
         self.invocations = 0
         self.refusals = 0
         self.errors = 0
+        self.retries = 0
+        #: Provider completions, i.e. actual billable model calls -- one
+        #: invocation is several of these when the model uses its tools. This is
+        #: the number the session cost guard counts.
+        self.turns = 0
+        self.last_latency_ms: float | None = None
+        self.avg_latency_ms: float | None = None
+        self._latency_total_ms = 0.0
 
     # ---- triggering ------------------------------------------------------
     def match(self, event: RaceEvent, state: RaceState) -> Trigger | None:
@@ -366,7 +386,9 @@ class AgentRuntime:
         tools_used: list[str] = []
 
         try:
-            output = await self._converse(system, messages, ctx, facts, tools_used)
+            output = await self._converse_with_retry(
+                system, messages, ctx, facts, tools_used, event
+            )
         except Exception:
             self.errors += 1
             log.exception("Agent %s failed on %s", spec.name, event.key)
@@ -391,6 +413,53 @@ class AgentRuntime:
         )
 
     # ---- the tool-use loop ----------------------------------------------
+    async def _converse_with_retry(
+        self,
+        system: list[dict[str, Any]],
+        messages: list[dict[str, Any]],
+        ctx: ToolContext,
+        facts: FactSet,
+        tools_used: list[str],
+        event: RaceEvent,
+    ) -> AgentOutput | None:
+        """One retry on a transport failure, then let the caller degrade.
+
+        Deliberately shallow. A 502 from the vendor is worth one more attempt; a
+        four-attempt exponential backoff would mean a pit call arriving after the
+        stop it was about. The message history is rebuilt from the caller's list
+        each attempt, because a half-finished tool exchange is not a prefix a
+        second attempt can safely continue from.
+        """
+        attempts = self._retry_attempts + 1
+        original = list(messages)
+        for attempt in range(attempts):
+            try:
+                return await self._converse(system, messages, ctx, facts, tools_used)
+            except Exception:
+                if attempt + 1 >= attempts:
+                    raise
+                self.retries += 1
+                log.warning(
+                    "Agent %s: model call failed on %s, retrying once in %.2fs",
+                    self.spec.name, event.key, self._retry_backoff_s,
+                )
+                if self._retry_backoff_s:
+                    await asyncio.sleep(self._retry_backoff_s)
+                messages[:] = original
+        return None  # pragma: no cover - unreachable; the loop returns or raises
+
+    async def _complete(self, **kwargs: Any) -> Any:
+        """The one place a model is actually called. Counted and timed here."""
+        started = time.perf_counter()
+        try:
+            return await self.provider.complete(**kwargs)
+        finally:
+            elapsed = (time.perf_counter() - started) * 1000.0
+            self.turns += 1
+            self._latency_total_ms += elapsed
+            self.last_latency_ms = round(elapsed, 2)
+            self.avg_latency_ms = round(self._latency_total_ms / self.turns, 2)
+
     async def _converse(
         self,
         system: list[dict[str, Any]],
@@ -403,7 +472,7 @@ class AgentRuntime:
         for iteration in range(spec.max_tool_iterations + 1):
             # On the last pass the tools are withdrawn, so the model must answer.
             offer_tools = iteration < spec.max_tool_iterations
-            response = await self.provider.complete(
+            response = await self._complete(
                 agent=spec.name,
                 model=spec.model,
                 system=system,
@@ -567,8 +636,14 @@ class AgentRuntime:
     def stats(self) -> dict[str, Any]:
         return {
             "invocations": self.invocations,
+            # Billable model calls. Higher than `invocations`: one wake-up is a
+            # tool round trip or two plus the answer.
+            "llm_calls": self.turns,
             "refusals": self.refusals,
             "errors": self.errors,
+            "retries": self.retries,
+            "last_latency_ms": self.last_latency_ms,
+            "avg_latency_ms": self.avg_latency_ms,
             "cooldowns": dict(self._last_fired),
         }
 

@@ -93,10 +93,22 @@ class RaceStateEngine:
         gap_interval: int = 6,
         trend_window_s: float = 120.0,
         event_cooldown_s: float = 1.0,
+        resilient: bool = False,
     ) -> None:
         self.bus = bus or EventBus()
         self.config = config
         self.source = source
+        #: Live deployments set this. A fault on one frame is then counted in
+        #: ``metrics.dropped_frames`` and swallowed, because 1/60th of a second of
+        #: missing state is a far smaller failure than a pitwall that stops. Off
+        #: by default so tests and replays still fail loudly on a real bug --
+        #: an engine that silently emitted no events would pass every assertion
+        #: about what it does *not* emit.
+        self.resilient = resilient
+        self._faults = 0
+        self._last_fault: str | None = None
+        self._last_fault_logged = -1e9
+        self._last_frame_monotonic: float | None = None
         self._fuel_laps = fuel_laps
         self._gap_interval = max(1, gap_interval)
         # Fuel derivations refresh ~1 Hz. Lap boundaries alone are not enough:
@@ -137,6 +149,7 @@ class RaceStateEngine:
             self._frames = 0
             self._avg_ms = 0.0
             self._max_ms = 0.0
+            self._faults = 0
 
             self._last_lap: int | None = None
             self._latched: set[str] = set()
@@ -197,6 +210,46 @@ class RaceStateEngine:
                 )
                 or "none",
             )
+
+    # ---- connection lifecycle -------------------------------------------
+    def mark_stale(self, reason: str) -> None:
+        """Telemetry stopped arriving: freeze the state and say so.
+
+        The engine has no clock of its own -- it only moves when a frame moves
+        it -- so a disconnect does not *corrupt* the state, it silently freezes
+        it. That is the dangerous case: "P4, 2.1 s behind" reads identically
+        whether it is current or four minutes old. Flagging it is what lets a UI
+        grey out and the agents stand down.
+        """
+        with self._lock:
+            if self._state.stale:
+                return
+            self._state.stale = True
+            self._state.stale_reason = reason
+            self._state.version += 1  # so a subscriber sees a new snapshot
+        log.info("Race state marked stale: %s", reason)
+
+    def mark_live(self) -> None:
+        """Frames are flowing again. Clear the flag and the detector window.
+
+        The window is dropped deliberately. Every frame-window detector -- lock-up,
+        wheelspin, off-track, pit and lap edges -- works on consecutive samples,
+        and the frame before a four-minute gap is not the predecessor of the frame
+        after it. Comparing across the gap would manufacture a lap completion, a
+        pit transition or a wheel-lock out of a discontinuity nobody drove.
+        """
+        with self._lock:
+            if not self._state.stale:
+                return  # already live; the window must not be thrown away
+            self._state.stale = False
+            self._state.stale_reason = None
+            self._window.clear()
+            self._traffic_sample = None
+        log.info("Race state live again; detector window cleared across the gap.")
+
+    @property
+    def stale(self) -> bool:
+        return self._state.stale
 
     def set_session_id(self, session_id: str | None) -> None:
         """Name the session without disturbing anything else.
@@ -335,23 +388,53 @@ class RaceStateEngine:
     def on_frame(self, frame: Frame, catalog: Catalog) -> None:
         """Ingest one decoded tick. Safe to call from any single producer thread."""
         started = time.perf_counter()
-        with self._lock:
-            if catalog.schema_hash != self._schema_hash:
-                self.bind_catalog(catalog, session_id=self._state.session.session_id)
-            events = self._update(frame)
-            elapsed_ms = (time.perf_counter() - started) * 1000.0
-            self._frames += 1
-            self._avg_ms += (elapsed_ms - self._avg_ms) / self._frames
-            self._max_ms = max(self._max_ms, elapsed_ms)
-            m = self._state.metrics
-            m.frames = self._frames
-            m.last_update_ms = round(elapsed_ms, 4)
-            m.avg_update_ms = round(self._avg_ms, 4)
-            m.max_update_ms = round(self._max_ms, 4)
-            m.events += len(events)
+        try:
+            with self._lock:
+                if catalog.schema_hash != self._schema_hash:
+                    self.bind_catalog(catalog, session_id=self._state.session.session_id)
+                events = self._update(frame)
+                elapsed_ms = (time.perf_counter() - started) * 1000.0
+                self._frames += 1
+                self._avg_ms += (elapsed_ms - self._avg_ms) / self._frames
+                self._max_ms = max(self._max_ms, elapsed_ms)
+                self._last_frame_monotonic = time.monotonic()
+                m = self._state.metrics
+                m.frames = self._frames
+                m.last_update_ms = round(elapsed_ms, 4)
+                m.avg_update_ms = round(self._avg_ms, 4)
+                m.max_update_ms = round(self._max_ms, 4)
+                m.events += len(events)
+        except Exception as exc:
+            if not self.resilient:
+                raise
+            self._note_fault(frame, exc)
+            return
         # Publish outside the lock: consumer callbacks must not block the loop.
         for event in events:
             self.bus.publish(event)
+
+    def _note_fault(self, frame: Frame, exc: Exception) -> None:
+        """Count a swallowed per-frame fault, and log it at most once a second.
+
+        Rate-limited on purpose: whatever broke on this frame will break on the
+        next fifty-nine as well, and a stack trace per frame at 60 Hz turns a bug
+        into an outage of its own. The count is reported in
+        ``state.metrics.dropped_frames``, so the failure is visible even when the
+        log has moved on.
+        """
+        with self._lock:
+            self._faults += 1
+            self._last_fault = f"{type(exc).__name__}: {exc}"
+            self._state.metrics.dropped_frames = self._faults
+            now = time.monotonic()
+            should_log = now - self._last_fault_logged >= 1.0
+            if should_log:
+                self._last_fault_logged = now
+        if should_log:
+            log.exception(
+                "Race-state update failed at tick %s (%d dropped so far)",
+                frame.tick, self._faults,
+            )
 
     def snapshot(self) -> RaceState:
         """A deep, consistent copy of the current state."""
@@ -363,11 +446,64 @@ class RaceStateEngine:
         """The live (mutable) state object -- prefer :meth:`snapshot`."""
         return self._state
 
+    def health(self) -> dict[str, Any]:
+        """Operator-facing answer to "is the hot loop actually running?".
+
+        Deliberately distinct from :meth:`snapshot`, which answers "what is the
+        race doing". A state object full of ``None`` looks identical whether the
+        session has not started, the catalog carries none of the channels we
+        wanted, or frames stopped arriving four minutes ago -- and those need
+        three different responses from whoever is watching.
+
+        ``seconds_since_frame`` is the one wall-clock number in this package, and
+        it is monotonic and never enters a :class:`RaceEvent`, so the replay log
+        stays reproducible.
+        """
+        with self._lock:
+            state = self._state
+            last = self._last_frame_monotonic
+            caps = state.capabilities
+            return {
+                "bound": self._catalog is not None,
+                "stale": state.stale,
+                "stale_reason": state.stale_reason,
+                # What is *feeding* it right now, which the replay driver
+                # overwrites -- not the value it was constructed with.
+                "source": state.session.source,
+                "session_id": state.session.session_id,
+                "schema_hash": self._schema_hash,
+                "resilient": self.resilient,
+                "frames": self._frames,
+                "events": state.metrics.events,
+                "faults": self._faults,
+                "last_fault": self._last_fault,
+                "seconds_since_frame": (
+                    round(time.monotonic() - last, 3) if last is not None else None
+                ),
+                "version": state.version,
+                "tick": state.tick,
+                "session_time": state.session_time,
+                "avg_update_ms": state.metrics.avg_update_ms,
+                "max_update_ms": state.metrics.max_update_ms,
+                "capabilities": {
+                    k: v
+                    for k, v in caps.model_dump().items()
+                    if isinstance(v, bool) and v
+                },
+                "missing_channels": len(caps.missing),
+                "bus": self.bus.stats(),
+            }
+
     # ------------------------------------------------------------------
     # the incremental update
     # ------------------------------------------------------------------
     def _update(self, frame: Frame) -> list[RaceEvent]:
         values = frame.values
+        if self._state.stale:
+            # A frame arrived, so we are live again whatever anyone told us. Done
+            # here rather than only in mark_live() so a resume works even when
+            # nothing announces it -- the frame *is* the announcement.
+            self.mark_live()
         self._window.append(dict(values))
         if len(self._window) > _WINDOW_TRIM_AT:
             del self._window[:-_WINDOW_KEEP]

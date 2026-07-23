@@ -10,8 +10,13 @@ its spec (with a one-line rationale).
 | **2** | Agent framework + orchestrator + strategist | **done** |
 | **3** | Vehicle engineer / spotter / coach agents | **done** |
 | **4** | TTS radio voice | **done** |
-| 5 | Director + stub hardening | not started |
+| **5** | Race-director seam (interfaces only) + live-path hardening + docs | **done** |
 | 6 | Pitwall UI | not started |
+
+> The **race director itself is planned, not implemented.** Stage 5 ships its
+> schema, its protocol and a `NoopDirector` that injects nothing — plus a test
+> proving the seam carries a scripted full-course yellow indistinguishably from a
+> real one. See [stage 5](#stage-5--the-director-seam-and-a-live-path-that-survives-a-race).
 
 ---
 
@@ -131,6 +136,15 @@ except for flag changes which render as `flag_change:<phase>`.
 | `tyre_out_of_band` | advisory | a tyre measure leaves its band (see stage 3) | `measure`, `corner`, `value`, `threshold` |
 | `car_health_warning` | critical / advisory | an engine warning bit, a tow, or oil/water over the limit | `measure`, `warnings[]`, `value`, `threshold` |
 | `traffic_close` | advisory | a car is inside the gap threshold *and* closing | `car_idx`, `gap`, `side`, `closing_rate_s_per_s` |
+| `weather_change` | — | **never** — director-only, see stage 5 | `measure`, `from`, `to`, … |
+| `regulation_change` | — | **never** — director-only, see stage 5 | `regulation`, `applies_from_lap`, … |
+
+The last two rows are the only members of the catalog **no detector emits**. They
+exist so a scripted scenario can say "rain in eight minutes" or "the stop is now
+mandatory" *as an ordinary event*: nothing in the channel contract announces
+either, and inferring one from a temperature drift would be exactly the invented
+figure this codebase refuses everywhere else. No agent trigger references them,
+so they cost nothing until a director exists to produce them.
 
 The five events added in stage 2 exist so the strategist can be woken by *facts*
 rather than by a clock. `stint_lap_milestone` in particular is the periodic
@@ -1542,3 +1556,499 @@ is absent). Green with and without `ANTHROPIC_API_KEY` exported. No iRacing, no
 network, no API key. All 309 stage-1/2/3 tests still pass unmodified, and the
 scripted race still produces the same 19 events and the same radio log it did
 before — the message ids are new metadata on it, not a change to it.
+
+---
+---
+
+# Stage 5 — the director seam, and a live path that survives a race
+
+Two jobs, and they are the same job seen from opposite ends. The **race
+director** is about making things go wrong on purpose; the **hardening** is about
+what happens when they go wrong by accident. Stage 5 closes the backend by
+building the first as an interface and the second as a set of asserted
+properties.
+
+---
+
+## The race director — deliberately unimplemented
+
+> **Status: planned.** `NoopDirector` is what runs, and it injects nothing.
+> `src/rtv/director/` contains the schema, the protocol, one factory function and
+> the default. There is no scheduler.
+
+A race director injects things that did not happen: a full-course yellow on
+lap 7, rain arriving at half distance, a mandatory stop nobody asked for. It is
+how you rehearse a strategist against a race that never runs the same way twice,
+and how a demo shows a safety car without waiting for one.
+
+What stage 5 was asked for, and what it therefore built, is the **seam** — and
+the seam is the interesting half. The scheduler is a loop over conditions;
+whether an injected event is a first-class citizen of the rest of the system is
+an architectural question, and it is the one that is now answered with a test.
+
+### Module map
+
+| Module | Role |
+|--------|------|
+| `director/models.py` | `ScenarioScript`, `ScriptedInjection`, `InjectionTrigger`, `InjectionKind`. Pydantic, validated, JSON-loadable. |
+| `director/engine.py` | The `DirectorEngine` protocol, `NoopDirector`, `injected_event()`, `is_injected()`. |
+| `docs/director_scenario.example.json` | A worked five-entry script: FCY → restart → rain → mandatory stop → hazard. |
+
+### A script is a list of conditional injections
+
+```jsonc
+{
+  "id": "fcy_lap_3",
+  "kind": "flag",                       // flag | weather | regulation | hazard | custom
+  "event_type": "flag_change",          // a real member of the event catalog
+  "severity": "critical",
+  "when": { "at_lap": 3, "at_lap_dist_pct": 0.30 },
+  "payload": { "from": "green", "to": "yellow", "active": ["yellow", "caution"] },
+  "note": "why this entry exists"
+}
+```
+
+`InjectionTrigger` conditions are **conjunctive**: `at_session_time`, `at_lap`,
+`at_lap_dist_pct`, `after` + `delay_s`, `while_flag`, `once`. Combining them says
+things a clock cannot — `at_lap: 7` plus `at_lap_dist_pct: 0.30` is "coming
+through the first sector on lap 7", and `after: "fcy_lap_3"` plus `delay_s: 90`
+is "ninety seconds after the yellow", whenever that turned out to be. Delays are
+**session** seconds, so a 4× replay rehearses the same race.
+
+Three things are rejected at load rather than at runtime, because a scenario that
+fails three laps into a demo has already failed:
+
+- a trigger with **no condition at all** (a silent default of "now" would be a guess);
+- `delay_s` with no `after` to be delayed from;
+- duplicate ids, self-references, and an `after` naming an entry not in the script.
+
+`RTV_PITWALL_DIRECTOR_SCRIPT` loads and validates a script at boot and binds it to
+the `NoopDirector`. Today that is a **linter**, not a runner, and the status
+endpoint says so in those words.
+
+### The seam, and what "indistinguishable" means
+
+```python
+PitwallOrchestrator(engine, provider, agents, director=my_director)
+
+orch.poll_director()          # -> [RaceEvent], already published on engine.bus
+```
+
+The pump calls `poll_director()` on **every** pass, including the idle ones — a
+scripted yellow has to be able to land in a quiet minute, not only in the wake of
+a detector event. Whatever comes back is published onto `engine.bus`: the same
+bus, the same ring buffer, the same `/ws/pitwall` frame, the same subscriber
+fan-out, and back around into the orchestrator's *own* subscription. No consumer
+anywhere knows a director exists.
+
+```
+                    detectors ──┐
+                                ├─► engine.bus ─► ring buffer ─► /ws/pitwall
+   director.poll(state) ────────┘        └─► orchestrator ─► agents ─► radio
+```
+
+Injected events are indistinguishable in every way that changes behaviour: same
+`EventType`, same severity, same `key`, same routing, same cooldowns, same agent
+output. They are **not** anonymous in the log. Three additive payload keys —
+`injected`, `director_kind`, `director_id` — record provenance, and a script
+cannot overwrite them (`injected_event` stamps them last).
+
+That is a deliberate reading of "indistinguishable". This codebase refuses to let
+an agent assert a number it cannot trace; letting the event log confuse "the sim
+threw a yellow" with "we made one up" would be the same failure one level down.
+Behaviour is identical, provenance is honest, and the two are not in tension.
+
+### The proof
+
+`tests/test_director.py::test_a_scripted_fcy_produces_the_same_downstream_behaviour`
+takes the real `flag_change:yellow` the scripted race throws on lap 3, builds the
+director's version from `docs/director_scenario.example.json`, and runs both
+through two fresh orchestrators over the *same* race state:
+
+| Compared | Result |
+|---|---|
+| `event_type`, `key`, `severity` | identical |
+| payload keys | identical, plus exactly the three provenance keys |
+| agents woken (`dispatch`) | identical — strategist **and** spotter |
+| radio: agent, priority, subject, spoken text | identical, call for call |
+
+A second test runs the real pump: director → `engine.bus` → the orchestrator's
+subscription → an agent → the radio feed, with nothing in between told what
+happened. If any layer had grown a "was this real?" branch, both would fail.
+
+The one-shot director those tests use is **twelve lines** and lives in the test
+file, not in `rtv.director`. That is the argument stage 5 is making: the
+implementation is small, and the seam it plugs into is the part worth getting
+right first.
+
+---
+
+## Hardening the live path
+
+Eight failure modes. Every one of them is **silent** by default — the pitwall
+does not crash, it just quietly stops being right — which is exactly why each is
+now asserted rather than assumed.
+
+### 1. A frame that raises must cost a frame, not the pitwall
+
+`RaceStateEngine(resilient=True)` catches a per-frame fault, counts it in
+`state.metrics.dropped_frames`, and carries on. `services.build_services` sets it;
+the constructor default is **off**.
+
+That split is the point. In a live race, 16 ms of missing state is a far smaller
+failure than a pitwall that stops at 250 km/h. In a test or a replay it is the
+opposite: an engine that silently emitted no events would pass every assertion
+about what it does *not* emit, which is a large part of this suite. So the live
+path is resilient and the test path is strict, and
+`test_resilience_does_not_change_the_event_log_when_nothing_fails` pins that the
+two agree when nothing is broken.
+
+Faults are logged **at most once a second**. Whatever broke on this frame will
+break on the next fifty-nine, and sixty stack traces a second turns a bug into an
+outage of its own. The count survives in `dropped_frames` after the log has moved
+on.
+
+### 2. `engine.health()` — "is anything still watching?"
+
+`/api/v1/racestate` says what the race is doing. It cannot say whether anyone is
+still looking at it: a `RaceState` full of `None` reads identically whether the
+session has not started, the catalog carries none of the channels we wanted, or
+frames stopped arriving four minutes ago. Those need three different responses.
+
+```jsonc
+{"bound": true, "stale": false, "stale_reason": null,
+ "source": "replay", "frames": 3360, "events": 19,
+ "faults": 0, "last_fault": null, "seconds_since_frame": 0.4,
+ "avg_update_ms": 0.03, "capabilities": {...}, "missing_channels": 0,
+ "bus": {"published": 19, "subscribers": 2, "dropped": 0}}
+```
+
+`seconds_since_frame` is `null` before the first frame — "never" and "just now"
+are different answers, and zero would be a lie about one of them. It is the only
+wall-clock number in the package, it is monotonic, and it never enters a
+`RaceEvent`, so the replay log stays byte-reproducible.
+
+### 3. iRacing disconnecting mid-session
+
+This is the subtlest one in the list. **The engine has no clock of its own** — it
+only moves when a frame moves it — so a disconnect does not corrupt the race
+state. It *freezes* it, perfectly, which is worse: "P4, 2.1 s behind" reads
+identically whether it is current or four minutes old.
+
+So `RaceState` gained two fields, `stale` and `stale_reason`, and the connection
+transition is wired in `services.on_state` — the same callback that already
+attaches the session id, so `LivePoller` (v1 ingest) stays untouched:
+
+| | on disconnect | on reconnect |
+|---|---|---|
+| engine | `mark_stale(reason)` — state frozen and **flagged**, numbers kept | `mark_live()` — flag cleared, detector window dropped |
+| agents | `orch.suspend(reason)` — dispatch stops | `orch.resume()` — cooldowns cleared |
+| radio | one info notice, "Telemetry lost, pitwall standing by" | "Telemetry back, pitwall live" |
+
+Three judgements worth recording:
+
+- **The last known numbers are kept, not cleared.** They are still the best
+  picture anyone has of the race; what was missing was the *label*.
+- **The detector window is dropped on resume.** Every frame-window detector —
+  lock-up, wheelspin, off-track, pit and lap edges — works on consecutive
+  samples, and the frame before a four-minute gap is not the predecessor of the
+  frame after it. Without this, a reconnect manufactures a lap completion, a pit
+  transition or a wheel-lock out of a discontinuity nobody drove. The test
+  replays a whole race with a gap in the middle and asserts the event log is
+  **identical** to the uninterrupted one.
+- **Suspension is a second flag, not the kill switch.** Telemetry dropping out
+  and an operator saying "stop" are different facts; folding them together would
+  mean a reconnect quietly re-enabling a layer somebody had turned off on
+  purpose. `resume()` also clears the trigger cooldowns — session time did not
+  advance while we were gone, but the race did.
+
+`dispatch()` additionally refuses any event whose state is `stale`, so an agent
+can never reason over a race that has stopped, whatever else went wrong.
+
+### 4. A supervised task that dies must be restarted, and *visibly*
+
+The failure mode of an unsupervised `asyncio` task is the worst one available: it
+stops, nothing crashes, and the radio simply goes quiet. `PitwallOrchestrator`
+now runs its pump, its workers and the radio feed under `_supervise()`, which
+restarts on any exception with a one-second floor and counts the restarts.
+
+`status()` reports `restarts` and a `healthy` flag alongside `running`, because a
+layer that has restarted its pump forty times *is* running and is *not* healthy,
+and a UI needs to be able to say the second thing.
+
+### 5. A model call that fails: retry once, then say so out loud
+
+One retry, with a backoff, and then the agent **announces its own failure**:
+
+```
+call → 502 → wait RTV_PITWALL_RETRY_BACKOFF_S → call → 502
+     → radio: "Pitwall AI degraded - no strategist calls for now." (info)
+```
+
+Deliberately *one* retry, not an exponential ladder: a pit call that lands three
+corners late is worse than no pit call, so the policy that fits a race is "cover
+a dropped connection, then get out of the way". The message history is rebuilt
+from the caller's list on the retry, because a half-finished tool exchange is not
+a prefix a second attempt can safely continue from.
+
+Saying it out loud matters more than it looks. The failure mode of a silent agent
+layer is a driver who believes nobody has anything to tell them. The notice is
+`info` priority, carries `{"degraded": true, "agent": ...}` for the UI, and fires
+**once per episode** — re-armed by a success, because a chatty failure notice
+would be its own outage. Everything deterministic keeps running underneath it:
+the engine, the event log, the ring buffer, `/ws/pitwall`, the other three
+agents. That is the whole argument for doing the arithmetic upstream.
+
+### 6. A dead provider must not bill for a whole race
+
+`AgentRuntime.invoke` swallows its own errors and returns `None` — right for one
+bad call, wrong for a hundred. A revoked key, a retired model id or a vendor
+outage would otherwise cost one doomed request per race event until the chequered
+flag.
+
+So each agent carries a **circuit breaker**: `RTV_PITWALL_AGENT_FAILURE_LIMIT`
+(default 3) consecutive failures take it off the air, with the reason recorded on
+`/api/v1/pitwall/status`:
+
+```jsonc
+{"name": "strategist", "enabled": false, "consecutive_failures": 3,
+ "disabled_reason": "Disabled automatically after 3 consecutive failed invocations.
+   Re-enable with POST /api/v1/pitwall/agents/strategist/enabled once the cause is fixed."}
+```
+
+Any success re-arms it — this is a cost guard, not a quarantine — and an explicit
+re-enable clears it, because a latched breaker would disable the agent again on
+its very next failure. `0` turns it off.
+
+### 7. The session cost guard
+
+The breaker catches an agent that is *failing*. This catches one that is
+*working* and simply costs more than anyone intended — a trigger storm, a
+misconfigured cooldown, a scenario nobody foresaw.
+
+`RTV_PITWALL_MAX_CALLS_PER_SESSION` (default **400**) is a hard ceiling on
+billable model calls across every agent in one session. When it trips, `dispatch`
+refuses everything, the channel carries one info notice, and the deterministic
+layers carry on. `orch.reset()` — between sessions or replays — starts a fresh
+budget without discarding the lifetime counters the status endpoint reports.
+
+It is counted in **model calls, not wake-ups**: one wake-up is a tool round trip
+or two plus the answer, so the wake-up count would systematically understate the
+bill. `AgentRuntime` times and counts every `provider.complete()`, which is also
+what puts per-agent call counts and latencies on `/pitwall/status`:
+
+```jsonc
+{"calls_used": 24, "calls_remaining": 376, "max_calls_per_session": 400,
+ "budget_exhausted": false,
+ "agents": [{"name": "strategist", "invocations": 6, "llm_calls": 12,
+             "retries": 0, "last_latency_ms": 812.4, "avg_latency_ms": 774.1}]}
+```
+
+The default is deliberately generous — it is a runaway guard, not a budget. The
+scripted race spends 24 calls; a measured race hour is a low-tens number (the
+arithmetic is in `README.md`).
+
+### 8. Two frame sources into one engine
+
+`POST /api/v1/replay/start` now answers **409** while the live poller is running.
+Interleaving a replayed race with a live one does not produce a degraded race
+state, it produces a nonsensical one — lap counters, fuel and gaps alternating
+between two different races. Refusing is the only honest answer.
+
+---
+
+## API surface (added; stages 1–4 and all of v1 untouched)
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/api/v1/pitwall/health` | Engine, live poller, replay, agent layer and director in one payload |
+
+Plus a documented **60-second demo path** (`python scripts/demo_pitwall.py`):
+one command starts the server, opens `/radio.html`, waits for the audio gesture,
+and replays the scripted race at 4×. See `README.md`.
+
+```jsonc
+{"ok": true, "pitwall": true,
+ "engine": { /* engine.health() */ },
+ "live":   {"running": false, "state": "disconnected", "session_id": null},
+ "replay": {"running": false, "finished": true, "frames": 3360},
+ "agents": {"mounted": true, "enabled": true, "running": true, "healthy": true,
+            "restarts": {}, "degraded": [], "director": {"status": "planned"}}}
+```
+
+It is the **only** pitwall route that never returns an error: `/pitwall/radio`
+correctly 503s when the agent layer is not mounted, but "is the deterministic
+path alive?" is still a question with an answer, and an operator mid-race should
+not have to distinguish a 503 that means "off" from one that means "broken".
+
+`ok` is the one judgement in the payload: false when something that should be
+producing frames is not, or when the agent layer has restarted a task or tripped
+a breaker. Everything else is reported for the caller to weigh.
+
+`/pitwall/status` gained `healthy`, `restarts`, `injected`, `failure_limit`,
+`director`, and per-agent `consecutive_failures` / `disabled_reason`.
+
+---
+
+## Configuration added
+
+| Env var | Default | Meaning |
+|---|---|---|
+| `RTV_PITWALL_AGENT_FAILURE_LIMIT` | `3` | Consecutive failures before an agent is taken off the air. `0` disables the breaker. |
+| `RTV_PITWALL_MAX_CALLS_PER_SESSION` | `400` | Hard ceiling on billable model calls in one session. `0` = unlimited. |
+| `RTV_PITWALL_RETRY_BACKOFF_S` | `0.5` | Pause before the single retry of a failed model call. |
+| `RTV_PITWALL_DIRECTOR_SCRIPT` | *(empty)* | Path to a `ScenarioScript` JSON. Loaded and **validated** at boot, then bound to `NoopDirector` — which injects nothing. |
+
+---
+
+## Interfaces stage 6 (the pitwall UI) consumes
+
+```python
+from rtv.director import (
+    ScenarioScript, ScriptedInjection, InjectionTrigger, InjectionKind,
+    DirectorEngine, NoopDirector, injected_event, is_injected,
+    INJECTED_KEY, DIRECTOR_KIND_KEY, DIRECTOR_ID_KEY,
+)
+
+engine.health()                  # the operator payload behind /pitwall/health
+engine.resilient                 # True on the live path, False in tests/replay
+engine.mark_stale(reason)        # telemetry stopped: freeze *and flag*
+engine.mark_live()               # frames back: clear the flag and the window
+engine.stale                     # bool; also RaceState.stale / .stale_reason
+
+orch.director                    # DirectorEngine, never None
+orch.poll_director(state=None)   # -> [RaceEvent], already on engine.bus
+orch.suspend(reason) / .resume() # connection lifecycle (not the kill switch)
+orch.suspended                   # bool, distinct from .enabled
+orch.calls_used / .calls_remaining / .budget_exhausted
+orch.healthy()                   # no restarts, no breakers, budget intact
+orch.status()["restarts"]        # {"pump": 2, "agent:spotter": 1}
+```
+
+For the UI: `GET /api/v1/pitwall/health` is one poll for the whole status bar,
+and `is_injected(event)` is how a scripted yellow gets a "DIRECTOR" badge once a
+director exists to produce one.
+
+To implement the director, write a class satisfying `DirectorEngine`, build its
+events with `injected_event()`, and pass it as `PitwallOrchestrator(director=...)`
+— `services.build_director` is the one place that needs to change to select it
+from configuration. Nothing else in the system does.
+
+---
+
+## Deviations from the stage-5 spec
+
+Each is a conservative choice made autonomously, per `CLAUDE.md`.
+
+1. **Injected events carry three provenance keys** (`injected`, `director_kind`,
+   `director_id`) rather than being byte-anonymous. The spec says
+   "indistinguishable from detector events"; that is implemented for everything
+   that changes behaviour, and asserted. But an event log that could not tell a
+   scripted safety car from a real one would be the same class of failure as an
+   agent quoting a number it cannot trace. The keys are additive, so a consumer
+   that does not care never sees them.
+2. **Two director-only event types were added** — `weather_change` and
+   `regulation_change`. The spec names weather and forced-pit regulation as
+   things a script must be able to inject, and no detector-backed event could
+   express either (the channel contract has nothing that announces rain which has
+   not arrived). Adding them to `EventType` is what lets an injection stay an
+   *ordinary* event, which is the whole argument for the seam. They are marked as
+   director-only in the catalog and no agent trigger references them.
+3. **The director hangs off the orchestrator, not the engine.** The spec says
+   "orchestrator accepts an optional director", so that is where it is — with the
+   consequence that a director does not run when `RTV_PITWALL_AGENTS` is false.
+   Moving the poll into `RaceStateEngine` would make injections work without the
+   agent layer, but it would also put third-party-ish code on the 60 Hz hot path,
+   and the spec did not ask for it. Recorded here as the obvious future move.
+4. **`InjectionKind` is descriptive, not behavioural.** A script says
+   `kind: "weather"` for a human and for a UI; what actually happens is decided by
+   `event_type`. Making the kind dispatch behaviour would have meant writing the
+   scheduler this stage was told not to write.
+5. **`RTV_PITWALL_DIRECTOR_SCRIPT` validates rather than runs.** The env var
+   exists because a schema nobody can point a server at is hard to trust. A bad
+   path is a warning, not a boot failure: losing a rehearsal is a smaller failure
+   than refusing to start the pitwall, and the reason is reported on
+   `/pitwall/status`.
+6. **Engine resilience is opt-in, and the live path opts in.** Making it the
+   constructor default would have quietly weakened much of this test suite, which
+   asserts what the engine does *not* emit as often as what it does.
+7. **The disconnect handling is wired in `services.on_state`, not `LivePoller`.**
+   The spec says "engine pauses, state flagged stale, agents suspended, clean
+   resume" without saying where. `on_state` is already the seam that attaches the
+   session id (stage-3 deviation 9), so using it again keeps v1 ingest untouched
+   — the constraint `CLAUDE.md` puts above everything else in this build.
+8. **"Engine pauses" is implemented as a flag, not a gate.** The engine has no
+   clock; with no frames arriving it is *already* paused. What was missing was
+   the label, so `mark_stale()` flags and freezes rather than gating `on_frame`.
+   A frame arriving is treated as its own announcement of a resume, so the
+   recovery works even when nothing tells us about it.
+9. **The cost guard counts model calls, not agent wake-ups.** The spec says "hard
+   cap on LLM calls per session". A wake-up is a tool round trip or two *plus*
+   the answer, so counting wake-ups would have understated the bill by 2–3×.
+   `AgentRuntime` counts and times `provider.complete()` itself, which is also
+   what supplies the per-agent latencies the spec asks for.
+10. **The "Pitwall AI degraded" notice is attributed to the failing agent, not to
+    a system channel.** The spec says "emit an info RadioMessage". Using the
+    agent's own name means the browser speaks it in that role's voice and the
+    per-agent mute applies to it, which is what a listener expects; a separate
+    `pitwall` speaker exists only for whole-layer notices (suspension, budget).
+11. **The full-system test replaces `services.build_pitwall` with a scripted
+    provider.** The spec asks for an integration test that boots the app and
+    asserts state + event + radio frames. The agent layer cannot mount offline by
+    design (stage-2 deviation 1), so the test monkeypatches the one factory
+    function and lets everything else — lifespan, supervised tasks, engine, bus,
+    radio feed, WebSocket — be real. The alternative, making the app fall back to
+    a scripted provider on its own, would ship fake agent output to production.
+12. **The example script is one file, not a directory of them.** The spec asks for
+   "one example scenario JSON". It is deliberately the *hardest* interesting race
+   — a yellow that lands just before the fuel window, weather that turns the tyre
+   call over, and a regulation that removes "stay out" from the answer set —
+   rather than a minimal one, because a schema is only as good as the scenario it
+   turns out not to be able to express.
+13. **`GET /pitwall/health` lives in `routes_racestate.py`, not
+    `routes_pitwall.py`.** The latter 503s as a body when the agent layer is
+    absent, which is right for the radio and wrong for a health check. Routing it
+    with the race-state surface is what makes it answerable whenever
+    `RTV_PITWALL` is on.
+
+---
+
+## Verification (stage 5)
+
+```powershell
+pytest                                   # 493 passed (393 stage 1-4 + 100 new), fully offline
+python scripts/demo_pitwall.py           # the 60-second demo: server + browser + race
+python scripts/smoke_pitwall_director.py # the seam + the eight hardening properties
+python scripts/smoke_pitwall_voice.py    # stage 4, unchanged
+python scripts/smoke_pitwall_roles.py    # stage 3, unchanged
+python scripts/smoke_pitwall_agents.py   # stage 2, unchanged
+python scripts/smoke_pitwall.py          # stage 1, unchanged
+python scripts/smoke_offline.py          # v1 surface, unchanged
+python evals/run_pitwall.py --dry-run    # 24 cases across 4 agents, unchanged
+node frontend/js/run-audio-tests.mjs     # 20/20 audio-discipline cases, unchanged
+ruff check src tests scripts evals
+```
+
+New test files: `tests/test_director.py` (36), `tests/test_pitwall_resilience.py`
+(25), `tests/test_pitwall_hardening.py` (19), `tests/test_pitwall_health_api.py`
+(12), `tests/test_pitwall_fullsystem.py` (9). Green with and without
+`ANTHROPIC_API_KEY` exported. No iRacing, no network, no API key. All 393
+stage-1/2/3/4 tests still pass unmodified, and the scripted race still produces
+the same 19 events and the same radio log it did in stage 1 — which is the check
+that matters most here, because stage 5 touched the engine's ingress, the
+`RaceState` schema and the orchestrator's task lifecycle.
+
+### The full-system test
+
+`tests/test_pitwall_fullsystem.py` is the one test that boots everything: the
+real FastAPI app through its real lifespan — race-state engine, event bus,
+orchestrator with its supervised tasks, radio feed, WebSocket — replays the
+scripted race, and asserts that `state`, `event` **and** `radio` frames all
+arrive on `/ws/pitwall` in contract-valid form (validated against `RaceState`,
+`RaceEvent` and `RadioMessage` themselves, not against hand-written shapes).
+
+The only thing that is not real is the model: `rtv.services.build_pitwall` is
+replaced with one that hands the orchestrator a `ScriptedProvider`. That is the
+same seam the evals and every smoke script use, and it is the only way this can
+be a *default* test — the suite must run with no API key and no network, and the
+agent layer is opt-in precisely so that it never mounts by accident.
