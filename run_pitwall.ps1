@@ -11,7 +11,7 @@ if (-not (Test-Path "prompts")) {
 
 New-Item -ItemType Directory -Force -Path "prompts\done" | Out-Null
 
-$prompts = Get-ChildItem -Path "prompts" -Filter "0*.md" | Sort-Object Name
+$prompts = Get-ChildItem -Path "prompts" -Filter "[0-9]*.md" | Sort-Object Name
 
 if ($prompts.Count -eq 0) {
     Write-Host "All stages already completed (prompts folder is empty)." -ForegroundColor Green

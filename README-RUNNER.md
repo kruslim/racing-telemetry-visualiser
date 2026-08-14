@@ -1,11 +1,19 @@
 # RTV v2 Pitwall - Headless Build Runner
 
-Six staged Claude Code prompts that evolve racing-telemetry-visualiser from
+Staged Claude Code prompts that evolve racing-telemetry-visualiser from
 v1 (post-hoc analysis + coach) into v2 (live multi-agent AI pitwall).
+
+Stages 01-06 built the backend, the four agents, the voice and the UI, and are
+complete. Stages 07-10 turn it into an autonomous race engineer:
+
+    07  session lifecycle + autonomy    arm/disarm itself, race journal, debrief hook
+    08  race plan + projection layer    a plan it revises; tyre deg, fuel save, traffic
+    09  race control + debrief analyst   the only two agents worth adding
+    10  director scheduler               implement the seam stage 05 left open
 
 ## Contents
 - CLAUDE.md ................ shared context, auto-read by every Claude Code session
-- prompts/01..06 ........... one stage per file, run in order
+- prompts/NN-*.md .......... one stage per file, run in order
 - run_pitwall.ps1 .......... Windows runner (use this one)
 - run_pitwall.sh ........... bash runner (Git Bash / WSL)
 
