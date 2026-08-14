@@ -48,11 +48,58 @@ class Settings(BaseSettings):
         "larger arrays are stored as LIST columns.",
     )
 
-    # --- coaching (Layer 3: Claude API orchestration) --------------------
+    # --- LLM backend (shared by coaching Layer 3 and the pitwall agents) --
+    #
+    # Every LLM layer in this repo speaks the Anthropic Messages wire format.
+    # Kimi publishes an Anthropic-compatible endpoint, so switching backend is a
+    # base-URL + credential + model-id change rather than a rewrite. The one thing
+    # that is NOT portable is Anthropic's native structured output
+    # (``messages.parse(output_format=...)``), so the provider carries a
+    # tool-forced fallback -- see ``llm_structured_output``.
+    llm_provider: str = Field(
+        default="anthropic",
+        description="Which backend the LLM layers talk to: 'anthropic' or 'kimi'. "
+        "Selects the default base URL, credential env var, structured-output "
+        "strategy and model ids; every one of those stays individually overridable.",
+    )
+    llm_base_url: str = Field(
+        default="",
+        description="Override the backend base URL. Empty = the provider default "
+        "(Anthropic's own, or RTV_LLM_KIMI_BASE_URL for kimi).",
+    )
+    llm_api_key_env: str = Field(
+        default="",
+        description="Name of the env var holding the credential. Empty = "
+        "ANTHROPIC_API_KEY for anthropic, KIMI_API_KEY for kimi. The value is read "
+        "at client-construction time and never logged.",
+    )
+    llm_structured_output: str = Field(
+        default="",
+        description="How a structured answer is obtained: 'native' uses "
+        "messages.parse(output_format=...); 'tool' forces a single respond tool and "
+        "validates its input. Empty = native for anthropic, tool for kimi -- "
+        "Kimi's compatibility layer implements tools but not output_format.",
+    )
+    llm_kimi_base_url: str = Field(
+        default="https://api.kimi.com/coding",
+        description="Anthropic-compatible endpoint for the Kimi Coding subscription. "
+        "Use https://api.moonshot.ai/anthropic for the pay-per-token developer API.",
+    )
+
+    # --- coaching (Layer 3: LLM orchestration) ---------------------------
     coaching_model: str = Field(
         default="claude-opus-4-8",
-        description="Claude model for the orchestration + eval layer. "
-        "The ANTHROPIC_API_KEY env var is read directly by the Anthropic SDK.",
+        description="Model for the orchestration + eval layer. Overridden by "
+        "RTV_LLM_KIMI_MODEL_REASONING when llm_provider=kimi and left at its default.",
+    )
+    llm_kimi_model_reasoning: str = Field(
+        default="kimi-k3",
+        description="Kimi model used wherever a reasoning-grade model is called.",
+    )
+    llm_kimi_model_fast: str = Field(
+        default="kimi-k3",
+        description="Kimi model used wherever a fast-tier model is called. K3 is a "
+        "single tier today; split this if Moonshot ships a smaller sibling.",
     )
 
     # --- pitwall (v2: deterministic race-state engine + agents) ----------

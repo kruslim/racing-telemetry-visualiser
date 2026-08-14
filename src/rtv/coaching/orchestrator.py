@@ -90,11 +90,15 @@ class CoachOrchestrator:
 
     def __init__(self, client: Any | None = None, *, model: str = "claude-opus-4-8") -> None:
         if client is None:
-            from anthropic import AsyncAnthropic  # imported lazily so the ai extra is optional
+            # rtv.llm decides the backend, base URL and credential; this layer only
+            # ever spoke the Anthropic Messages format, and Kimi's endpoint does too.
+            from rtv.llm import build_client  # lazy so the ai extra stays optional
 
-            client = AsyncAnthropic()
+            client = build_client()
+        from rtv.llm import resolve_model
+
         self._client = client
-        self._model = model
+        self._model = resolve_model(model, tier="reasoning")
 
     async def coach(self, findings: dict, *, max_corners: int = 3) -> CoachResult:
         top3 = findings.get("chief", {}).get("top3", [])

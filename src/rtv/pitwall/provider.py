@@ -57,16 +57,51 @@ class LLMProvider(Protocol):  # pragma: no cover - structural type
     ) -> ProviderResponse: ...
 
 
+#: Name of the synthetic tool used to obtain a structured answer from a backend
+#: that does not implement Anthropic's native ``output_format``. Prefixed so it
+#: cannot collide with a real tool in :mod:`rtv.pitwall.tools`.
+RESPOND_TOOL = "rtv_final_answer"
+
+
+def _respond_tool(output_model: type[BaseModel]) -> dict[str, Any]:
+    """The output contract, expressed as a tool the model is forced to call."""
+    return {
+        "name": RESPOND_TOOL,
+        "description": (
+            "Give your final answer. Every field must be supported by the race "
+            "state or by a tool result you were given. Call this exactly once, "
+            "and call nothing else alongside it."
+        ),
+        "input_schema": output_model.model_json_schema(),
+    }
+
+
 class AnthropicProvider:
-    """The Claude API, via the existing ``ai`` extra.
+    """Any backend that speaks the Anthropic Messages format.
 
-    Structured output uses ``messages.parse`` with a Pydantic ``output_format``,
-    exactly as :class:`~rtv.coaching.orchestrator.CoachOrchestrator` does, so the
-    two LLM layers share one house style.
+    Despite the name this is not Claude-specific: Kimi publishes an
+    Anthropic-compatible endpoint, so the same SDK, the same wire format and the
+    same tool loop drive both. :mod:`rtv.llm` decides the base URL and credential;
+    this class only has to know how a *structured answer* is obtained, which is
+    the one thing that genuinely differs.
 
-    Thinking is deliberately *not* enabled here. The coach runs post-hoc and can
-    afford it; a race-engineer call that lands two corners late is worse than no
-    call, and every number is already computed deterministically upstream. Set
+    ``structured_output="native"``
+        ``messages.parse(output_format=...)`` -- Anthropic's own feature, and what
+        :class:`~rtv.coaching.orchestrator.CoachOrchestrator` has always used.
+
+    ``structured_output="tool"``
+        The contract is offered as a forced tool call and its input is validated
+        against ``output_model``. A compatibility layer can faithfully implement
+        ``/v1/messages`` and tool calling without implementing ``output_format``,
+        so assuming the native path would fail at the first agent call rather than
+        at configuration time.
+
+    Both modes return the same :class:`ProviderResponse`, so nothing upstream --
+    the tool loop, the fact set, the validator, the radio -- learns which one ran.
+
+    Thinking is deliberately *not* enabled by default. The coach runs post-hoc and
+    can afford it; a race-engineer call that lands two corners late is worse than
+    no call, and every number is already computed deterministically upstream. Set
     ``thinking=True`` to opt in per deployment.
     """
 
@@ -76,14 +111,28 @@ class AnthropicProvider:
         *,
         thinking: bool = False,
         effort: str | None = None,
+        structured_output: str | None = None,
     ) -> None:
-        if client is None:
-            from anthropic import AsyncAnthropic  # lazy: the ai extra stays optional
+        if structured_output is None:
+            from rtv.llm import structured_output_mode
 
-            client = AsyncAnthropic()
+            structured_output = structured_output_mode()
+        if structured_output not in ("native", "tool"):
+            raise ValueError(
+                f"structured_output must be 'native' or 'tool', got {structured_output!r}"
+            )
+        if client is None:
+            from rtv.llm import build_client  # lazy: the ai extra stays optional
+
+            client = build_client()
         self._client = client
         self._thinking = thinking
         self._effort = effort
+        self._structured_output = structured_output
+
+    @property
+    def structured_output(self) -> str:
+        return self._structured_output
 
     async def complete(
         self,
@@ -101,28 +150,67 @@ class AnthropicProvider:
             "max_tokens": max_tokens,
             "system": system,
             "messages": messages,
-            "output_format": output_model,
         }
-        if tools:
-            kwargs["tools"] = [t.to_api() for t in tools]
         if self._thinking:
             kwargs["thinking"] = {"type": "adaptive"}
         if self._effort:
             kwargs["output_config"] = {"effort": self._effort}
 
-        response = await self._client.messages.parse(**kwargs)
+        if self._structured_output == "native":
+            kwargs["output_format"] = output_model
+            if tools:
+                kwargs["tools"] = [t.to_api() for t in tools]
+            response = await self._client.messages.parse(**kwargs)
+            parsed = getattr(response, "parsed_output", None)
+        else:
+            # The contract is always on the table, so the model can answer at any
+            # point in the loop. On the last pass the runtime withdraws the real
+            # tools, and forcing the respond tool is what makes "you must answer
+            # now" mean the same thing it means on the native path.
+            api_tools = [t.to_api() for t in tools]
+            api_tools.append(_respond_tool(output_model))
+            kwargs["tools"] = api_tools
+            kwargs["tool_choice"] = (
+                {"type": "auto"} if tools else {"type": "tool", "name": RESPOND_TOOL}
+            )
+            response = await self._client.messages.create(**kwargs)
+            parsed = None
+
         content = getattr(response, "content", []) or []
-        calls = [
-            ToolCall(id=block.id, name=block.name, input=dict(block.input or {}))
-            for block in content
-            if getattr(block, "type", None) == "tool_use"
-        ]
+        calls: list[ToolCall] = []
+        for block in content:
+            if getattr(block, "type", None) != "tool_use":
+                continue
+            name = getattr(block, "name", "")
+            payload = dict(getattr(block, "input", None) or {})
+            if name == RESPOND_TOOL:
+                try:
+                    parsed = output_model.model_validate(payload)
+                except Exception:
+                    # Leave parsed as None: the runtime's grounded-refusal path is
+                    # the right answer for a contract the model could not satisfy,
+                    # and it is already tested. Log loudly -- a backend that never
+                    # produces a valid payload is a misconfiguration, not a bad lap.
+                    log.exception(
+                        "%s: %s returned an invalid %s payload",
+                        agent,
+                        RESPOND_TOOL,
+                        output_model.__name__,
+                    )
+                continue
+            calls.append(ToolCall(id=block.id, name=name, input=payload))
+
         text = "".join(
             block.text for block in content if getattr(block, "type", None) == "text"
         )
+        if parsed is not None:
+            # A model that answered *and* called tools has answered. Servicing the
+            # calls anyway would append an assistant turn carrying a tool_use with
+            # no matching tool_result, which every Messages implementation rejects.
+            calls = []
         return ProviderResponse(
             tool_calls=calls,
-            output=getattr(response, "parsed_output", None),
+            output=parsed,
             text=text,
             assistant_content=content,
         )

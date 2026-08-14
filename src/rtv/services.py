@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 import threading
 import uuid
 from dataclasses import dataclass, replace
@@ -249,16 +248,23 @@ def build_pitwall(
     """Assemble the agent layer, or return None when it cannot run.
 
     The provider is constructed lazily and defensively: with no ``anthropic``
-    package and no ``ANTHROPIC_API_KEY`` there is nothing to talk to, so the layer
-    stays unmounted rather than failing at the first race event. That is what keeps
-    the default test path free of any network dependency.
+    package and no credential for the selected backend there is nothing to talk
+    to, so the layer stays unmounted rather than failing at the first race event.
+    That is what keeps the default test path free of any network dependency.
+
+    Which backend, which credential env var and which structured-output strategy
+    are :mod:`rtv.llm`'s decision, not this function's -- so pointing the whole
+    system at Kimi is configuration rather than a code path.
     """
+    from rtv.llm import describe, is_configured, key_env_var
     from rtv.pitwall.agents import build_agents
 
-    if not os.environ.get("ANTHROPIC_API_KEY"):
+    if not is_configured(settings):
         log.info(
-            "Pitwall agents disabled: ANTHROPIC_API_KEY is not set. "
-            "The deterministic race-state engine is unaffected."
+            "Pitwall agents disabled: %s is not set for provider %s. "
+            "The deterministic race-state engine is unaffected.",
+            key_env_var(settings),
+            describe(settings)["provider"],
         )
         return None
     try:
@@ -272,15 +278,28 @@ def build_pitwall(
         )
         return None
 
-    fast = settings.pitwall_agent_model_fast
+    # Model ids are mapped onto the active backend here rather than in the agent
+    # modules, so the per-agent override env vars keep working unchanged whichever
+    # backend is selected. resolve_model() leaves an explicit non-Claude id alone.
+    from rtv.llm import resolve_model
+
+    def _fast(configured: str) -> str:
+        return resolve_model(
+            configured or settings.pitwall_agent_model_fast, tier="fast", settings=settings
+        )
+
     only = [n.strip() for n in settings.pitwall_agents_only.split(",") if n.strip()]
     agents = build_agents(
         models={
-            "strategist": settings.pitwall_strategist_model
-            or settings.pitwall_agent_model_reasoning,
-            "vehicle_engineer": settings.pitwall_vehicle_engineer_model or fast,
-            "spotter": settings.pitwall_spotter_model or fast,
-            "coach": settings.pitwall_coach_model or fast,
+            "strategist": resolve_model(
+                settings.pitwall_strategist_model
+                or settings.pitwall_agent_model_reasoning,
+                tier="reasoning",
+                settings=settings,
+            ),
+            "vehicle_engineer": _fast(settings.pitwall_vehicle_engineer_model),
+            "spotter": _fast(settings.pitwall_spotter_model),
+            "coach": _fast(settings.pitwall_coach_model),
         },
         only=only or None,
     )
