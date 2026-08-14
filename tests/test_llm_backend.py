@@ -24,20 +24,23 @@ def _settings(**kw) -> Settings:
 
 
 # --------------------------------------------------------------- selection
-def test_anthropic_is_the_default_and_v1_behaviour_is_unchanged():
+def test_kimi_k3_on_the_coding_subscription_is_the_default():
+    """The shipped default is the deployment this repo actually runs."""
     s = _settings()
-    assert llm.provider_name(s) == "anthropic"
-    assert llm.base_url(s) is None  # the SDK's own default
-    assert llm.key_env_var(s) == "ANTHROPIC_API_KEY"
-    assert llm.structured_output_mode(s) == "native"
-
-
-def test_kimi_selects_endpoint_credential_and_tool_mode():
-    s = _settings(llm_provider="kimi")
+    assert llm.provider_name(s) == "kimi"
     assert llm.base_url(s) == "https://api.kimi.com/coding"
     assert llm.key_env_var(s) == "KIMI_API_KEY"
     # Not 'native': Kimi's compatibility layer need not implement output_format.
     assert llm.structured_output_mode(s) == "tool"
+    assert llm.resolve_model("", tier="reasoning", settings=s) == "kimi-k3"
+    assert llm.resolve_model("", tier="fast", settings=s) == "kimi-k3"
+
+
+def test_anthropic_remains_available_as_a_fallback():
+    s = _settings(llm_provider="anthropic")
+    assert llm.base_url(s) is None  # the SDK's own default
+    assert llm.key_env_var(s) == "ANTHROPIC_API_KEY"
+    assert llm.structured_output_mode(s) == "native"
 
 
 def test_every_default_is_individually_overridable():
@@ -82,7 +85,7 @@ def test_claude_ids_map_onto_kimi_but_explicit_ids_are_left_alone():
 
 
 def test_model_mapping_is_a_no_op_on_anthropic():
-    s = _settings()
+    s = _settings(llm_provider="anthropic")
     got = llm.resolve_model("claude-sonnet-4-6", tier="reasoning", settings=s)
     assert got == "claude-sonnet-4-6"
 

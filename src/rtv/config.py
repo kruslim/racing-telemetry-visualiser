@@ -57,8 +57,8 @@ class Settings(BaseSettings):
     # (``messages.parse(output_format=...)``), so the provider carries a
     # tool-forced fallback -- see ``llm_structured_output``.
     llm_provider: str = Field(
-        default="anthropic",
-        description="Which backend the LLM layers talk to: 'anthropic' or 'kimi'. "
+        default="kimi",
+        description="Which backend the LLM layers talk to: 'kimi' or 'anthropic'. "
         "Selects the default base URL, credential env var, structured-output "
         "strategy and model ids; every one of those stays individually overridable.",
     )
@@ -98,8 +98,8 @@ class Settings(BaseSettings):
     )
     llm_kimi_model_fast: str = Field(
         default="kimi-k3",
-        description="Kimi model used wherever a fast-tier model is called. K3 is a "
-        "single tier today; split this if Moonshot ships a smaller sibling.",
+        description="Kimi model used wherever a fast-tier model is called. K3 is one "
+        "tier, so both point at it; split them if a smaller sibling ships.",
     )
 
     # --- pitwall (v2: deterministic race-state engine + agents) ----------

@@ -6,7 +6,7 @@ set -e
 mkdir -p prompts/done
 
 shopt -s nullglob
-files=(prompts/[0-9]*.md)
+files=(prompts/*.md)
 if [ ${#files[@]} -eq 0 ]; then
   echo "All stages already completed."
   exit 0

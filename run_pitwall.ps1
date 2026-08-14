@@ -11,7 +11,10 @@ if (-not (Test-Path "prompts")) {
 
 New-Item -ItemType Directory -Force -Path "prompts\done" | Out-Null
 
-$prompts = Get-ChildItem -Path "prompts" -Filter "[0-9]*.md" | Sort-Object Name
+# -Filter understands only * and ? -- character classes like [0-9] match nothing.
+# prompts\ holds stage files and the done\ subdirectory, so -File + *.md is both
+# correct and immune to the numbering running past 09.
+$prompts = Get-ChildItem -Path "prompts" -File -Filter "*.md" | Sort-Object Name
 
 if ($prompts.Count -eq 0) {
     Write-Host "All stages already completed (prompts folder is empty)." -ForegroundColor Green
