@@ -15,6 +15,7 @@ from rtv.api import (
     routes_catalog,
     routes_coaching,
     routes_ingest,
+    routes_journal,
     routes_pitwall,
     routes_racestate,
     routes_sessions,
@@ -80,6 +81,7 @@ def create_app() -> FastAPI:
 
     app.include_router(routes_catalog.router, prefix=API_PREFIX)
     app.include_router(routes_sessions.router, prefix=API_PREFIX)
+    app.include_router(routes_journal.router, prefix=API_PREFIX)
     app.include_router(routes_telemetry.router, prefix=API_PREFIX)
     app.include_router(routes_coaching.router, prefix=API_PREFIX)
     app.include_router(routes_ingest.router, prefix=API_PREFIX)

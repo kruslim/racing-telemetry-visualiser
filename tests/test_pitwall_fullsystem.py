@@ -239,3 +239,37 @@ def test_the_session_cost_guard_counted_the_scripted_calls(client, frames):
     assert all(
         a["last_latency_ms"] is not None for a in status["agents"] if a["llm_calls"]
     )
+
+
+def test_the_race_journal_kept_what_the_radio_said(client, frames):
+    """The post-race review's source: every aired call is in the session's journal."""
+    import time
+
+    deadline = time.time() + 10
+    while time.time() < deadline and client.app.state.services.recorder.active:
+        time.sleep(0.02)
+    runs = client.get("/api/v1/sessions/scenario/pitwall-runs").json()
+    run = next(r for r in runs["runs"] if r["run_id"] == runs["default_run"])
+    assert run["has_agents"] and run["complete"]
+    start = client.get(
+        "/api/v1/sessions/scenario/pitwall-log", params={"kinds": "lifecycle"}
+    ).json()["records"][0]["data"]
+    assert {a["name"] for a in start["agents"]} == {s.name for s in AGENT_REGISTRY}
+
+    log = client.get(
+        "/api/v1/sessions/scenario/pitwall-log", params={"kinds": "radio"}
+    ).json()["records"]
+    aired = {f["message"]["message_id"] for f in frames["radio"]}
+    journalled = {r["data"]["message_id"] for r in log}
+    assert aired and aired <= journalled
+    for r in log:
+        RadioMessage.model_validate(r["data"])
+        assert r["agent"] == r["data"]["agent"]
+
+    # How each call was made is in there too: the agent runs that produced them.
+    trace = client.get(
+        "/api/v1/sessions/scenario/pitwall-log", params={"kinds": "run_start,run_end"}
+    ).json()["records"]
+    ended = {r["data"].get("message_id") for r in trace if r["kind"] == "run_end"}
+    assert journalled & ended
+    assert all("activity_seq" in r["data"] for r in trace)
