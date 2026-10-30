@@ -8,10 +8,9 @@ the tool calls (the single-agent loop); the deterministic ~20-finding model from
 
 Run the backend first (``.\\run.ps1``), then register this server.
 
-Claude Code:
-    claude mcp add telemetry-coach -- \\
-        "D:/Personal Projects/Racing Telemetry Visualiser/.venv/Scripts/python.exe" \\
-        "D:/Personal Projects/Racing Telemetry Visualiser/mcp_server/telemetry_coach.py"
+Claude Code: already registered by the repo's ``.mcp.json`` (approve it on first launch).
+It runs ``python`` from PATH, so activate the venv first, or point ``RTV_PYTHON`` at the
+interpreter (e.g. ``.venv/Scripts/python.exe``).
 
 Claude Desktop (claude_desktop_config.json -> "mcpServers"):
     "telemetry-coach": {
