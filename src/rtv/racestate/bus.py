@@ -177,7 +177,9 @@ class EventBus:
             try:
                 fn(event)
             except Exception:  # pragma: no cover - a bad consumer must not stop the loop
-                log.exception("Event callback failed for %s", event.event_type)
+                log.exception(
+                    "Event callback failed for %s", getattr(event, "event_type", event)
+                )
 
     def publish_many(self, events: Iterable[RaceEvent]) -> None:
         for event in events:

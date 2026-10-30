@@ -39,6 +39,7 @@ from typing import Any
 
 from rtv.director.engine import DirectorEngine, NoopDirector
 from rtv.logging import get_logger
+from rtv.pitwall.activity import ActivityLog, safe_trace
 from rtv.pitwall.framework import (
     AgentRuntime,
     AgentSpec,
@@ -88,9 +89,13 @@ class PitwallOrchestrator:
         failure_limit: int = DEFAULT_FAILURE_LIMIT,
         max_calls_per_session: int = DEFAULT_MAX_CALLS,
         retry_backoff_s: float | None = None,
+        activity: ActivityLog | None = None,
     ) -> None:
         self.engine = engine
         self.feed = feed or RadioFeed()
+        #: The activity trace (see :mod:`rtv.pitwall.activity`). Optional and
+        #: passive: with ``None`` nothing is recorded and nothing else changes.
+        self.activity: ActivityLog | None = None
         #: The race director (planned -- see :mod:`rtv.director`). Never ``None``:
         #: the default :class:`~rtv.director.engine.NoopDirector` returns nothing,
         #: which keeps the pump's hot path free of a null check.
@@ -121,6 +126,8 @@ class PitwallOrchestrator:
             for spec in agents
         }
         self._agent_enabled = {spec.name: spec.enabled for spec in agents}
+        if activity is not None:
+            self.attach_activity(activity)
         self._sem: asyncio.Semaphore | None = None
         self._inbox: dict[str, asyncio.Queue] = {}
         self._tasks: list[asyncio.Task] = []
@@ -144,6 +151,13 @@ class PitwallOrchestrator:
         self._max_calls = max(0, max_calls_per_session)
         self._call_baseline = 0
         self._budget_announced = False
+
+    def attach_activity(self, activity: ActivityLog | None) -> None:
+        """Trace routing, every agent run and the radio into ``activity``."""
+        self.activity = activity
+        for runtime in self.runtimes.values():
+            runtime.tracer = activity
+        self.feed.tracer = activity
 
     # ---- lifecycle -------------------------------------------------------
     async def start(self) -> None:
@@ -318,21 +332,28 @@ class PitwallOrchestrator:
         without an event loop.
         """
         if not self._enabled or self._suspended:
+            self._trace_dispatch(event, [], {}, "disabled" if not self._enabled else "suspended")
             return []
         if self.budget_exhausted:
             self._announce_budget_exhausted()
+            self._trace_dispatch(event, [], {}, "budget_exhausted")
             return []
         state = state if state is not None else self.engine.snapshot()
         if state.stale:
             # The numbers are the last known ones, not current ones. An agent
             # reasoning over them would be grounded in a race that has stopped.
+            self._trace_dispatch(event, [], {}, "stale")
             return []
         accepted: list[str] = []
+        skipped: dict[str, str] = {}
         for name, runtime in self.runtimes.items():
             if not self._agent_enabled.get(name, True):
+                skipped[name] = "disabled"
                 continue
             trigger = runtime.match(event, state)
             if trigger is None:
+                if runtime.last_skip == "cooldown":
+                    skipped[name] = "cooldown"
                 continue
             runtime.arm(trigger, event)
             accepted.append(name)
@@ -340,7 +361,28 @@ class PitwallOrchestrator:
             queue = self._inbox.get(name)
             if queue is not None:
                 self._offer(name, queue, event)
+        self._trace_dispatch(event, accepted, skipped, None)
         return accepted
+
+    def _trace_dispatch(
+        self,
+        event: RaceEvent,
+        accepted: list[str],
+        skipped: dict[str, str],
+        blocked: str | None,
+    ) -> None:
+        safe_trace(
+            self.activity,
+            "dispatch",
+            event_key=event.key,
+            session_time=event.session_time,
+            tick=event.tick,
+            event_type=event.event_type.value,
+            severity=event.severity.value,
+            accepted=accepted,
+            skipped=skipped,
+            blocked=blocked,
+        )
 
     def _offer(self, name: str, queue: asyncio.Queue, event: RaceEvent) -> None:
         """Latest-wins hand-off, except that a queued critical event holds its slot."""
@@ -361,10 +403,18 @@ class PitwallOrchestrator:
             queue.put_nowait(waiting)  # a critical event is never displaced
             self.skipped_busy += 1
             log.debug("%s busy on a critical event; dropped %s", name, event.key)
+            safe_trace(
+                self.activity, "inbox_superseded", agent=name, event_key=event.key,
+                dropped=event.key, kept=waiting.key,
+            )
             return
         if waiting is not None:
             self.skipped_busy += 1
             log.debug("%s superseded queued %s with %s", name, waiting.key, event.key)
+            safe_trace(
+                self.activity, "inbox_superseded", agent=name, event_key=event.key,
+                dropped=waiting.key, kept=event.key,
+            )
         queue.put_nowait(event)
 
     async def _run_agent(self, name: str, event: RaceEvent) -> RadioMessage | None:

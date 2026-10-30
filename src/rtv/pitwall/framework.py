@@ -31,6 +31,7 @@ from typing import Any
 from pydantic import BaseModel, Field, computed_field
 
 from rtv.logging import get_logger
+from rtv.pitwall.activity import Tracer, safe_trace, summarize
 from rtv.pitwall.validator import FactSet, GroundingReport, validate_output
 from rtv.racestate.models import RaceEvent, RaceState
 
@@ -299,8 +300,17 @@ class AgentRuntime:
         repair_attempts: int = 1,
         retry_attempts: int = 1,
         retry_backoff_s: float = RETRY_BACKOFF_S,
+        tracer: Tracer | None = None,
     ) -> None:
         self.spec = spec
+        #: Optional activity tracer (see :mod:`rtv.pitwall.activity`). Passive:
+        #: ``None`` costs one check per step and nothing else.
+        self.tracer = tracer
+        #: The run being traced. One agent never overlaps itself (one worker,
+        #: one-slot inbox), so per-instance state is enough.
+        self._trace_run: dict[str, Any] | None = None
+        #: Why the last :meth:`match` returned ``None``, for the dispatch trace.
+        self.last_skip: str | None = None
         self.provider = provider
         self.tool_config = dict(tool_config or {})
         self.tool_extras = dict(tool_extras or {})
@@ -328,8 +338,10 @@ class AgentRuntime:
     # ---- triggering ------------------------------------------------------
     def match(self, event: RaceEvent, state: RaceState) -> Trigger | None:
         """The first trigger that fires and is off cooldown, else ``None``."""
+        self.last_skip = "spec_disabled"
         if not self.spec.enabled:
             return None
+        self.last_skip = "no_trigger"
         for trigger in self.spec.triggers:
             if not trigger.matches(event, state):
                 continue
@@ -343,7 +355,9 @@ class AgentRuntime:
                     "%s: %s suppressed by cooldown (%.1fs)",
                     self.spec.name, trigger.event_type, cooldown,
                 )
+                self.last_skip = "cooldown"
                 return None
+            self.last_skip = None
             return trigger
         return None
 
@@ -364,8 +378,38 @@ class AgentRuntime:
         radio_history: Sequence[RadioMessage] = (),
     ) -> RadioMessage | None:
         """Run the agent once. Returns ``None`` only on an unrecoverable error."""
-        spec = self.spec
         self.invocations += 1
+        started = time.perf_counter()
+        turns_before = self.turns
+        run = self._begin_trace(event, events, radio_history)
+        message = await self._invoke(event, state, events, radio_history)
+        if run is not None:
+            if message is None:
+                outcome = "error"
+            elif message.refused:
+                outcome = "refused"
+            else:
+                outcome = "radio"
+            self._trace(
+                "run_end",
+                outcome=outcome,
+                message_id=message.message_id if message is not None else None,
+                priority=message.priority.value if message is not None else None,
+                tools_used=list(message.tools_used) if message is not None else [],
+                turns=self.turns - turns_before,
+                latency_ms=round((time.perf_counter() - started) * 1000.0, 2),
+            )
+            self._trace_run = None
+        return message
+
+    async def _invoke(
+        self,
+        event: RaceEvent,
+        state: RaceState,
+        events: Sequence[RaceEvent],
+        radio_history: Sequence[RadioMessage],
+    ) -> RadioMessage | None:
+        spec = self.spec
         slice_ = spec.state_slice(state)
 
         facts = FactSet()
@@ -399,11 +443,13 @@ class AgentRuntime:
             return None
 
         report = self._validate(output, facts)
+        self._trace_validate(report, repaired=False)
         if not report.ok and self._repair_attempts > 0:
             repaired = await self._repair(system, messages, ctx, facts, tools_used, report)
             if repaired is not None:
                 output = repaired
                 report = self._validate(output, facts)
+                self._trace_validate(report, repaired=True)
 
         return self._to_message(event, output, report, tools_used)
 
@@ -451,14 +497,43 @@ class AgentRuntime:
     async def _complete(self, **kwargs: Any) -> Any:
         """The one place a model is actually called. Counted and timed here."""
         started = time.perf_counter()
+        call = None
+        if self._trace_run is not None:
+            self._trace_run["calls"] += 1
+            call = self._trace_run["calls"]
+            self._trace(
+                "llm_call_start",
+                call=call,
+                model=kwargs.get("model"),
+                tools_offered=len(kwargs.get("tools") or []),
+                messages=len(kwargs.get("messages") or []),
+            )
+        response: Any = None
+        error: str | None = None
         try:
-            return await self.provider.complete(**kwargs)
+            response = await self.provider.complete(**kwargs)
+            return response
+        except Exception as exc:
+            error = type(exc).__name__
+            raise
         finally:
             elapsed = (time.perf_counter() - started) * 1000.0
             self.turns += 1
             self._latency_total_ms += elapsed
             self.last_latency_ms = round(elapsed, 2)
             self.avg_latency_ms = round(self._latency_total_ms / self.turns, 2)
+            if call is not None:
+                tool_calls = getattr(response, "tool_calls", None) or []
+                self._trace(
+                    "llm_call_end",
+                    call=call,
+                    model=kwargs.get("model"),
+                    ok=error is None,
+                    error=error,
+                    latency_ms=round(elapsed, 2),
+                    tool_calls=[c.name for c in tool_calls],
+                    answered=getattr(response, "output", None) is not None,
+                )
 
     async def _converse(
         self,
@@ -494,6 +569,7 @@ class AgentRuntime:
                     is_error = True
                 else:
                     tools_used.append(call.name)
+                    tool_started = time.perf_counter()
                     try:
                         payload = tool(ctx, call.input or {})
                         is_error = False
@@ -503,6 +579,14 @@ class AgentRuntime:
                     else:
                         # Everything a tool returned is now citable ground truth.
                         facts.add(call.name, payload)
+                    self._trace(
+                        "tool_call",
+                        tool=call.name,
+                        args=_trace_args(call.input),
+                        ok=not is_error,
+                        result=summarize(payload),
+                        latency_ms=round((time.perf_counter() - tool_started) * 1000.0, 2),
+                    )
                 results.append(
                     {
                         "type": "tool_result",
@@ -550,6 +634,61 @@ class AgentRuntime:
         except Exception:  # pragma: no cover - defensive; the first answer already failed
             log.exception("Repair turn failed for %s", self.spec.name)
             return None
+
+    # ---- activity trace --------------------------------------------------
+    def _begin_trace(
+        self,
+        event: RaceEvent,
+        events: Sequence[RaceEvent],
+        radio_history: Sequence[RadioMessage],
+    ) -> dict[str, Any] | None:
+        if self.tracer is None:
+            return None
+        run = {
+            "run_id": f"{self.spec.name}-{self.invocations}",
+            "event_key": event.key,
+            "session_time": event.session_time,
+            "tick": event.tick,
+            "calls": 0,
+        }
+        self._trace_run = run
+        self._trace(
+            "run_start",
+            trigger=event.event_type.value,
+            severity=event.severity.value,
+            model=self.spec.model,
+            # The radio this run is shown: the only way one agent hears another.
+            context_radio=[
+                {"message_id": m.message_id, "agent": m.agent} for m in radio_history
+            ],
+            context_events=len(events),
+        )
+        return run
+
+    def _trace(self, kind: str, **data: Any) -> None:
+        run = self._trace_run
+        if run is None:
+            return
+        safe_trace(
+            self.tracer,
+            kind,
+            agent=self.spec.name,
+            run_id=run["run_id"],
+            event_key=run["event_key"],
+            session_time=run["session_time"],
+            tick=run["tick"],
+            **data,
+        )
+
+    def _trace_validate(self, report: GroundingReport, *, repaired: bool) -> None:
+        self._trace(
+            "validate",
+            ok=report.ok,
+            unsupported=list(report.unsupported),
+            word_count=report.word_count,
+            over_word_limit=report.over_word_limit,
+            repaired=repaired,
+        )
 
     # ---- context assembly ------------------------------------------------
     def _system_blocks(self, slice_: dict[str, Any]) -> list[dict[str, Any]]:
@@ -679,6 +818,20 @@ def _as_text(value: Any) -> str:
         return json.dumps(value, separators=(",", ":"), default=str)
     except (TypeError, ValueError):  # pragma: no cover - defensive
         return str(value)
+
+
+def _trace_args(args: Any, *, limit: int = 120) -> dict[str, Any]:
+    """A tool call's arguments, with any long string cut short for the trace."""
+    if not isinstance(args, dict):
+        return {}
+    out: dict[str, Any] = {}
+    for key, value in list(args.items())[:12]:
+        if isinstance(value, str) and len(value) > limit:
+            value = value[:limit] + "..."
+        elif not isinstance(value, str | int | float | bool | type(None)):
+            value = _as_text(value)[:limit]
+        out[key] = value
+    return out
 
 
 def _truncate_words(text: str, limit: int) -> str:

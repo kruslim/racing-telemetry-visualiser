@@ -1,11 +1,16 @@
 /**
- * The pitwall app: mode switching, one socket, five panels and a voice.
+ * The live pitwall: race state, and the agent layer visibly at work.
  *
  * Architecture, such as it is:
  *
- *   /ws/pitwall ─┬─ state  ─► coalesced to <=10 Hz ─► status / strategy / tower
- *                ├─ radio  ─► radio panel + RadioAudioManager (stage 4)
- *                └─ event  ─► ticker  (+ tower warnings, + fuel history)
+ *   /ws/pitwall ─┬─ state    ─► coalesced to <=10 Hz ─► status / strategy / tower
+ *                ├─ radio    ─► radio panel + RadioAudioManager (stage 4)
+ *                ├─ event    ─► ticker (+ tower warnings, + fuel history) + timeline
+ *                └─ activity ─► shared/activity-model.js ─► flow graph, runs, timeline
+ *   /ws/live ────── raw channels ─► telemetry strip
+ *
+ * Every packet on the flow graph is one record the backend emitted while doing
+ * that piece of work (rtv.pitwall.activity); nothing animates on a timer.
  *
  * Everything that decides *what a number means* lives in `pitwall/view-model.js`
  * and is tested without a browser; everything that decides *what it looks like*
@@ -38,9 +43,13 @@ import { TowerPanel } from './pitwall/tower-panel.js';
 import { RadioPanel } from './pitwall/radio-panel.js';
 import { TickerPanel } from './pitwall/ticker-panel.js';
 import { clear, el, setText } from './pitwall/dom.js';
+import { AGENTS, apply, createModel, edgesFor, meanLatency } from './shared/activity-model.js';
+import { FlowGraph } from './shared/flow-graph.js';
+import { Timeline } from './shared/timeline.js';
+import { RunsPanel } from './live/runs-panel.js';
+import { TelemetryStrip } from './live/telemetry-strip.js';
 
 const API = '/api/v1';
-const AGENTS = ['strategist', 'vehicle_engineer', 'spotter', 'coach'];
 /** The screen is redrawn at most this often, whatever the socket does. */
 const RENDER_MS = 100;
 const POLL_MS = 5000;
@@ -52,22 +61,17 @@ const $ = (id) => document.getElementById(id);
 // --------------------------------------------------------------------------
 const params = new URLSearchParams(window.location.search);
 const settings = {
-  mode: params.get('mode') === 'analysis' ? 'analysis' : 'pitwall',
   volume: clamp01(params.has('volume') ? Number(params.get('volume')) : 0.9),
   master: params.get('master') !== '0',
   muted: new Set((params.get('muted') || '').split(',').filter(Boolean)),
-  analysis: params.get('analysis') || '',
 };
 
 function saveSettings() {
   const next = new URLSearchParams(window.location.search);
-  next.set('mode', settings.mode);
   next.set('volume', String(Math.round(settings.volume * 100) / 100));
   next.set('master', settings.master ? '1' : '0');
   if (settings.muted.size) next.set('muted', [...settings.muted].join(','));
   else next.delete('muted');
-  if (settings.analysis) next.set('analysis', settings.analysis);
-  else next.delete('analysis');
   window.history.replaceState({}, '', `${window.location.pathname}?${next}`);
 }
 
@@ -83,6 +87,21 @@ const strategyPanel = new StrategyPanel($('panel-strategy'));
 const towerPanel = new TowerPanel($('panel-tower'), { onToggle: () => renderNow() });
 const radioPanel = new RadioPanel($('panel-radio'), { labels: agentLabel });
 const tickerPanel = new TickerPanel($('panel-ticker'));
+const runsPanel = new RunsPanel($('panel-runs'), { labels: agentLabel });
+const flow = new FlowGraph(document.querySelector('[data-role="flow"]'));
+const timeline = new Timeline(document.querySelector('[data-role="timeline"]'), {
+  lanes: [
+    { id: 'events', label: 'race events' },
+    ...AGENTS.map((agent) => ({ id: agent, label: agentLabel(agent) })),
+    { id: 'radio', label: 'radio aired' },
+  ],
+  windowS: 120,
+});
+const telemetry = new TelemetryStrip($('panel-telemetry'), {
+  onFrames: (rate) => {
+    app.framesPerS = rate;
+  },
+});
 
 const speaker = new RadioSpeaker({
   voices,
@@ -113,6 +132,11 @@ const app = {
   status: null,
   replay: null,
   recommendation: null,
+  activity: createModel(),
+  lastTick: null,
+  lastPulse: 0,
+  framesPerS: null,
+  eventsSeen: 0,
 };
 
 // --------------------------------------------------------------------------
@@ -154,10 +178,23 @@ function connect() {
     if (frame.type === 'state') onState(frame.state);
     else if (frame.type === 'radio') onRadio(frame.message);
     else if (frame.type === 'event') onEvent(frame.event);
+    else if (frame.type === 'activity') onActivity(frame.activity);
   };
 }
 
 function onState(state) {
+  // Frames moved through the engine since the last snapshot: one packet per
+  // snapshot that actually advanced, never more than four a second.
+  const now = performance.now();
+  if (state && state.tick !== app.lastTick && now - app.lastPulse > 250) {
+    if (app.lastTick !== null) {
+      flow.pulse({ from: 'telemetry', to: 'engine' });
+      flow.pulse({ from: 'engine', to: 'detectors', delay: true });
+    }
+    app.lastPulse = now;
+  }
+  if (state) app.lastTick = state.tick;
+  if (state && Number.isFinite(state.session_time)) timeline.setNow(state.session_time);
   app.state = state;
   trends.update(state);
   warnings.clock(state && state.session_time);
@@ -177,7 +214,40 @@ function onRadio(message) {
 function onEvent(event) {
   warnings.observe(event);
   tickerPanel.push(eventLine(event));
+  flow.pulse({ from: 'detectors', to: 'bus' });
+  app.eventsSeen += 1;
+  timeline.addItem('events', {
+    t0: event.session_time,
+    label: `${event.key || event.event_type} · lap ${event.lap ?? '—'}`,
+    cls: `sev-${event.severity || 'info'}`,
+    record: event,
+  });
   app.dirty = true;
+}
+
+function onActivity(record) {
+  apply(app.activity, record);
+  for (const edge of edgesFor(record)) flow.pulse(edge);
+  placeOnTimeline(record);
+  app.activityDirty = true;
+}
+
+function placeOnTimeline(record) {
+  if (record.kind === 'run_start' && AGENTS.includes(record.agent)) {
+    timeline.addItem(record.agent, {
+      t0: record.session_time,
+      label: `${agentLabel(record.agent)} woken by ${record.event_key}`,
+      cls: `agent-${record.agent}`,
+      record,
+    });
+  } else if (record.kind === 'radio_aired') {
+    timeline.addItem('radio', {
+      t0: record.session_time,
+      label: `${agentLabel(record.agent)} on air (${record.data && record.data.priority})`,
+      cls: `agent-${record.agent}`,
+      record,
+    });
+  }
 }
 
 // --------------------------------------------------------------------------
@@ -203,9 +273,84 @@ function render() {
   towerPanel.render(
     towerView(state, { expanded: towerPanel.expanded, trends, warnings })
   );
+  renderFlow(state);
+}
+
+function renderActivity() {
+  if (!app.activityDirty) return;
+  app.activityDirty = false;
+  runsPanel.render(app.activity);
+  renderFlow(app.state || {});
+}
+
+/** The numbers on the graph's nodes. Each is a counter the backend reported. */
+function renderFlow(state) {
+  const m = app.activity;
+  const metrics = state.metrics || {};
+  const mounted = !!(app.status && app.status.available);
+  const fps = app.framesPerS;
+  flow.setNode('telemetry', {
+    sub: fps ? `${fps.toFixed(0)} frames/s seen` : state.session ? state.session.source || '—' : '—',
+  });
+  flow.setNode('engine', {
+    sub: Number.isFinite(metrics.avg_update_ms)
+      ? `${metrics.avg_update_ms.toFixed(2)} ms/frame`
+      : `tick ${state.tick ?? '—'}`,
+  });
+  flow.setNode('detectors', { sub: `${metrics.events ?? 0} events` });
+  flow.setNode('bus', {
+    sub: mounted ? `${m.dispatch.events} dispatched` : `${app.eventsSeen} events published`,
+  });
+  flow.setNode('orchestrator', {
+    sub: !mounted
+      ? 'agent layer off'
+      : m.lastBlocked && m.dispatch.routed === 0
+        ? `blocked: ${m.lastBlocked}`
+        : `${m.dispatch.routed} routed · ${m.dispatch.cooldown} cooldown`,
+    status: mounted ? 'idle' : 'off',
+  });
+  for (const agent of AGENTS) {
+    const a = m.agents[agent];
+    const status = !mounted ? 'off' : a.status;
+    const sub = !mounted
+      ? 'not running'
+      : a.status === 'idle'
+        ? a.skipped
+          ? `idle · ${a.skipped}`
+          : `${a.runs} runs${a.refused ? ` · ${a.refused} refused` : ''}`
+        : `${a.status}${a.detail ? ` · ${a.detail}` : ''}`;
+    flow.setNode(agent, { sub, status });
+  }
+  const latency = meanLatency(m);
+  flow.setNode('llm', {
+    sub: `${m.llm.calls} calls${m.llm.inflight ? ` · ${m.llm.inflight} live` : ''}${
+      latency !== null ? ` · ${(latency / 1000).toFixed(1)} s avg` : ''
+    }`,
+    status: !mounted ? 'off' : m.llm.inflight ? 'thinking' : 'idle',
+  });
+  flow.setNode('tools', {
+    sub: `${m.tools.calls} calls${m.tools.errors ? ` · ${m.tools.errors} failed` : ''}`,
+    status: mounted ? 'idle' : 'off',
+  });
+  flow.setNode('validator', {
+    sub: `${m.validator.checks} checks · ${m.validator.failed} failed`,
+    status: mounted ? 'idle' : 'off',
+  });
+  flow.setNode('radio', {
+    sub: `${m.radio.queued} queued · ${m.radio.aired} aired`,
+    status: mounted ? 'idle' : 'off',
+  });
+  flow.setNode('driver', { sub: state.player && state.player.lap ? `lap ${state.player.lap}` : '' });
+  setText(
+    document.querySelector('[data-role="flow-summary"]'),
+    mounted
+      ? `${m.lastSeq} records · ${m.llm.calls} model calls`
+      : 'agent layer off: showing telemetry, engine and detectors only'
+  );
 }
 
 setInterval(render, RENDER_MS);
+setInterval(renderActivity, RENDER_MS);
 window.addEventListener('resize', () => {
   strategyPanel.drawWindow();
   strategyPanel.drawSpark();
@@ -225,121 +370,74 @@ function notice(text) {
 }
 
 // --------------------------------------------------------------------------
-// modes
-// --------------------------------------------------------------------------
-function setMode(mode) {
-  settings.mode = mode === 'analysis' ? 'analysis' : 'pitwall';
-  $('mode-pitwall').hidden = settings.mode !== 'pitwall';
-  $('mode-analysis').hidden = settings.mode !== 'analysis';
-  document.querySelectorAll('[data-mode]').forEach((button) => {
-    button.classList.toggle('active', button.dataset.mode === settings.mode);
-  });
-  saveSettings();
-  if (settings.mode === 'pitwall') renderNow();
-  else loadSessions();
-}
-
-function wireModes() {
-  document.querySelectorAll('[data-mode]').forEach((button) => {
-    button.onclick = () => setMode(button.dataset.mode);
-  });
-}
-
-// --------------------------------------------------------------------------
-// analysis mode
+// recorded sessions (the replay picker)
 // --------------------------------------------------------------------------
 /**
- * The MoTeC-style worksheets are a separate app served on its own origin (see
- * docs/PITWALL.md), so this mode is a launcher rather than a re-implementation:
- * the v1 session list, and a link into whichever build of the analysis UI you
- * are running. Point it somewhere with the field and the URL remembers.
+ * Replays come from sessions in the store: real captures and .ibt imports. The
+ * picker lists them; there is no built-in synthetic race to fall back to.
  */
 async function loadSessions() {
-  const host = $('analysis-sessions');
-  clear(host);
-  host.append(el('div', 'muted', 'loading sessions…'));
-  let body;
+  const select = $('replay-session');
+  let sessions = [];
   try {
     const response = await fetch(`${API}/sessions?limit=50`);
-    body = await response.json();
-  } catch (error) {
-    clear(host);
-    host.append(el('div', 'muted', `could not reach ${API}/sessions`));
-    return;
+    const body = await response.json();
+    sessions = (body && body.sessions) || [];
+  } catch (_) {
+    sessions = [];
   }
-  clear(host);
-  const sessions = (body && body.sessions) || [];
+  const keep = select.value;
+  clear(select);
   if (!sessions.length) {
-    host.append(el('div', 'muted', 'no captured sessions yet'));
+    const option = el('option', '', 'no recorded sessions: import an .ibt first');
+    option.value = '';
+    select.append(option);
     return;
   }
   for (const session of sessions) {
-    const row = el('div', 'session-row');
-    row.append(el('span', 'sid', session.session_id || NA));
-    row.append(el('span', 'track', session.track_id || NA));
-    row.append(el('span', 'car', session.car_id || NA));
-    row.append(el('span', 'kind', session.kind || NA));
-    const actions = el('span', 'actions');
-    if (settings.analysis) {
-      const link = el('a', 'button-link', 'open in analysis');
-      link.href = `${settings.analysis}${settings.analysis.includes('?') ? '&' : '?'}session=${encodeURIComponent(session.session_id)}`;
-      link.target = '_blank';
-      link.rel = 'noreferrer';
-      actions.append(link);
-    }
-    const replay = el('button', '', '⟲ replay on the pitwall');
-    replay.onclick = () => startReplay(session.session_id);
-    actions.append(replay);
-    row.append(actions);
-    host.append(row);
+    const when = (session.started_at || session.created_at || '').slice(0, 16).replace('T', ' ');
+    const label = [session.label, session.track_name || session.track_id, session.kind, when]
+      .filter(Boolean)
+      .join(' · ');
+    const option = el('option', '', label || NA);
+    option.value = session.session_id;
+    select.append(option);
   }
-}
-
-function wireAnalysis() {
-  const field = $('analysis-url');
-  field.value = settings.analysis;
-  field.oninput = () => {
-    settings.analysis = field.value.trim();
-    saveSettings();
-  };
-  $('analysis-open').onclick = () => {
-    if (settings.analysis) window.open(settings.analysis, '_blank', 'noreferrer');
-    else notice('Set the analysis app URL first — it is served separately from this API.');
-  };
-  $('analysis-refresh').onclick = () => loadSessions();
+  if (keep && sessions.some((s) => s.session_id === keep)) select.value = keep;
 }
 
 // --------------------------------------------------------------------------
 // replay controls (and the demo)
 // --------------------------------------------------------------------------
 async function startReplay(sessionId) {
+  if (!sessionId) {
+    notice('Pick a recorded session to replay (import an .ibt first).');
+    return;
+  }
   const speed = Number($('replay-speed').value) || 1;
   try {
     const response = await fetch(`${API}/replay/start`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ session_id: sessionId || 'scenario', speed }),
+      body: JSON.stringify({ session_id: sessionId, speed }),
     });
     if (!response.ok) {
       const body = await response.json().catch(() => ({}));
       notice(`replay refused: ${body.detail || response.status}`);
       return;
     }
-    setMode('pitwall');
     resetDerived();
     await poll();
     // Say why the radio column will stay empty, rather than letting a quiet
-    // channel read as a broken one. This page deliberately does *not* play the
-    // scripted calls /radio.html falls back to -- a canned line rendered as an
-    // agent's call, in a panel whose whole job is showing agent calls, would be
-    // the ungrounded claim this codebase refuses everywhere else.
+    // channel read as a broken one. Nothing here plays canned calls: a scripted
+    // line drawn as an agent's call would be the ungrounded claim this codebase
+    // refuses everywhere else.
     const live = app.status && app.status.available && app.status.enabled !== false;
     notice(
       live
         ? ''
-        : 'Agents are not mounted (RTV_PITWALL_AGENTS + ANTHROPIC_API_KEY), so the ' +
-          'radio column stays empty. Everything else below is live. /radio.html ' +
-          'plays the scripted demo calls, labelled as scripted.'
+        : 'Agents are not mounted (RTV_PITWALL_AGENTS + KIMI_CODE_API_KEY), so the ' +
+          'agents and the radio stay idle. Telemetry, the engine and the detectors are live.'
     );
   } catch (error) {
     notice('could not reach the replay API');
@@ -363,6 +461,11 @@ function resetDerived() {
   trends.reset();
   warnings.reset();
   fuelHistory.reset();
+  app.activity = createModel();
+  app.activityDirty = true;
+  app.lastTick = null;
+  app.eventsSeen = 0;
+  timeline.clear();
   app.recommendation = null;
   strategyPanel.renderRecommendation(null);
 }
@@ -370,7 +473,7 @@ function resetDerived() {
 function wireReplay() {
   $('replay-start').onclick = () => {
     speaker.prime();
-    startReplay($('replay-session').value.trim() || 'scenario');
+    startReplay($('replay-session').value.trim());
   };
   $('replay-stop').onclick = () => stopReplay();
   $('replay-speed').onchange = () => {
@@ -591,6 +694,22 @@ async function seedHistory() {
   }
 }
 
+async function seedActivity() {
+  try {
+    const response = await fetch(`${API}/pitwall/activity?limit=2000`);
+    if (!response.ok) return;
+    const body = await response.json();
+    // Folded into the model, not animated: these already happened.
+    for (const record of (body && body.records) || []) {
+      apply(app.activity, record);
+      placeOnTimeline(record);
+    }
+    app.activityDirty = true;
+  } catch (_) {
+    /* the socket fills the model from here on */
+  }
+}
+
 async function loadVoices() {
   try {
     const response = await fetch(`${API}/pitwall/tts`);
@@ -615,17 +734,17 @@ function clamp01(value) {
 // --------------------------------------------------------------------------
 // boot
 // --------------------------------------------------------------------------
-wireModes();
 wireRadioControls();
 wireDriverInput();
 wireReplay();
-wireAnalysis();
 buildMutes();
 strategyPanel.renderRecommendation(null);
 radioPanel.setSpeaking(manager.snapshot());
-setMode(settings.mode);
+saveSettings();
 loadVoices();
+loadSessions();
 seedHistory();
+seedActivity();
 poll();
 setInterval(poll, POLL_MS);
 connect();
@@ -636,5 +755,8 @@ window.RTV_PITWALL = {
   app,
   manager,
   speaker,
-  panels: { statusPanel, strategyPanel, towerPanel, radioPanel, tickerPanel },
+  panels: { statusPanel, strategyPanel, towerPanel, radioPanel, tickerPanel, runsPanel },
+  flow,
+  timeline,
+  telemetry,
 };

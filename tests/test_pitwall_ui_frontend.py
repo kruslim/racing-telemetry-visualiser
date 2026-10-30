@@ -91,7 +91,7 @@ def test_the_pitwall_ui_ships_the_file(relative):
 @pytest.mark.parametrize(
     "path,needle",
     [
-        ("/", "mode-switch"),
+        ("/", "panel-flow"),
         ("/css/app.css", "pitwall-grid"),
         ("/js/pitwall-app.js", "/ws/pitwall"),
         ("/js/pitwall/view-model.js", "strategyView"),
@@ -105,15 +105,13 @@ def test_the_pitwall_ui_is_served(client, path, needle):
     assert needle in response.text
 
 
-def test_the_root_is_the_pitwall_app_with_both_modes(client):
+def test_the_root_is_the_live_pitwall_with_links_to_the_other_views(client):
     body = client.get("/").text
-    assert 'data-mode="analysis"' in body
-    assert 'data-mode="pitwall"' in body
-    assert 'id="mode-pitwall"' in body and 'id="mode-analysis"' in body
+    assert 'id="live-view"' in body
     assert "/js/pitwall-app.js" in body
-    # The v1 analysis worksheets are a separate app; the mode must not pretend
-    # to be them.
-    assert "analysis-url" in body
+    # Post-race review (which now holds lap analysis) is its own page; the live
+    # view links to it rather than pretending to be it.
+    assert 'href="/review/"' in body
 
 
 def test_the_stage_four_pages_still_work(client):

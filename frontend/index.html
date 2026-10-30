@@ -3,19 +3,20 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Racing Telemetry Visualiser &mdash; pitwall</title>
+<title>Racing Telemetry Visualiser &mdash; live pitwall</title>
 <link rel="stylesheet" href="/css/pitwall.css">
 <link rel="stylesheet" href="/css/app.css">
+<link rel="stylesheet" href="/css/live.css">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='88'>&#127950;</text></svg>">
 </head>
 <body class="app">
 
 <header>
   <h1>Racing Telemetry Visualiser</h1>
-  <div class="mode-switch" id="mode-switch">
-    <button data-mode="analysis">Analysis</button>
-    <button data-mode="pitwall">Pitwall</button>
-  </div>
+  <nav class="views" aria-label="views">
+    <a href="/" class="active" aria-current="page">Live</a>
+    <a href="/review/">Post-race review &amp; lap analysis</a>
+  </nav>
   <nav>
     <a href="/radio.html">Pitwall radio</a>
     <a href="/pitwall-test.html">self-test</a>
@@ -25,10 +26,7 @@
 
 <p id="app-notice" hidden></p>
 
-<!-- ==================================================================== -->
-<!-- PITWALL MODE                                                          -->
-<!-- ==================================================================== -->
-<section id="mode-pitwall" hidden>
+<section id="live-view">
 
   <!-- 4. STATUS STRIP ------------------------------------------------- -->
   <div id="status-strip" class="status-strip">
@@ -60,7 +58,9 @@
     </div>
     <div class="replay-bar" id="replay-bar" hidden>
       <span class="k">replay</span>
-      <input id="replay-session" type="text" value="scenario" size="16" aria-label="session id">
+      <select id="replay-session" aria-label="recorded session to replay">
+        <option value="">loading sessions&hellip;</option>
+      </select>
       <select id="replay-speed" aria-label="replay speed">
         <option value="1">1&times;</option>
         <option value="2">2&times;</option>
@@ -74,7 +74,45 @@
     </div>
   </div>
 
-  <div class="pitwall-grid">
+  <div class="pitwall-grid live-grid">
+
+    <div class="left-column">
+
+      <!-- A. THE PITWALL AT WORK ---------------------------------------- -->
+      <section class="panel panel-flow" id="panel-flow">
+        <h2>Pitwall at work <span class="sub" data-role="flow-summary">waiting for the first record</span></h2>
+        <div class="flow-host" data-role="flow"></div>
+        <div class="flow-legend">
+          <span><i class="swatch agent-strategist"></i>strategist</span>
+          <span><i class="swatch agent-vehicle_engineer"></i>vehicle engineer</span>
+          <span><i class="swatch agent-spotter"></i>spotter</span>
+          <span><i class="swatch agent-coach"></i>coach</span>
+          <span><i class="swatch ctx"></i>radio heard as context</span>
+          <span><i class="swatch bad"></i>failed / blocked</span>
+        </div>
+      </section>
+
+      <!-- B. SESSION TIMELINE ------------------------------------------- -->
+      <section class="panel panel-timeline" id="panel-timeline">
+        <h2>Timeline <span class="sub">last two minutes of session time</span></h2>
+        <div class="timeline-host" data-role="timeline"></div>
+      </section>
+
+      <!-- C. AGENT RUNS ------------------------------------------------- -->
+      <section class="panel panel-runs" id="panel-runs">
+        <h2>Agent runs <span class="sub" data-role="runs-summary">&mdash;</span></h2>
+        <div class="runs-body">
+          <div class="runs-list" data-role="runs-list"></div>
+          <div class="run-detail" data-role="run-detail" hidden></div>
+        </div>
+      </section>
+
+      <!-- D. RAW TELEMETRY ---------------------------------------------- -->
+      <section class="panel panel-telemetry" id="panel-telemetry"></section>
+
+    </div>
+
+    <div class="right-column">
 
     <!-- 1. RADIO FEED ------------------------------------------------- -->
     <section class="panel panel-radio" id="panel-radio">
@@ -84,7 +122,7 @@
       <div class="radio-list" data-role="radio-list">
         <div class="muted" data-role="radio-empty">
           Nothing on the radio yet. Agents speak when <code>RTV_PITWALL_AGENTS=true</code>
-          and a key is present; the deterministic ticker below runs regardless.
+          and <code>KIMI_CODE_API_KEY</code> is set; the deterministic ticker below runs regardless.
         </div>
       </div>
 
@@ -107,8 +145,6 @@
         </div>
       </div>
     </section>
-
-    <div class="right-column">
 
       <!-- 2. STRATEGY ------------------------------------------------- -->
       <section class="panel panel-strategy" id="panel-strategy">
@@ -169,36 +205,6 @@
     <div class="ticker-strip" data-role="ticker-strip"></div>
   </section>
 
-</section>
-
-<!-- ==================================================================== -->
-<!-- ANALYSIS MODE                                                         -->
-<!-- ==================================================================== -->
-<section id="mode-analysis" hidden>
-  <main>
-    <section class="panel">
-      <h2>Analysis</h2>
-      <p class="meta">
-        The MoTeC-i2-style worksheets are a separate vanilla-JS app served on its own
-        origin against this API (see <code>docs/PITWALL.md</code>). Point this at it once
-        and the link lives in this page&rsquo;s URL &mdash; no storage, same as everything else here.
-      </p>
-      <div class="row">
-        <input id="analysis-url" type="text" size="46" placeholder="http://127.0.0.1:8080/Telemetry%20Analysis.html" aria-label="analysis app URL">
-        <button id="analysis-open" class="primary">Open analysis app</button>
-        <button id="analysis-refresh">&#8635; Refresh sessions</button>
-      </div>
-    </section>
-
-    <section class="panel">
-      <h2>Captured sessions</h2>
-      <div id="analysis-sessions" class="sessions"></div>
-      <p class="meta">
-        <code>GET /api/v1/sessions</code>. &ldquo;Replay on the pitwall&rdquo; feeds a stored
-        session back through the race-state engine and switches to Pitwall mode.
-      </p>
-    </section>
-  </main>
 </section>
 
 <script type="module" src="/js/pitwall-app.js"></script>
