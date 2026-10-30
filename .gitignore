@@ -27,6 +27,7 @@ server.err.log
 
 # Local Claude Code settings
 .claude/settings.local.json
+CLAUDE.local.md
 
 # Editor
 .vscode/

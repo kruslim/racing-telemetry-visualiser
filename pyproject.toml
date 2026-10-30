@@ -37,7 +37,7 @@ dev = [
 ]
 # Layer 2 — local MCP server (driven from Claude Desktop / Claude Code).
 mcp = [
-    "mcp>=1.2",
+    "mcp>=1.2,<2",  # 2.x renamed FastMCP; telemetry_coach.py targets the v1 API
     "httpx>=0.27",
 ]
 # Layer 3a — Claude API orchestration + evals (the async multi-agent showcase).
