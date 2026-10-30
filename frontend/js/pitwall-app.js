@@ -136,6 +136,7 @@ const app = {
   lastTick: null,
   lastPulse: 0,
   framesPerS: null,
+  eventsSeen: 0,
 };
 
 // --------------------------------------------------------------------------
@@ -214,6 +215,7 @@ function onEvent(event) {
   warnings.observe(event);
   tickerPanel.push(eventLine(event));
   flow.pulse({ from: 'detectors', to: 'bus' });
+  app.eventsSeen += 1;
   timeline.addItem('events', {
     t0: event.session_time,
     label: `${event.key || event.event_type} · lap ${event.lap ?? '—'}`,
@@ -296,7 +298,9 @@ function renderFlow(state) {
       : `tick ${state.tick ?? '—'}`,
   });
   flow.setNode('detectors', { sub: `${metrics.events ?? 0} events` });
-  flow.setNode('bus', { sub: `${m.dispatch.events} dispatched` });
+  flow.setNode('bus', {
+    sub: mounted ? `${m.dispatch.events} dispatched` : `${app.eventsSeen} events published`,
+  });
   flow.setNode('orchestrator', {
     sub: !mounted
       ? 'agent layer off'
@@ -322,13 +326,20 @@ function renderFlow(state) {
     sub: `${m.llm.calls} calls${m.llm.inflight ? ` · ${m.llm.inflight} live` : ''}${
       latency !== null ? ` · ${(latency / 1000).toFixed(1)} s avg` : ''
     }`,
-    status: m.llm.inflight ? 'thinking' : 'idle',
+    status: !mounted ? 'off' : m.llm.inflight ? 'thinking' : 'idle',
   });
-  flow.setNode('tools', { sub: `${m.tools.calls} calls${m.tools.errors ? ` · ${m.tools.errors} failed` : ''}` });
+  flow.setNode('tools', {
+    sub: `${m.tools.calls} calls${m.tools.errors ? ` · ${m.tools.errors} failed` : ''}`,
+    status: mounted ? 'idle' : 'off',
+  });
   flow.setNode('validator', {
     sub: `${m.validator.checks} checks · ${m.validator.failed} failed`,
+    status: mounted ? 'idle' : 'off',
   });
-  flow.setNode('radio', { sub: `${m.radio.queued} queued · ${m.radio.aired} aired` });
+  flow.setNode('radio', {
+    sub: `${m.radio.queued} queued · ${m.radio.aired} aired`,
+    status: mounted ? 'idle' : 'off',
+  });
   flow.setNode('driver', { sub: state.player && state.player.lap ? `lap ${state.player.lap}` : '' });
   setText(
     document.querySelector('[data-role="flow-summary"]'),
@@ -384,7 +395,8 @@ async function loadSessions() {
     return;
   }
   for (const session of sessions) {
-    const label = [session.session_id, session.track_id, session.car_id]
+    const when = (session.started_at || session.created_at || '').slice(0, 16).replace('T', ' ');
+    const label = [session.label, session.track_name || session.track_id, session.kind, when]
       .filter(Boolean)
       .join(' · ');
     const option = el('option', '', label || NA);
@@ -452,6 +464,7 @@ function resetDerived() {
   app.activity = createModel();
   app.activityDirty = true;
   app.lastTick = null;
+  app.eventsSeen = 0;
   timeline.clear();
   app.recommendation = null;
   strategyPanel.renderRecommendation(null);
