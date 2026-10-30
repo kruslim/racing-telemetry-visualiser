@@ -2505,3 +2505,57 @@ analyst), `CornerFinding.entry_m/exit_m` and `SectorDelta.start_m/end_m`;
 `frontend/app/coach.js` the Python port lacked, so a UI can drop `coach.js`.
 `chief.time_spread` now uses clean laps only.
 
+---
+
+# The live agent activity view (UI revamp)
+
+The root page is now the **live view**: the race state as before, plus the agent
+layer visibly at work. Every moving part on it is a record the backend emitted while
+doing that piece of work. Nothing animates on a timer, and nothing is scripted.
+
+## The activity stream
+
+`src/rtv/pitwall/activity.py` adds `ActivityLog`, an `EventBus` subclass (same
+bounded, drop-oldest, drops-counted subscriptions) carrying plain dicts:
+
+```
+{ "seq", "wall_ms", "session_time", "tick", "kind", "agent", "run_id", "event_key", "data" }
+```
+
+| kind | emitted in | data |
+|---|---|---|
+| `dispatch` | `PitwallOrchestrator.dispatch` | `accepted`, `skipped` (agent -> `cooldown`/`disabled`), `blocked` (`disabled`/`suspended`/`budget_exhausted`/`stale`) |
+| `inbox_superseded` | `PitwallOrchestrator._offer` | `dropped`, `kept` event keys |
+| `run_start` | `AgentRuntime.invoke` | `trigger`, `severity`, `model`, `context_radio` (message ids + agents the run was shown), `context_events` |
+| `llm_call_start` / `llm_call_end` | `AgentRuntime._complete` | `call`, `model`, `latency_ms`, `ok`, `error` (class name), `tool_calls`, `answered` |
+| `tool_call` | `AgentRuntime._converse` | `tool`, `args` (long strings cut), `ok`, `result` (shape only: type, keys, size), `latency_ms` |
+| `validate` | `AgentRuntime.invoke` | `ok`, `unsupported`, `word_count`, `over_word_limit`, `repaired` |
+| `run_end` | `AgentRuntime.invoke` | `outcome` (`radio`/`refused`/`error`), `message_id`, `priority`, `tools_used`, `turns`, `latency_ms` |
+| `radio_queued` / `radio_superseded` / `radio_aired` | `RadioFeed.publish` / `emit` | `message_id`, `seq`, `priority`, `subject`, `refused` |
+
+The four agents never call each other; they hear each other only through the recent
+radio each run is shown. `run_start.context_radio` records exactly that, and the
+view draws it as radio -> agent edges.
+
+Hooks are an optional `tracer` on `AgentRuntime`, `PitwallOrchestrator` and
+`RadioFeed` (`activity=` on the orchestrator wires all three). `None` costs one
+check. A tracer that raises is logged and ignored. `AppServices.activity` exists
+whenever the engine does; records without their own time take the engine's current
+`session_time`/`tick`.
+
+Surface: `WS /ws/pitwall` gains a fourth frame type `{"type": "activity",
+"activity": {...}}` (pushed as it happens, never coalesced), and
+`GET /api/v1/pitwall/activity?since=<seq>&limit=<n>` serves the backlog.
+
+## Frontend
+
+`frontend/js/shared/` holds the pieces the post-race review reuses:
+`activity-model.js` (pure reducer: `createModel`, `apply`, `reduce(records, upTo)`,
+`edgesFor`; ignores unknown kinds), `timeline.js` (`Timeline` with follow and scrub
+modes, `setRange`, `setCursor`, `onSeek`, `onSelect`) and `flow-graph.js` (the SVG
+pipeline). `frontend/js/live/` has the run waterfall and the raw-telemetry strip
+(`/ws/live`). `node frontend/js/run-shared-tests.mjs` runs the pure tests;
+`tests/test_live_view_frontend.py` runs it under pytest when node is present.
+
+The analysis-mode launcher is gone: the header links to `/app/` (lap analysis) and
+`/review/` (post-race review). The replay picker lists stored sessions only.

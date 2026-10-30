@@ -179,8 +179,10 @@ def build_services(settings: Settings) -> AppServices:
         activity = ActivityLog(clock=lambda: (race.state.session_time, race.state.tick))
         if settings.pitwall_agents:
             pitwall = build_pitwall(
-                engine, settings, coaching=coaching, repo=repo, tts=tts, activity=activity
+                engine, settings, coaching=coaching, repo=repo, tts=tts
             )
+            if pitwall is not None:
+                pitwall.attach_activity(activity)
 
     def on_frame(frame: Frame, catalog) -> None:
         hub.publish_frame(frame, catalog)
@@ -262,7 +264,6 @@ def build_pitwall(
     coaching: CoachingService | None = None,
     repo: Repository | None = None,
     tts: RadioTTS | None = None,
-    activity: ActivityLog | None = None,
 ) -> PitwallOrchestrator | None:
     """Assemble the agent layer, or return None when it cannot run.
 
@@ -339,7 +340,6 @@ def build_pitwall(
         # reads the *same* deterministic corner analysis the v1 endpoints serve.
         tool_extras={"coaching": coaching, "repo": repo},
         tts=tts,
-        activity=activity,
     )
 
 

@@ -95,9 +95,7 @@ class PitwallOrchestrator:
         self.feed = feed or RadioFeed()
         #: The activity trace (see :mod:`rtv.pitwall.activity`). Optional and
         #: passive: with ``None`` nothing is recorded and nothing else changes.
-        self.activity = activity
-        if activity is not None and self.feed.tracer is None:
-            self.feed.tracer = activity
+        self.activity: ActivityLog | None = None
         #: The race director (planned -- see :mod:`rtv.director`). Never ``None``:
         #: the default :class:`~rtv.director.engine.NoopDirector` returns nothing,
         #: which keeps the pump's hot path free of a null check.
@@ -123,12 +121,13 @@ class PitwallOrchestrator:
                 tool_config=self.tool_config,
                 tool_extras=self.tool_extras,
                 clock=clock,
-                tracer=activity,
                 **runtime_kwargs,
             )
             for spec in agents
         }
         self._agent_enabled = {spec.name: spec.enabled for spec in agents}
+        if activity is not None:
+            self.attach_activity(activity)
         self._sem: asyncio.Semaphore | None = None
         self._inbox: dict[str, asyncio.Queue] = {}
         self._tasks: list[asyncio.Task] = []
@@ -152,6 +151,13 @@ class PitwallOrchestrator:
         self._max_calls = max(0, max_calls_per_session)
         self._call_baseline = 0
         self._budget_announced = False
+
+    def attach_activity(self, activity: ActivityLog | None) -> None:
+        """Trace routing, every agent run and the radio into ``activity``."""
+        self.activity = activity
+        for runtime in self.runtimes.values():
+            runtime.tracer = activity
+        self.feed.tracer = activity
 
     # ---- lifecycle -------------------------------------------------------
     async def start(self) -> None:
