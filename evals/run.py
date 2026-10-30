@@ -8,7 +8,8 @@ disabled, with the LLM judge (clarity / actionability / grounding).
     python evals/run.py --no-judge      # skip the LLM judge (still needs a key for the coach)
     python evals/run.py --cases my.json
 
-Needs a populated store (import a lap first) and ANTHROPIC_API_KEY.
+Needs a populated store (import a lap first) and the LLM key (KIMI_CODE_API_KEY by
+default; see rtv.llm).
 """
 
 from __future__ import annotations
@@ -48,16 +49,16 @@ async def _run(args) -> int:
     if not cases:
         print(f"No cases in {args.cases}. Fill in real session_id / main_lap / ref_lap.")
         return 1
-    if not os.environ.get("ANTHROPIC_API_KEY"):
-        print("ANTHROPIC_API_KEY not set — the coach needs it. See README.")
-        return 1
+    from rtv import llm
 
-    from anthropic import AsyncAnthropic
+    if not llm.is_configured():
+        print(f"{llm.key_env_var()} not set — the coach needs it. See README.")
+        return 1
 
     from rtv.coaching.orchestrator import CoachOrchestrator
 
-    client = AsyncAnthropic()
-    model = get_settings().coaching_model
+    client = llm.build_client()  # Kimi Code by default; see rtv.llm
+    model = llm.resolve_model(get_settings().coaching_model, tier="reasoning")
     orch = CoachOrchestrator(client=client, model=model)
 
     rows: list[dict] = []

@@ -15,7 +15,7 @@ what it cannot.
     --speed N     playback rate; 1.0 is real time, 4 is a brisk demo (default 4)
     --port N      bind port (default 8000)
     --no-browser  print the URL instead of opening it
-    --agents      also mount the LLM agent layer (needs ANTHROPIC_API_KEY; this
+    --agents      also mount the LLM agent layer (needs the LLM key, KIMI_CODE_API_KEY by default; this
                   is the only flag here that can spend money)
 """
 
@@ -110,9 +110,11 @@ def main() -> int:
     os.environ.setdefault("RTV_PITWALL", "true")
     os.environ.setdefault("RTV_AUTOSTART_LIVE", "false")
     if args.agents:
-        if not os.environ.get("ANTHROPIC_API_KEY"):
+        from rtv import llm
+
+        if not llm.is_configured():
             print(
-                "--agents needs ANTHROPIC_API_KEY. Without it the agent layer "
+                f"--agents needs {llm.key_env_var()}. Without it the agent layer "
                 "stays unmounted and the page plays the scripted radio instead."
             )
         os.environ["RTV_PITWALL_AGENTS"] = "true"

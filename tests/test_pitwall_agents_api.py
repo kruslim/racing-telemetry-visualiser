@@ -14,6 +14,7 @@ pytest.importorskip("pyarrow")
 pytest.importorskip("duckdb")
 pytest.importorskip("fastapi")
 
+from rtv import llm  # noqa: E402
 from rtv.pitwall.agents.strategist import STRATEGIST, PitCall  # noqa: E402
 from rtv.pitwall.framework import RadioPriority  # noqa: E402
 from rtv.pitwall.orchestrator import PitwallOrchestrator  # noqa: E402
@@ -75,7 +76,7 @@ def agent_client(tmp_path, monkeypatch):
 def test_status_explains_why_the_agent_layer_is_not_running(client):
     body = client.get("/api/v1/pitwall/status").json()
     assert body["available"] is False
-    assert "ANTHROPIC_API_KEY" in body["reason"]
+    assert llm.key_env_var() in body["reason"]
     assert "strategist" in body["known_agents"]
 
 

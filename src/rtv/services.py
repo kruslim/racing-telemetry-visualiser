@@ -104,7 +104,7 @@ class AppServices:
     engine: RaceStateEngine | None = None
     replay: ReplayDriver | None = None
     #: v2 pitwall agent layer; None when RTV_PITWALL_AGENTS is false or the
-    #: ``ai`` extra / ANTHROPIC_API_KEY is absent (see build_services).
+    #: ``ai`` extra / LLM key is absent (see build_services).
     pitwall: PitwallOrchestrator | None = None
     #: v2 radio voice. Always present, usually a NullProvider: with no backend
     #: provider configured the browser's Web Speech API does the talking, so this

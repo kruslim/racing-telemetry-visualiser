@@ -10,6 +10,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Response
 from pydantic import BaseModel, Field
 
+from rtv import llm
 from rtv.api.deps import get_services
 from rtv.pitwall.agents import AGENT_REGISTRY
 from rtv.pitwall.tts import TTSError, TTSUnavailable
@@ -23,7 +24,7 @@ def _pitwall(services: AppServices):
         raise HTTPException(
             503,
             "The pitwall agent layer is not running. It needs RTV_PITWALL_AGENTS=true, "
-            'the "ai" extra and ANTHROPIC_API_KEY.',
+            f'the "ai" extra and {llm.key_env_var()}.',
         )
     return services.pitwall
 
@@ -36,7 +37,7 @@ def pitwall_status(services: AppServices = Depends(get_services)) -> dict:
         return {
             "available": False,
             "reason": "Agent layer not mounted (RTV_PITWALL_AGENTS, the 'ai' extra "
-            "or ANTHROPIC_API_KEY).",
+            f"or {llm.key_env_var()}).",
             "known_agents": [spec.name for spec in AGENT_REGISTRY],
         }
     return {"available": True, **services.pitwall.status()}

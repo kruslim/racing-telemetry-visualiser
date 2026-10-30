@@ -12,7 +12,7 @@ event, a coaching cue against the corner the pattern is actually at.
     python evals/run_pitwall.py --agent spotter
     python evals/run_pitwall.py --model claude-opus-4-8
 
-Needs ANTHROPIC_API_KEY unless --dry-run. It does *not* need iRacing or a
+Needs the LLM key (KIMI_CODE_API_KEY by default) unless --dry-run. It does *not* need iRacing or a
 populated store: the golden sets are generated from the scripted race.
 """
 
@@ -125,8 +125,10 @@ async def _run(args) -> int:
 
     if args.dry_run:
         return _dry_run(sets)
-    if not os.environ.get("ANTHROPIC_API_KEY"):
-        print("ANTHROPIC_API_KEY not set. Use --dry-run to inspect the cases offline.")
+    from rtv import llm
+
+    if not llm.is_configured():
+        print(f"{llm.key_env_var()} not set. Use --dry-run to inspect the cases offline.")
         return 1
 
     rows: list[dict] = []

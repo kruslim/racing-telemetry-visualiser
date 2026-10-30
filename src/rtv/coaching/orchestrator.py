@@ -11,7 +11,8 @@ The findings are the same for every specialist, so they sit in a cached system b
 (prompt caching). Numbers always come from the findings — the prompts forbid inventing
 figures, and the verify step (plus the separate eval harness) checks that they didn't.
 
-Requires the ``ai`` extra (``pip install -e ".[ai]"``) and ANTHROPIC_API_KEY in the env.
+Requires the ``ai`` extra (``pip install -e ".[ai]"``) and the LLM key in the env
+(KIMI_CODE_API_KEY by default; see ``rtv.llm``).
 """
 
 from __future__ import annotations
