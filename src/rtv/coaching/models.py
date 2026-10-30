@@ -11,8 +11,22 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
-# Agent identities mirror the frontend coach.js roster (kept deterministic on purpose).
+# The deterministic analysts that attribute a Diagnostic (no LLM in any of them).
 AGENTS = ("speed", "brake", "throttle", "gear", "grip", "consistency")
+
+#: Display identity for every analyst a UI shows, in roster order. ``txt`` (the
+#: turn-by-turn walkthrough) and ``sector`` summarise rather than diagnose, so
+#: they are in the roster but never on a Diagnostic.
+AGENT_ROSTER: dict[str, dict[str, str]] = {
+    "txt": {"name": "Turn-by-Turn", "code": "TXT", "watch": "Corner-by-corner walkthrough"},
+    "sector": {"name": "Sector", "code": "SEC", "watch": "S1 / S2 / S3 split times"},
+    "brake": {"name": "Brake", "code": "BRK", "watch": "Brake point, trail, lock-up"},
+    "speed": {"name": "Speed / Line", "code": "SPD", "watch": "Min corner speed, apex"},
+    "throttle": {"name": "Throttle", "code": "THR", "watch": "Application, full-throttle %"},
+    "gear": {"name": "Gearing", "code": "GER", "watch": "Gear selection at apex"},
+    "grip": {"name": "Grip / Tyres", "code": "GRP", "watch": "Lateral grip held"},
+    "consistency": {"name": "Consistency", "code": "CNS", "watch": "Lap-to-lap spread"},
+}
 
 
 @dataclass
@@ -40,6 +54,8 @@ class CornerFinding:
     min_ref: float  # reference minimum speed, km/h
     net_dt: float  # seconds; + = main lost time across this corner
     diags: list[Diagnostic] = field(default_factory=list)
+    entry_m: float = 0.0  # start of the window net_dt is measured over (m)
+    exit_m: float = 0.0  # end of that window (m)
 
 
 @dataclass
@@ -49,6 +65,8 @@ class SectorDelta:
     main: float | None  # main sector time (s)
     ref: float | None  # reference sector time (s)
     delta: float | None  # main - ref (s); + = slower
+    start_m: float = 0.0  # sector start distance (m)
+    end_m: float = 0.0  # sector end distance (m)
 
 
 @dataclass
@@ -70,6 +88,23 @@ class ChiefSummary:
 
 
 @dataclass
+class DriverKPIs:
+    """Whole-lap driving-style scores for one lap. ``None`` = channel not captured."""
+
+    trail_brake_pct: float | None  # share of braking samples taken while turning
+    avg_throttle_pct: float | None  # mean throttle application over the lap
+    throttle_smoothness: float | None  # 0-100, inverse of pedal jitter per km
+    steer_corrections: int | None  # steering sign reversals (mid-corner corrections)
+    coasting_pct: float | None  # share of the lap with neither pedal applied
+
+
+@dataclass
+class AgentStat:
+    count: int  # findings this analyst produced
+    time: float  # seconds of loss attributed to them
+
+
+@dataclass
 class LapFindings:
     session_id: str
     car_id: str | None
@@ -84,6 +119,8 @@ class LapFindings:
     sectors: list[SectorDelta]
     chief: ChiefSummary
     notes: list[str] = field(default_factory=list)  # caveats, e.g. skipped diagnostics
+    kpis: dict[str, DriverKPIs] = field(default_factory=dict)  # "main" / "ref"
+    agent_stats: dict[str, AgentStat] = field(default_factory=dict)  # keyed by roster id
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

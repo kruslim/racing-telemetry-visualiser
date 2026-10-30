@@ -1,7 +1,7 @@
 """The in-loop citation validator: every number an agent says must be traceable.
 
 This is the Layer-3b coach's adversarial verify step, moved in-loop and made
-deterministic. The coach could afford a second Claude call to fact-check a lap
+deterministic. The coach could afford a second model call to fact-check a lap
 report; a race engineer on the radio cannot. So instead of asking a model whether
 the numbers are right, we collect every numeric value the agent was actually shown
 -- the ``RaceState`` slice, the triggering event, and every tool result -- and

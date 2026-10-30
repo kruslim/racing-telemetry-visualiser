@@ -25,7 +25,7 @@ from rtv.pitwall.framework import (
 )
 from rtv.pitwall.orchestrator import PitwallOrchestrator
 from rtv.pitwall.provider import (
-    AnthropicProvider,
+    KimiProvider,
     LLMProvider,
     ProviderResponse,
     ScriptedProvider,
@@ -43,7 +43,7 @@ __all__ = [
     "AgentOutput",
     "AgentRuntime",
     "AgentSpec",
-    "AnthropicProvider",
+    "KimiProvider",
     "EventRef",
     "FactSet",
     "GroundingReport",

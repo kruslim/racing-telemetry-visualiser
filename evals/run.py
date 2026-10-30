@@ -1,7 +1,7 @@
 """Run the coaching eval harness over a golden set of laps.
 
 For each case: build the deterministic findings from the local store, run the multi-agent
-Claude coach, then score it — deterministically (factuality vs ground truth) and, unless
+Kimi coach, then score it — deterministically (factuality vs ground truth) and, unless
 disabled, with the LLM judge (clarity / actionability / grounding).
 
     python evals/run.py                 # uses evals/golden_laps.json
@@ -55,10 +55,11 @@ async def _run(args) -> int:
         return 1
 
     from rtv.coaching.orchestrator import CoachOrchestrator
+    from rtv.pitwall.provider import KimiProvider
 
-    client = llm.build_client()  # Kimi Code by default; see rtv.llm
-    model = llm.resolve_model(get_settings().coaching_model, tier="reasoning")
-    orch = CoachOrchestrator(client=client, model=model)
+    provider = KimiProvider()
+    model = llm.model("reasoning")
+    orch = CoachOrchestrator(provider, model=model)
 
     rows: list[dict] = []
     for case in cases:
@@ -75,9 +76,12 @@ async def _run(args) -> int:
         if not args.no_judge:
             from evals.judges import judge
 
-            j = await judge(result, findings, client, model=model)
-            print(f"  judge: clarity={j.clarity} action={j.actionability} "
-                  f"grounding={j.grounding} — {j.comment}")
+            j = await judge(result, findings, provider, model=model)
+            if j is None:
+                print("  judge: no valid score returned")
+            else:
+                print(f"  judge: clarity={j.clarity} action={j.actionability} "
+                      f"grounding={j.grounding} — {j.comment}")
 
     agg = aggregate(rows)
     print("\n=== SUMMARY ===")

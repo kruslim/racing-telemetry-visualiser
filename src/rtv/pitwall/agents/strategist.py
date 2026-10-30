@@ -197,7 +197,7 @@ STRATEGIST = AgentSpec(
     triggers=STRATEGIST_TRIGGERS,
     # Strategy is the one place in the pitwall worth a reasoning model: it is
     # low-frequency, and getting it wrong costs the race.
-    model="claude-sonnet-4-6",
+    model="kimi-k3",
     max_tokens=2000,
     cooldown_s=30.0,
     state_slice=strategist_slice,

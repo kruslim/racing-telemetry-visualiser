@@ -13,6 +13,10 @@ its spec (with a one-line rationale).
 | **5** | Race-director seam (interfaces only) + live-path hardening + docs | **done** |
 | **6** | Pitwall UI | **done** |
 
+> **Phase 1 cleanup (2026-10-30)** changed several stage 1-6 interfaces; see
+> [the cleanup section](#phase-1-cleanup--real-data-only-kimi-only) before trusting
+> the older stage notes on replay, scenarios, providers or model ids.
+
 > The **race director itself is planned, not implemented.** Stage 5 ships its
 > schema, its protocol and a `NoopDirector` that injects nothing — plus a test
 > proving the seam carries a scripted full-course yellow indistinguishably from a
@@ -37,8 +41,8 @@ flag records why (the Layer-3b grounded-refusal discipline, applied to state).
 | `detectors.py` | Pure functions over a frame window. No state, no event construction. |
 | `bus.py` | `EventBus` / `Subscription`: thread-safe producer, sync **and** asyncio consumers. |
 | `engine.py` | `RaceStateEngine`: the incremental per-frame update + detector latching. |
-| `replay.py` | `ReplayDriver` + `scenario_source()` / `store_source()`. |
-| `scenario.py` | The scripted synthetic race used as test ground truth. |
+| `replay.py` | `ReplayDriver` + `store_source()`. |
+| `evals/synthetic_race.py` | The scripted synthetic race used as test ground truth (test-only since phase 1). |
 
 ### The one ingress
 
@@ -190,14 +194,18 @@ A raising callback is logged and cannot stop the loop.
 ## Replay
 
 ```python
-from rtv.racestate import RaceStateEngine, replay_scenario
-from rtv.racestate.replay import ReplayDriver, scenario_source, store_source
+from rtv.racestate import RaceStateEngine
+from rtv.racestate.replay import ReplayDriver, store_source
 
 engine = RaceStateEngine(source="replay")
-replay_scenario(engine)                                  # scripted race, instant
-
 ReplayDriver(engine).run(store_source(db, parquet_dir, session_id), speed=1.0)
-ReplayDriver(engine).start(scenario_source(), speed=4.0) # background thread
+
+# In the app the driver also publishes every frame to the /ws/live hub:
+ReplayDriver(engine, publish=hub.publish_frame, on_lifecycle=...).start(source, speed=4.0)
+
+# Tests only:
+from evals.synthetic_race import replay_scenario, scenario_source
+replay_scenario(engine)                                  # scripted race, instant
 ```
 
 `speed`: `1.0` real time, `N` for N× real time, `0` as-fast-as-possible.
@@ -397,7 +405,7 @@ Four things hold that down, in order of how much they matter:
 | Module | Role |
 |--------|------|
 | `framework.py` | `AgentSpec`, `Trigger`, `ToolSpec`, `AgentRuntime`, `RadioMessage`. The only code that talks to a model. |
-| `provider.py` | `AnthropicProvider` (real) and `ScriptedProvider` (offline), behind one `complete()` method. |
+| `provider.py` | `KimiProvider` (real) and `ScriptedProvider` (offline), behind one `complete()` method. |
 | `tools.py` | The deterministic tool registry over `racestate` + `strategy_math`. |
 | `validator.py` | `FactSet` + `validate_output`: the in-loop citation check. |
 | `radio.py` | `RadioFeed`: one channel, priority-ordered, self-superseding, paced. |
@@ -657,7 +665,7 @@ merging, the API, the WebSocket frames, the status payload — already works for
 from rtv.pitwall import (
     AgentSpec, AgentOutput, AgentRuntime, Trigger, ToolSpec, ToolContext,
     RadioMessage, RadioPriority, RadioFeed, PitwallOrchestrator,
-    ScriptedProvider, AnthropicProvider, tool_use_turn,
+    ScriptedProvider, KimiProvider, tool_use_turn,
     FactSet, validate_output, build_agents, ALL_TOOLS, TOOLS_BY_NAME,
 )
 
@@ -694,7 +702,7 @@ not in an agent's tuple is unreachable *and* uncitable by it.
 4. **No `thinking` on agent calls by default.** The Layer-3b coach uses adaptive
    thinking because it runs post-hoc. A pit call that lands two corners late is
    worse than no call, and every number is already computed deterministically
-   upstream, so latency wins. `AnthropicProvider(thinking=True, effort=...)` opts
+   upstream, so latency wins. `KimiProvider(thinking=True, effort=...)` opts
    back in per deployment.
 5. **Five new deterministic events, not agent-side timers.** The spec asked for
    triggers like `stint_lap_milestones` and `fuel_margin_below_threshold` "from a
@@ -2430,3 +2438,70 @@ screen with no key, no iRacing and no captured session. With
 `RTV_PITWALL_AGENTS=true` and a key exported, the radio column fills with live
 agent output; without them it stays empty and the AI badge says why, which is the
 honest version of a quiet radio.
+
+---
+
+## Phase 1 cleanup — real data only, Kimi only
+
+Not a staged prompt: the first step of the UI revamp (2026-10-30). The offline
+suite stayed green throughout, and v1 behaviour is unchanged except where noted.
+
+**No fake data at runtime.**
+- `src/rtv/demo/` and `RTV_SEED_DEMO` are gone; a fresh store is empty. The
+  generator lives on as `evals/synthetic_session.py` (`seed_synthetic_session`),
+  for tests only.
+- `src/rtv/racestate/scenario.py` moved to `evals/synthetic_race.py`, together with
+  `scenario_source()`, `replay_scenario()` and `SCENARIO_SESSION_ID`. The replay API
+  no longer accepts `"scenario"`: `POST /api/v1/replay/start` requires a stored
+  `session_id` (422 without one). Tests seed the scripted race into the store with
+  `seed_scenario_session()` and replay it like any import.
+- Deleted `scripts/demo_pitwall.py` (scripted radio over the synthetic race),
+  `scripts/seed_demo.py` and the six stage-era `scripts/smoke_pitwall*.py`; the
+  pytest suite covers what they drove.
+
+**Replay is live-shaped.** `ReplayDriver(engine, publish=..., on_lifecycle=...)`: the
+app passes `hub.publish_frame`, so `/ws/live` streams a replay exactly like live
+capture, and the hub's state is `ConnectionState.REPLAY` (`"replay"`) while it runs,
+`disconnected` after. `store_source()` now reports `total` from the session's sample
+count. `POST /api/v1/live/start` is refused (409) while a replay runs, the mirror of
+the existing guard.
+
+**Real `.ibt` ingest.** `POST /api/v1/import/upload?filename=x.ibt` takes the file
+as the raw body. The real Spa GT3 race (`scripts/fetch_fixtures.py`,
+`tests/test_real_ibt.py`) exposed and fixed three bugs that the synthetic race could
+not:
+- iRacing publishes `LapLastLapTime` ~1-2 s after the `Lap` counter moves, so every
+  lap time was the *previous* lap's. `LapTracker` now waits up to
+  `LAP_TIME_SETTLE_S` for the official time (else uses start-to-start session time),
+  and `detect_lap_completion` only trusts a value that changed on the crossing
+  frame; the engine falls back to session time.
+- After the start, iRacing clears the green bit and leaves `start_hidden`, so every
+  real lap was `UNKNOWN`, never green: no fuel model, no stint milestones (the
+  strategist's wake-up). `flag_phase` treats `start_hidden` (outside the formation
+  lap) as green.
+- In/out laps now come from pit-road transitions during the lap; lap 0 (pre-start)
+  and the unfinished last segment are `is_valid = False`; `finalize()` closes at the
+  last tick seen instead of a caller-supplied zero or sample index.
+
+Known gap: `.ibt` files do not record `CarIdxLapDistPct`, so a replayed `.ibt` has
+no standings (`capabilities.standings = false`, listed in `missing`), and the
+spotter's traffic triggers cannot fire on it. Live capture has them.
+
+**Kimi Code only.** `rtv.llm` has no provider switch: `RTV_LLM_PROVIDER`,
+`RTV_LLM_STRUCTURED_OUTPUT`, `RTV_COACHING_MODEL` and
+`RTV_PITWALL_AGENT_MODEL_FAST/_REASONING` are gone (old `.env` lines are ignored).
+`llm.model(tier, override)` replaces `resolve_model`. `AnthropicProvider` is
+`KimiProvider`, tool-forced only; `structured_call()` is the one-shot helper the
+Layer-3a orchestrator and the eval judge now use. Both previously called
+`messages.parse(output_format=...)`, which Kimi's endpoint does not implement.
+`CoachOrchestrator(provider, model=...)` replaces `CoachOrchestrator(client=...)`.
+Agent default model ids are `kimi-k3`.
+
+**Coaching in one place.** `LapFindings` gained `kpis` (`main`/`ref`
+`DriverKPIs`: trail-brake %, average throttle %, throttle smoothness, steering
+corrections, coasting %), `agent_stats` (count and attributed seconds per roster
+analyst), `CornerFinding.entry_m/exit_m` and `SectorDelta.start_m/end_m`;
+`GET /api/v1/coaching/agents` lists the roster. These were the parts of
+`frontend/app/coach.js` the Python port lacked, so a UI can drop `coach.js`.
+`chief.time_spread` now uses clean laps only.
+

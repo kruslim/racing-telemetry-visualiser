@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import pytest
+from evals.synthetic_race import ScenarioSpec, replay_scenario, scenario_catalog, scenario_frames
 
-from rtv.racestate import RaceStateEngine, replay_scenario
+from rtv.racestate import RaceStateEngine
 from rtv.racestate.models import EventType, FlagPhase
-from rtv.racestate.scenario import ScenarioSpec, scenario_catalog, scenario_frames
 
 #: The scripted milestones, in the order the scenario stages them.
 EXPECTED_SEQUENCE = [

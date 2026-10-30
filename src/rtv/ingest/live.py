@@ -170,7 +170,7 @@ class LivePoller:
         if buf is not None and len(buf):
             self._flush(buf)
         if self._session_id and tracker is not None:
-            tracker.finalize(tick=0, session_time=0.0)
+            tracker.finalize()
             self._sink.write_laps(self._session_id, tracker.laps)
             self._sink.end_session(
                 self._session_id, sample_count=0, ended_at=time.time()
@@ -257,7 +257,7 @@ class LivePoller:
         session_time = float(values.get("SessionTime") or 0.0)
         tick = int(values.get("SessionTick") or 0)
         completed = tracker.update(values, tick=tick, session_time=session_time)
-        lap = completed.lap if completed else (tracker._current.lap if tracker._current else 0)
+        lap = tracker.current_lap
         if completed and self._session_id:
             self._sink.write_laps(self._session_id, [completed])
         return Frame(

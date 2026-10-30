@@ -83,23 +83,23 @@ def test_answer_markdown_mentions_priorities():
 def client(tmp_path, monkeypatch):
     monkeypatch.setenv("RTV_DATA_DIR", str(tmp_path / "data"))
     monkeypatch.setenv("RTV_AUTOSTART_LIVE", "false")
-    monkeypatch.setenv("RTV_SEED_DEMO", "true")           # seed the demo session
     monkeypatch.setenv("KIMI_CODE_API_KEY", "test-key")   # pass the 503 guard
     from rtv.config import get_settings
 
     get_settings.cache_clear()
+    from evals.synthetic_session import seed_synthetic_session
     from fastapi.testclient import TestClient
 
     from rtv.main import create_app
 
     app = create_app()
     with TestClient(app) as c:
+        seed_synthetic_session(c.app.state.services.writer)
         yield c
 
 
 def test_chat_503_without_key(tmp_path, monkeypatch):
     monkeypatch.setenv("RTV_DATA_DIR", str(tmp_path / "data"))
-    monkeypatch.setenv("RTV_SEED_DEMO", "false")
     monkeypatch.delenv("KIMI_CODE_API_KEY", raising=False)
     monkeypatch.delenv("KIMI_API_KEY", raising=False)
     from rtv.config import get_settings
@@ -115,7 +115,7 @@ def test_chat_503_without_key(tmp_path, monkeypatch):
     assert r.status_code == 503
 
 
-def _demo_laps(client):
+def _seeded_laps(client):
     js = client.get("/api/v1/sessions").json()
     sid = js["sessions"][0]["session_id"]
     laps = [lap["lap"] for lap in client.get(f"/api/v1/sessions/{sid}/laps").json()["laps"]]
@@ -124,7 +124,7 @@ def _demo_laps(client):
 
 def test_chat_answer_with_scripted_model(client, make_model, ai, monkeypatch):
     """Full path: endpoint → run_coach (real provider over the seeded store) → annotations."""
-    sid, laps = _demo_laps(client)
+    sid, laps = _seeded_laps(client)
     main, ref = laps[4], laps[0]
 
     # Pull the real findings so the scripted answer cites a grounded figure.
@@ -167,7 +167,7 @@ def test_chat_answer_with_scripted_model(client, make_model, ai, monkeypatch):
 
 
 def test_chat_refusal_with_scripted_model(client, make_model, ai, monkeypatch):
-    sid, laps = _demo_laps(client)
+    sid, laps = _seeded_laps(client)
     model = make_model([
         ai("list_available_channels", {"session_id": sid}),
         ai("refuse", {

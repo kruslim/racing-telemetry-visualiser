@@ -2,10 +2,10 @@
 
 The suite is required to run with no iRacing install, no network and no API key.
 The first two are structural; the third is not, because a developer who has a
-``KIMI_CODE_API_KEY`` or ``ANTHROPIC_API_KEY`` exported for the coach would
-otherwise have the pitwall agent layer wire itself into every app fixture. So
-every LLM credential is removed for the whole session: an offline suite that only
-passes on a machine without a key is not an offline suite.
+``KIMI_CODE_API_KEY`` exported for the coach would otherwise have the pitwall
+agent layer wire itself into every app fixture. So every LLM credential is removed
+for the whole session: an offline suite that only passes on a machine without a key
+is not an offline suite.
 
 It also provides a scripted chat model so the coach-graph suite is hermetic. The
 graph coach, its eval runner, and (later) the review gate all take a chat model.
@@ -20,7 +20,8 @@ from itertools import count
 
 import pytest
 
-#: Every env var any LLM backend reads a credential from (see ``rtv.llm``).
+#: Every env var a credential could be read from: ``rtv.llm``'s Kimi names, plus
+#: the two the anthropic SDK (the transport for Kimi's endpoint) reads on its own.
 _LLM_KEY_ENVS = (
     "ANTHROPIC_API_KEY",
     "ANTHROPIC_AUTH_TOKEN",

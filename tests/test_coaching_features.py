@@ -171,3 +171,54 @@ def test_unknown_session_and_lap_raise(service):
         service.lap_findings("nope", 1, 2)
     with pytest.raises(KeyError):
         service.lap_findings("coach-1", main_lap=99, ref_lap=2)
+
+
+# ---------------------------------------------------------------- Coach-worksheet parity
+def test_findings_carry_kpis_agent_stats_and_windows(tmp_path):
+    """What the Coach worksheet used to compute in coach.js now comes from here."""
+    from evals.synthetic_session import SYNTHETIC_SESSION_ID, seed_synthetic_session
+
+    from rtv.coaching.models import AGENT_ROSTER
+    from rtv.store.duck import Database
+    from rtv.store.repository import Repository
+    from rtv.store.writer import TelemetryWriter
+
+    db = Database(tmp_path / "telemetry.duckdb")
+    try:
+        repo = Repository(db, tmp_path / "parquet")
+        seed_synthetic_session(TelemetryWriter(db, tmp_path / "parquet"))
+        laps = [lap["lap"] for lap in repo.get_laps(SYNTHETIC_SESSION_ID)]
+        f = CoachingService(repo).lap_findings(SYNTHETIC_SESSION_ID, laps[4], laps[0]).to_dict()
+    finally:
+        db.close()
+
+    assert set(f["kpis"]) == {"main", "ref"}
+    for kpi in f["kpis"].values():
+        assert 0 <= kpi["avg_throttle_pct"] <= 100
+        assert 0 <= kpi["throttle_smoothness"] <= 100
+        assert 0 <= kpi["coasting_pct"] <= 100
+        assert 0 <= kpi["trail_brake_pct"] <= 100
+        assert kpi["steer_corrections"] >= 0
+
+    assert set(f["agent_stats"]) == set(AGENT_ROSTER)
+    diag_count = sum(len(c["diags"]) for c in f["corners"])
+    counted = sum(v["count"] for k, v in f["agent_stats"].items() if k not in ("txt", "sector"))
+    assert counted == diag_count
+    assert f["agent_stats"]["sector"]["count"] == 3
+
+    for c in f["corners"]:
+        assert c["entry_m"] <= c["distance"] <= c["exit_m"]
+    assert f["sectors"][0]["start_m"] == 0
+    assert f["sectors"][-1]["end_m"] == pytest.approx(f["lap_length_m"])
+
+
+def test_kpis_are_none_when_a_channel_is_missing():
+    import numpy as np
+
+    from rtv.coaching.features import _lap_kpis
+
+    thr = np.linspace(0, 1, 100)
+    kpi = _lap_kpis({"throttle": {"main": thr}}, "main", 4000.0)
+    assert kpi.avg_throttle_pct == pytest.approx(50.0)
+    assert kpi.coasting_pct is None and kpi.trail_brake_pct is None
+    assert kpi.steer_corrections is None

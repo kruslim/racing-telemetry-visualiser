@@ -234,7 +234,7 @@ class AgentSpec:
     output_model: type[AgentOutput]
     tools: tuple[ToolSpec, ...] = ()
     triggers: tuple[Trigger, ...] = ()
-    model: str = "claude-haiku-4-5-20251001"
+    model: str = "kimi-k3"
     max_tokens: int = 1500
     #: Default cooldown for triggers that do not set their own.
     cooldown_s: float = 30.0

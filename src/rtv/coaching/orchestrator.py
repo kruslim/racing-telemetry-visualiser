@@ -1,7 +1,7 @@
-"""Layer 3a — code-controlled multi-agent coaching over the Claude API.
+"""Layer 3a — code-controlled multi-agent deep coaching for one lap.
 
-This is the orchestration *showcase*: deterministic findings (ground truth) go in, and
-several Claude calls are composed in code — not by a single model driving itself:
+Deterministic findings (ground truth) go in, and several Kimi calls are composed in
+code — not by a single model driving itself:
 
     fan-out specialists (one per priority corner, in parallel)
         -> synthesise into one prioritised session plan
@@ -19,9 +19,10 @@ from __future__ import annotations
 
 import asyncio
 import json
-from typing import Any
 
 from pydantic import BaseModel, Field
+
+from rtv.pitwall.provider import LLMProvider, structured_call
 
 COACH_SYSTEM = """\
 You are an elite race-driving coach analysing iRacing telemetry.
@@ -89,17 +90,15 @@ class CoachResult(BaseModel):
 class CoachOrchestrator:
     """Composes the fan-out -> synthesise -> verify pipeline over one lap's findings."""
 
-    def __init__(self, client: Any | None = None, *, model: str = "claude-opus-4-8") -> None:
-        if client is None:
-            # rtv.llm decides the backend, base URL and credential; this layer only
-            # ever spoke the Anthropic Messages format, and Kimi's endpoint does too.
-            from rtv.llm import build_client  # lazy so the ai extra stays optional
+    def __init__(self, provider: LLMProvider | None = None, *, model: str = "") -> None:
+        if provider is None:
+            from rtv.pitwall.provider import KimiProvider  # lazy: the ai extra is optional
 
-            client = build_client()
-        from rtv.llm import resolve_model
+            provider = KimiProvider()
+        from rtv.llm import model as llm_model
 
-        self._client = client
-        self._model = resolve_model(model, tier="reasoning")
+        self._provider = provider
+        self._model = llm_model("reasoning", model)
 
     async def coach(self, findings: dict, *, max_corners: int = 3) -> CoachResult:
         top3 = findings.get("chief", {}).get("top3", [])
@@ -160,16 +159,16 @@ class CoachOrchestrator:
 
     # ---- shared call ------------------------------------------------------
     async def _parse(self, instruction: str, schema: type, findings_block: str, *, max_tokens: int):
-        resp = await self._client.messages.parse(
+        return await structured_call(
+            self._provider,
+            agent=f"orchestrator.{schema.__name__}",
             model=self._model,
-            max_tokens=max_tokens,
-            thinking={"type": "adaptive"},
             system=[
                 {"type": "text", "text": COACH_SYSTEM, "cache_control": {"type": "ephemeral"}},
                 {"type": "text", "text": f"FINDINGS:\n{findings_block}",
                  "cache_control": {"type": "ephemeral"}},
             ],
-            messages=[{"role": "user", "content": instruction}],
-            output_format=schema,
+            prompt=instruction,
+            output_model=schema,
+            max_tokens=max_tokens,
         )
-        return resp.parsed_output

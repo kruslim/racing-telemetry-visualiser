@@ -36,3 +36,6 @@ CLAUDE.local.md
 
 # Sample telemetry files (drop your own .ibt here for offline testing)
 /samples/*.ibt
+
+# Real telemetry fixtures (large; fetched by scripts/fetch_fixtures.py)
+/tests/fixtures/real/

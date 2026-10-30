@@ -22,15 +22,15 @@ from __future__ import annotations
 from dataclasses import dataclass, field, replace
 from typing import Any
 
+from evals.synthetic_race import ScenarioSpec, replay_scenario
 from rtv.pitwall.agents.coach import COACH
 from rtv.pitwall.agents.spotter import SPOTTER
 from rtv.pitwall.agents.strategist import STRATEGIST
 from rtv.pitwall.agents.vehicle_engineer import VEHICLE_ENGINEER
 from rtv.pitwall.framework import AgentRuntime, AgentSpec
-from rtv.racestate import RaceStateEngine, replay_scenario
+from rtv.racestate import RaceStateEngine
 from rtv.racestate.detectors import DEFAULT_CONFIG
 from rtv.racestate.models import EventType, RaceEvent, RaceState, Severity
-from rtv.racestate.scenario import ScenarioSpec
 
 #: A milestone every 2 green laps so the scripted 6-lap race actually reaches one.
 EVAL_DETECTOR_CONFIG = replace(DEFAULT_CONFIG, stint_milestone_laps=2)
@@ -93,7 +93,7 @@ def scenario_cases(
     tick each event fired -- taking it afterwards would score the agent against a
     state it never saw.
     """
-    from rtv.racestate.scenario import scenario_catalog, scenario_frames, scenario_session_info
+    from evals.synthetic_race import scenario_catalog, scenario_frames, scenario_session_info
 
     spec = spec or ScenarioSpec()
     catalog = scenario_catalog(spec)

@@ -11,7 +11,7 @@ from pydantic import BaseModel
 
 from rtv import llm
 from rtv.config import Settings
-from rtv.pitwall.provider import RESPOND_TOOL, AnthropicProvider
+from rtv.pitwall.provider import RESPOND_TOOL, KimiProvider, structured_call
 
 
 class Answer(BaseModel):
@@ -23,49 +23,40 @@ def _settings(**kw) -> Settings:
     return Settings(**kw)
 
 
-# --------------------------------------------------------------- selection
+# --------------------------------------------------------------- configuration
 def test_kimi_k3_on_the_coding_subscription_is_the_default():
     """The shipped default is the deployment this repo actually runs."""
     s = _settings()
-    assert llm.provider_name(s) == "kimi"
     assert llm.base_url(s) == "https://api.kimi.com/coding"
     assert llm.key_env_var(s) == "KIMI_CODE_API_KEY"
-    # Not 'native': Kimi's compatibility layer need not implement output_format.
-    assert llm.structured_output_mode(s) == "tool"
-    assert llm.resolve_model("", tier="reasoning", settings=s) == "kimi-k3"
-    assert llm.resolve_model("", tier="fast", settings=s) == "kimi-k3"
+    assert llm.model("reasoning", settings=s) == "kimi-k3"
+    assert llm.model("fast", settings=s) == "kimi-k3"
 
 
-def test_anthropic_remains_available_as_a_fallback():
-    s = _settings(llm_provider="anthropic")
-    assert llm.base_url(s) is None  # the SDK's own default
-    assert llm.key_env_var(s) == "ANTHROPIC_API_KEY"
-    assert llm.structured_output_mode(s) == "native"
-
-
-def test_every_default_is_individually_overridable():
+def test_endpoint_key_env_and_models_are_overridable():
     s = _settings(
-        llm_provider="kimi",
-        llm_base_url="https://api.moonshot.ai/anthropic",
-        llm_api_key_env="MOONSHOT_API_KEY",
-        llm_structured_output="native",
+        llm_base_url="https://example.invalid/anthropic",
+        llm_api_key_env="MY_KIMI_KEY",
+        llm_kimi_model_fast="kimi-small",
     )
-    assert llm.base_url(s) == "https://api.moonshot.ai/anthropic"
-    assert llm.key_env_var(s) == "MOONSHOT_API_KEY"
-    assert llm.structured_output_mode(s) == "native"
+    assert llm.base_url(s) == "https://example.invalid/anthropic"
+    assert llm.key_env_var(s) == "MY_KIMI_KEY"
+    assert llm.model("fast", settings=s) == "kimi-small"
+    # An explicit per-call override always wins.
+    assert llm.model("fast", "kimi-for-coding", settings=s) == "kimi-for-coding"
 
 
-def test_an_unknown_provider_fails_at_configuration_time():
-    with pytest.raises(llm.LLMConfigError):
-        llm.provider_name(_settings(llm_provider="gpt"))
-    with pytest.raises(llm.LLMConfigError):
-        llm.structured_output_mode(_settings(llm_structured_output="magic"))
+def test_there_is_no_provider_switch_any_more():
+    """Kimi Code is the only backend; an old RTV_LLM_PROVIDER line is ignored."""
+    s = _settings(llm_provider="anthropic")
+    assert llm.describe(s)["provider"] == "kimi"
+    assert llm.base_url(s) == "https://api.kimi.com/coding"
 
 
 def test_the_kimi_code_key_wins_over_the_legacy_name(monkeypatch):
     monkeypatch.setenv("KIMI_CODE_API_KEY", "code-key")
     monkeypatch.setenv("KIMI_API_KEY", "legacy-key")
-    s = _settings(llm_provider="kimi")
+    s = _settings()
     assert llm.key_env_var(s) == "KIMI_CODE_API_KEY"
     assert llm.api_key(s) == "code-key"
 
@@ -73,14 +64,14 @@ def test_the_kimi_code_key_wins_over_the_legacy_name(monkeypatch):
 def test_the_legacy_kimi_key_name_still_works_alone(monkeypatch):
     monkeypatch.delenv("KIMI_CODE_API_KEY", raising=False)
     monkeypatch.setenv("KIMI_API_KEY", "legacy-key")
-    s = _settings(llm_provider="kimi")
+    s = _settings()
     assert llm.key_env_var(s) == "KIMI_API_KEY"
     assert llm.api_key(s) == "legacy-key"
 
 
 def test_describe_reports_presence_not_the_credential(monkeypatch):
     monkeypatch.setenv("KIMI_CODE_API_KEY", "sk-secret-value")
-    payload = llm.describe(_settings(llm_provider="kimi"))
+    payload = llm.describe(_settings())
     assert payload["key_present"] is True
     assert "sk-secret-value" not in repr(payload)
 
@@ -89,22 +80,7 @@ def test_build_client_without_a_credential_is_a_config_error(monkeypatch):
     monkeypatch.delenv("KIMI_CODE_API_KEY", raising=False)
     monkeypatch.delenv("KIMI_API_KEY", raising=False)
     with pytest.raises(llm.LLMConfigError):
-        llm.build_client(_settings(llm_provider="kimi"))
-
-
-# ------------------------------------------------------------ model mapping
-def test_claude_ids_map_onto_kimi_but_explicit_ids_are_left_alone():
-    s = _settings(llm_provider="kimi")
-    assert llm.resolve_model("claude-sonnet-4-6", tier="reasoning", settings=s) == "kimi-k3"
-    assert llm.resolve_model("claude-haiku-4-5-20251001", tier="fast", settings=s) == "kimi-k3"
-    # An operator who names a model means it, whichever backend they named it for.
-    assert llm.resolve_model("kimi-for-coding", tier="fast", settings=s) == "kimi-for-coding"
-
-
-def test_model_mapping_is_a_no_op_on_anthropic():
-    s = _settings(llm_provider="anthropic")
-    got = llm.resolve_model("claude-sonnet-4-6", tier="reasoning", settings=s)
-    assert got == "claude-sonnet-4-6"
+        llm.build_client(_settings())
 
 
 # ------------------------------------------------- the tool-forced provider
@@ -131,10 +107,6 @@ class _FakeMessages:
         self.calls.append(kwargs)
         return self._response
 
-    async def parse(self, **kwargs):  # pragma: no cover - native path guard
-        self.calls.append(kwargs)
-        return self._response
-
 
 class _FakeClient:
     def __init__(self, response):
@@ -143,7 +115,7 @@ class _FakeClient:
 
 def _provider(content):
     client = _FakeClient(_Response(content))
-    return AnthropicProvider(client=client, structured_output="tool"), client
+    return KimiProvider(client=client), client
 
 
 async def _complete(provider, *, tools=()):
@@ -159,7 +131,7 @@ async def _complete(provider, *, tools=()):
 
 
 @pytest.mark.asyncio
-async def test_tool_mode_never_sends_output_format_and_always_offers_the_contract():
+async def test_never_sends_output_format_and_always_offers_the_contract():
     provider, client = _provider(
         [_Block("tool_use", id="t1", name=RESPOND_TOOL, input={"call": "box_now", "laps": 5})]
     )
@@ -187,7 +159,7 @@ async def test_the_contract_is_forced_only_once_the_real_tools_are_withdrawn():
 
 
 @pytest.mark.asyncio
-async def test_tool_mode_switches_thinking_off_explicitly():
+async def test_thinking_is_switched_off_explicitly():
     """kimi-k3 thinks by default and then rejects a named tool_choice (HTTP 400)."""
     provider, client = _provider([_Block("text", text="hi")])
     await _complete(provider)
@@ -196,9 +168,8 @@ async def test_tool_mode_switches_thinking_off_explicitly():
 
 @pytest.mark.asyncio
 async def test_with_thinking_on_the_last_pass_forces_any_tool_not_a_named_one():
-    provider = AnthropicProvider(
+    provider = KimiProvider(
         client=_FakeClient(_Response([_Block("text", text="hi")])),
-        structured_output="tool",
         thinking=True,
     )
     await _complete(provider)
@@ -258,16 +229,20 @@ async def test_an_invalid_payload_yields_no_output_rather_than_raising():
 
 
 @pytest.mark.asyncio
-async def test_native_mode_is_unchanged():
-    provider = AnthropicProvider(
-        client=_FakeClient(_Response([_Block("text", text="hi")])), structured_output="native"
+async def test_structured_call_is_one_tool_free_forced_answer():
+    provider, client = _provider(
+        [_Block("tool_use", id="t1", name=RESPOND_TOOL, input={"call": "hold", "laps": 2})]
     )
-    client = provider._client
-    await _complete(provider)
-    assert client.messages.calls[0]["output_format"] is Answer
-    assert "tool_choice" not in client.messages.calls[0]
-
-
-def test_an_invalid_structured_output_mode_is_rejected_at_construction():
-    with pytest.raises(ValueError):
-        AnthropicProvider(client=_FakeClient(_Response([])), structured_output="magic")
+    out = await structured_call(
+        provider,
+        agent="judge",
+        model="kimi-k3",
+        system=[{"type": "text", "text": "role"}],
+        prompt="score this",
+        output_model=Answer,
+        max_tokens=100,
+    )
+    assert out == Answer(call="hold", laps=2)
+    sent = client.messages.calls[0]
+    assert sent["messages"] == [{"role": "user", "content": "score this"}]
+    assert sent["tool_choice"] == {"type": "tool", "name": RESPOND_TOOL}

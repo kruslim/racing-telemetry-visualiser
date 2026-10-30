@@ -33,6 +33,11 @@ def _make_client(tmp_path, monkeypatch, *, pitwall: bool = True):
 @pytest.fixture()
 def client(tmp_path, monkeypatch):
     with _make_client(tmp_path, monkeypatch) as c:
+        # The app only replays stored sessions, so the scripted race goes into
+        # the store first, exactly as an import would put it there.
+        from evals.synthetic_race import seed_scenario_session
+
+        seed_scenario_session(c.app.state.services.writer, "scenario")
         yield c
 
 
@@ -115,6 +120,17 @@ def test_a_second_replay_is_still_refused(client):
         second = client.post("/api/v1/replay/start", json={"session_id": "scenario"})
         assert second.status_code == 409
         assert "already running" in second.json()["detail"]
+    finally:
+        client.post("/api/v1/replay/stop")
+
+
+def test_live_start_is_refused_while_a_replay_runs(client):
+    client.post("/api/v1/replay/start", json={"session_id": "scenario", "speed": 1.0})
+    try:
+        response = client.post("/api/v1/live/start")
+        assert response.status_code == 409
+        assert "replay" in response.json()["detail"]
+        assert client.app.state.services.poller.running is False
     finally:
         client.post("/api/v1/replay/stop")
 

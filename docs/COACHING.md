@@ -1,8 +1,8 @@
 # AI Coaching
 
-A deliberately **tiered** coaching system. The core insight: the existing `coach.js`
-"agents" are *heuristics*, and they should stay that way — deterministic code finds brake
-points and speed deltas faster, cheaper and more reliably than any LLM. Claude is used only
+A deliberately **tiered** coaching system. The core insight: the deterministic coaching
+"agents" are *heuristics*, and they should stay that way — code finds brake points and speed
+deltas faster, cheaper and more reliably than any LLM. The LLM (Kimi Code) is used only
 where code is weak: synthesis, prioritisation, explanation and open-ended Q&A.
 
 It never feeds raw 60 Hz telemetry (~1M points/lap) to an LLM. A deterministic
@@ -13,10 +13,10 @@ both the token solution and the eval ground truth.
 
 | Layer | Code | What it is | Cost |
 |---|---|---|---|
-| 1. Features | `src/rtv/coaching/`, `GET /coaching/lap-findings` | `coach.js` heuristics ported to Python → `LapFindings` | free |
+| 1. Features | `src/rtv/coaching/`, `GET /coaching/lap-findings` | The only implementation of the coaching heuristics → `LapFindings` (corners, sectors, chief summary, driver KPIs, analyst stats) | free |
 | 2. MCP server | `mcp_server/telemetry_coach.py` | Tools over the API; chat-driven coaching in Claude Desktop/Code | **$0** (subscription) |
-| 3a. Orchestration | `src/rtv/coaching/orchestrator.py` | Code-controlled multi-agent Claude pipeline (fan-out → synthesise → verify) | ~cents (API) |
-| 3b. Graph agent + evals | `src/rtv/coaching/agent/`, `evals/` | LangGraph tool-calling coach: grounded refusal + in-loop citation validator, replayed by a hermetic regression harness | ~cents (API) |
+| 3a. Orchestration | `src/rtv/coaching/orchestrator.py` | Code-controlled multi-agent Kimi pipeline (fan-out → synthesise → verify) | Kimi Code quota |
+| 3b. Graph agent + evals | `src/rtv/coaching/agent/`, `evals/` | LangGraph tool-calling coach: grounded refusal + in-loop citation validator, replayed by a hermetic regression harness | Kimi Code quota |
 
 ## Layer 1 — deterministic features
 
@@ -46,7 +46,7 @@ Register in **Claude Code** (project `.mcp.json` is already included), or **Clau
 
 ```
 pip install -e ".[ai]"
-$env:ANTHROPIC_API_KEY = "sk-ant-..."
+$env:KIMI_CODE_API_KEY = "<your Kimi Code key>"
 
 python scripts/deep_coach.py <session_id> <main_lap> <ref_lap>              # full pipeline
 python scripts/deep_coach.py <session_id> <main_lap> <ref_lap> --findings-only   # no key needed
@@ -54,7 +54,7 @@ python evals/run.py                                                        # orc
 ```
 
 `CoachOrchestrator` fans out one specialist per priority corner (in parallel), synthesises a
-single plan, then adversarially verifies it — all with structured outputs and a cached findings
+single plan, then adversarially verifies it — all with tool-forced structured outputs and a cached findings
 block (prompt caching). The eval harness (`evals/checks.py`) cross-checks the coach's figures
 against the findings, so hallucinations are caught **deterministically** — factuality is a numeric
 comparison, not an LLM-judge vibe. An optional LLM judge scores clarity/actionability/grounding.

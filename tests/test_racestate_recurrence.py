@@ -12,6 +12,12 @@ from __future__ import annotations
 from dataclasses import replace
 
 import pytest
+from evals.synthetic_race import (
+    ScenarioSpec,
+    scenario_catalog,
+    scenario_frames,
+    scenario_session_info,
+)
 
 from rtv.racestate import RaceStateEngine
 from rtv.racestate import detectors as det
@@ -20,12 +26,6 @@ from rtv.racestate.models import (
     CarState,
     StandingsState,
     TyreState,
-)
-from rtv.racestate.scenario import (
-    ScenarioSpec,
-    scenario_catalog,
-    scenario_frames,
-    scenario_session_info,
 )
 
 CFG = det.DEFAULT_CONFIG

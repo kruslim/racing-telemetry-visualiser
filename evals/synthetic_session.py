@@ -1,4 +1,10 @@
-"""Generate a plausible sim-racing session as PyArrow tables + metadata.
+"""Test-only: a plausible sim-racing session as PyArrow tables + metadata.
+
+Never served by the app. Tests and hermetic evals use it to put a coachable
+session through the *real* store; real data comes from an ``.ibt`` import or
+live capture.
+
+Generated, not recorded:
 
 The model is deliberately simple but physically grounded, so the *shape* of the
 data matches a real ``.ibt`` import (iRacing channel names, 60 Hz time sampling,
@@ -26,10 +32,10 @@ from rtv.catalog.models import Catalog
 from rtv.catalog.types import IRType
 from rtv.domain.models import Lap, Session, SessionKind
 
-DEMO_SESSION_ID = "demo-sunset-ridge"
+SYNTHETIC_SESSION_ID = "synthetic-sunset-ridge"
 _TRACK_NAME = "Sunset Ridge Circuit"
-_CAR_ID = "demo-gt3"
-_TRACK_ID = "demo-sunset-ridge"
+_CAR_ID = "synthetic-gt3"
+_TRACK_ID = "synthetic-sunset-ridge"
 # A fixed base epoch keeps re-seeds deterministic (no wall-clock in the data).
 _BASE_EPOCH = 1_700_000_000.0
 
@@ -331,7 +337,7 @@ def _simulate_lap(track: _Track, ld: _LapDef, rng: np.random.Generator) -> _SimL
     return _SimLap(columns=cols, lap_time=t, n=len(speed_l))
 
 
-def build_catalog_for_demo() -> Catalog:
+def build_synthetic_catalog() -> Catalog:
     headers = [
         RawHeader(name=name, type=int(ir), count=1, unit=unit, desc=desc)
         for (name, ir, unit, desc) in _CHANNEL_SPEC
@@ -342,7 +348,7 @@ def build_catalog_for_demo() -> Catalog:
 
 
 @dataclass
-class DemoSession:
+class SyntheticSession:
     session: Session
     catalog: Catalog
     table: pa.Table
@@ -350,13 +356,13 @@ class DemoSession:
     sample_count: int
 
 
-def generate_demo_session(
-    *, session_id: str = DEMO_SESSION_ID, seed: int = 20240517
-) -> DemoSession:
-    """Build the full demo session in memory (metadata + one combined Arrow table)."""
+def generate_synthetic_session(
+    *, session_id: str = SYNTHETIC_SESSION_ID, seed: int = 20240517
+) -> SyntheticSession:
+    """Build the full synthetic session in memory (metadata + one combined Arrow table)."""
     rng = np.random.default_rng(seed)
     track = _build_track()
-    catalog = build_catalog_for_demo()
+    catalog = build_synthetic_catalog()
 
     per_lap: list[tuple[int, _SimLap]] = []
     for idx, ld in enumerate(_LAP_DEFS, start=1):
@@ -413,7 +419,7 @@ def generate_demo_session(
     session = Session(
         session_id=session_id,
         kind=SessionKind.IBT,
-        source_path="<generated: rtv.demo>",
+        source_path="<generated: evals.synthetic_session>",
         car_id=_CAR_ID,
         track_id=_TRACK_ID,
         track_name=_TRACK_NAME,
@@ -423,12 +429,25 @@ def generate_demo_session(
         sample_count=table.num_rows,
         poll_hz=60,
         status="open",
-        label="Demo — Simulated Lap (Sunset Ridge)",
+        label="Synthetic test session (Sunset Ridge)",
     )
-    return DemoSession(
+    return SyntheticSession(
         session=session,
         catalog=catalog,
         table=table,
         laps=laps,
         sample_count=table.num_rows,
     )
+
+def seed_synthetic_session(writer, session_id: str = SYNTHETIC_SESSION_ID) -> str:
+    """Write the generated session through the real ``TelemetryWriter``."""
+    synthetic = generate_synthetic_session(session_id=session_id)
+    writer.begin_session(synthetic.session, synthetic.catalog)
+    writer.write_telemetry(session_id, synthetic.table)
+    writer.write_laps(session_id, synthetic.laps)
+    writer.end_session(
+        session_id,
+        sample_count=synthetic.sample_count,
+        ended_at=synthetic.session.ended_at or 0.0,
+    )
+    return session_id

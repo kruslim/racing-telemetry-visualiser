@@ -1,19 +1,16 @@
-"""Replay driver: feed a stored or synthetic session through the live engine.
+"""Replay driver: feed a stored session through the live path as if it were live.
 
-This is the offline development and test path. It deliberately reuses
-:meth:`RaceStateEngine.on_frame` -- the *same* entry point the live poller calls
--- so the engine cannot tell replayed frames from live ones. Anything that works
-in replay works live, and the determinism test (replay twice, compare the event
-log) is therefore a real check on the production code path.
+A stored session is a real ``.ibt`` import or an earlier live capture. The
+driver reuses :meth:`RaceStateEngine.on_frame` -- the *same* entry point the
+live poller calls -- and, when given a ``publish`` sink, the same per-frame
+fan-out the poller uses (the ``/ws/live`` hub), so neither the engine, the
+agents nor a ``/ws/live`` client can tell replayed frames from live ones.
+Anything that works in replay works live, and the determinism test (replay
+twice, compare the event log) is a real check on the production code path.
 
-Two sources ship here:
-
-``scenario_source()``
-    the scripted synthetic race from :mod:`rtv.racestate.scenario`; needs no
-    store, no iRacing and no files -- this is what the tests use.
-``store_source()``
-    any session already in DuckDB/Parquet, streamed lap by lap so memory stays
-    bounded on a full race distance.
+``store_source()`` streams a session out of DuckDB/Parquet lap by lap, so memory
+stays bounded on a full race distance. Tests build their own sources (see
+``evals/synthetic_race.py``); the app only ever replays stored sessions.
 
 Speed is ``1.0`` for real time, ``N`` for N-times real time, and ``0`` (the
 default) for as-fast-as-possible.
@@ -23,7 +20,7 @@ from __future__ import annotations
 
 import threading
 import time
-from collections.abc import Iterable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -33,18 +30,9 @@ from rtv.catalog.models import Catalog
 from rtv.ingest.frame import Frame
 from rtv.logging import get_logger
 from rtv.racestate.engine import RaceStateEngine
-from rtv.racestate.scenario import (
-    ScenarioSpec,
-    scenario_catalog,
-    scenario_frames,
-    scenario_session_info,
-)
 from rtv.store import queries as q
 
 log = get_logger("racestate.replay")
-
-#: Sentinel session id for the built-in scripted race.
-SCENARIO_SESSION_ID = "scenario"
 
 
 @dataclass
@@ -61,19 +49,6 @@ class ReplaySource:
 # --------------------------------------------------------------------------
 # sources
 # --------------------------------------------------------------------------
-def scenario_source(spec: ScenarioSpec | None = None) -> ReplaySource:
-    """The scripted synthetic race -- no store or iRacing required."""
-    spec = spec or ScenarioSpec()
-    return ReplaySource(
-        catalog=scenario_catalog(spec),
-        frames=scenario_frames(spec),
-        session_id=SCENARIO_SESSION_ID,
-        session_info=scenario_session_info(spec),
-        total=(spec.laps - 1) * spec.ticks_per_lap
-        + int(spec.end_pct * spec.ticks_per_lap),
-    )
-
-
 def catalog_from_store(db, session_id: str, *, flatten_max: int = 6) -> Catalog | None:
     """Rebuild a :class:`Catalog` from the stored ``variable_catalog`` rows.
 
@@ -187,11 +162,15 @@ def store_source(
                     wall_time=None,
                 )
 
+    counted = db.query_one(
+        "SELECT sample_count FROM sessions WHERE session_id = ?", [session_id]
+    )
     return ReplaySource(
         catalog=catalog,
         frames=frames(),
         session_id=session_id,
         session_info=session_info,
+        total=int(counted["sample_count"]) if counted and counted["sample_count"] else None,
     )
 
 
@@ -220,11 +199,30 @@ class ReplayStatus:
         }
 
 
-class ReplayDriver:
-    """Pumps a :class:`ReplaySource` into an engine, on this thread or its own."""
+#: Per-frame sink with the live poller's ``on_frame`` signature.
+FrameSink = Callable[[Frame, Catalog], None]
+#: Called with ``(True, session_id)`` when a replay starts and ``(False, ...)``
+#: when it ends, so the live hub can say "replay" rather than "disconnected".
+LifecycleSink = Callable[[bool, "str | None"], None]
 
-    def __init__(self, engine: RaceStateEngine) -> None:
+
+class ReplayDriver:
+    """Pumps a :class:`ReplaySource` into an engine, on this thread or its own.
+
+    ``publish`` receives every frame after the engine has, exactly as the live
+    poller's ``on_frame`` callback would; the app passes the ``/ws/live`` hub.
+    """
+
+    def __init__(
+        self,
+        engine: RaceStateEngine,
+        *,
+        publish: FrameSink | None = None,
+        on_lifecycle: LifecycleSink | None = None,
+    ) -> None:
         self._engine = engine
+        self._publish = publish
+        self._on_lifecycle = on_lifecycle
         self._thread: threading.Thread | None = None
         self._stop = threading.Event()
         self._lock = threading.Lock()
@@ -279,6 +277,7 @@ class ReplayDriver:
 
     # ---- the pump -------------------------------------------------------
     def _run_safe(self, source: ReplaySource, speed: float) -> None:
+        self._lifecycle(True, source.session_id)
         try:
             self.run(source, speed=speed, stop_event=self._stop)
         except Exception as exc:  # pragma: no cover - surfaced through status
@@ -289,6 +288,15 @@ class ReplayDriver:
             with self._lock:
                 self._status.running = False
                 self._status.finished = True
+            self._lifecycle(False, source.session_id)
+
+    def _lifecycle(self, running: bool, session_id: str | None) -> None:
+        if self._on_lifecycle is None:
+            return
+        try:
+            self._on_lifecycle(running, session_id)
+        except Exception:  # pragma: no cover - a sink must not stop a replay
+            log.exception("Replay lifecycle sink failed")
 
     def run(
         self,
@@ -320,14 +328,9 @@ class ReplayDriver:
                     else:  # pragma: no cover - only used by the threaded path
                         time.sleep(behind)
             engine.on_frame(frame, source.catalog)
+            if self._publish is not None:
+                self._publish(frame, source.catalog)
             n += 1
             with self._lock:
                 self._status.frames = n
         return n
-
-
-def replay_scenario(
-    engine: RaceStateEngine, spec: ScenarioSpec | None = None, *, speed: float = 0.0
-) -> int:
-    """Convenience: run the scripted race through ``engine`` synchronously."""
-    return ReplayDriver(engine).run(scenario_source(spec), speed=speed)

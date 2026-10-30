@@ -1,7 +1,7 @@
-"""Run the multi-agent Claude coaching pipeline on a stored lap.
+"""Run the multi-agent Kimi coaching pipeline on a stored lap.
 
 Builds the deterministic findings straight from the local store (no server needed),
-then runs the fan-out -> synthesise -> verify orchestration over the Claude API.
+then runs the fan-out -> synthesise -> verify orchestration over Kimi Code.
 
 Examples:
     # Just the deterministic findings (no API key needed):
@@ -89,7 +89,7 @@ async def _run(args) -> int:
 
     from rtv.coaching.orchestrator import CoachOrchestrator
 
-    orch = CoachOrchestrator(model=get_settings().coaching_model)
+    orch = CoachOrchestrator()
     result = await orch.coach(findings)
     if args.json:
         print(result.model_dump_json(indent=2))
@@ -99,7 +99,7 @@ async def _run(args) -> int:
 
 
 def main() -> int:
-    p = argparse.ArgumentParser(description="Multi-agent Claude coaching for a stored lap.")
+    p = argparse.ArgumentParser(description="Multi-agent Kimi coaching for a stored lap.")
     p.add_argument("session_id")
     p.add_argument("main_lap", type=int)
     p.add_argument("ref_lap", type=int)

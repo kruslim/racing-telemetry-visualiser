@@ -2,12 +2,11 @@
 
 Two implementations, for the two things this repo has always needed:
 
-* :class:`AnthropicProvider` -- the real Claude API, through the same
-  ``messages.parse`` + structured-output pattern the Layer-3b coach uses.
+* :class:`KimiProvider` -- Kimi Code over its Anthropic-compatible Messages
+  endpoint, with the structured answer obtained through a forced respond tool.
 * :class:`ScriptedProvider` -- a deterministic stand-in so the whole agent layer,
   including the tool loop and the validator, is exercised by ``pytest`` with no
-  API key and no network. Same pattern as the stubbed client in
-  ``tests/test_orchestrator.py``, generalised to tool use.
+  API key and no network.
 
 The interface is one method, so the runtime never learns which one it has.
 """
@@ -57,9 +56,10 @@ class LLMProvider(Protocol):  # pragma: no cover - structural type
     ) -> ProviderResponse: ...
 
 
-#: Name of the synthetic tool used to obtain a structured answer from a backend
-#: that does not implement Anthropic's native ``output_format``. Prefixed so it
-#: cannot collide with a real tool in :mod:`rtv.pitwall.tools`.
+#: Name of the synthetic tool the structured answer is obtained through (Kimi's
+#: compatibility layer implements tool calling, not the SDK's native
+#: ``output_format``). Prefixed so it cannot collide with a real tool in
+#: :mod:`rtv.pitwall.tools`.
 RESPOND_TOOL = "rtv_final_answer"
 
 
@@ -76,33 +76,17 @@ def _respond_tool(output_model: type[BaseModel]) -> dict[str, Any]:
     }
 
 
-class AnthropicProvider:
-    """Any backend that speaks the Anthropic Messages format.
+class KimiProvider:
+    """Kimi Code, through the Anthropic-compatible Messages endpoint.
 
-    Despite the name this is not Claude-specific: Kimi publishes an
-    Anthropic-compatible endpoint, so the same SDK, the same wire format and the
-    same tool loop drive both. :mod:`rtv.llm` decides the base URL and credential;
-    this class only has to know how a *structured answer* is obtained, which is
-    the one thing that genuinely differs.
+    :mod:`rtv.llm` decides the base URL and credential. The output contract is
+    offered as a forced tool call and its input is validated against
+    ``output_model``, so a structured answer never depends on a feature the
+    compatibility layer does not implement.
 
-    ``structured_output="native"``
-        ``messages.parse(output_format=...)`` -- Anthropic's own feature, and what
-        :class:`~rtv.coaching.orchestrator.CoachOrchestrator` has always used.
-
-    ``structured_output="tool"``
-        The contract is offered as a forced tool call and its input is validated
-        against ``output_model``. A compatibility layer can faithfully implement
-        ``/v1/messages`` and tool calling without implementing ``output_format``,
-        so assuming the native path would fail at the first agent call rather than
-        at configuration time.
-
-    Both modes return the same :class:`ProviderResponse`, so nothing upstream --
-    the tool loop, the fact set, the validator, the radio -- learns which one ran.
-
-    Thinking is deliberately *not* enabled by default. The coach runs post-hoc and
-    can afford it; a race-engineer call that lands two corners late is worse than
-    no call, and every number is already computed deterministically upstream. Set
-    ``thinking=True`` to opt in per deployment.
+    Thinking is deliberately *not* enabled by default. A race-engineer call that
+    lands two corners late is worse than no call, and every number is already
+    computed deterministically upstream. Set ``thinking=True`` to opt in.
     """
 
     def __init__(
@@ -111,16 +95,7 @@ class AnthropicProvider:
         *,
         thinking: bool = False,
         effort: str | None = None,
-        structured_output: str | None = None,
     ) -> None:
-        if structured_output is None:
-            from rtv.llm import structured_output_mode
-
-            structured_output = structured_output_mode()
-        if structured_output not in ("native", "tool"):
-            raise ValueError(
-                f"structured_output must be 'native' or 'tool', got {structured_output!r}"
-            )
         if client is None:
             from rtv.llm import build_client  # lazy: the ai extra stays optional
 
@@ -128,11 +103,6 @@ class AnthropicProvider:
         self._client = client
         self._thinking = thinking
         self._effort = effort
-        self._structured_output = structured_output
-
-    @property
-    def structured_output(self) -> str:
-        return self._structured_output
 
     async def complete(
         self,
@@ -156,35 +126,27 @@ class AnthropicProvider:
         if self._effort:
             kwargs["output_config"] = {"effort": self._effort}
 
-        if self._structured_output == "native":
-            kwargs["output_format"] = output_model
-            if tools:
-                kwargs["tools"] = [t.to_api() for t in tools]
-            response = await self._client.messages.parse(**kwargs)
-            parsed = getattr(response, "parsed_output", None)
+        # The contract is always on the table, so the model can answer at any
+        # point in the loop. On the last pass the runtime withdraws the real
+        # tools, and forcing the respond tool is what makes it "answer now".
+        #
+        # kimi-k3 thinks unless told not to, and rejects a named tool_choice
+        # while it does. So thinking is switched off explicitly when it is off
+        # here, and with thinking on the last pass uses "any", which is the same
+        # thing when respond is the only tool on offer.
+        api_tools = [t.to_api() for t in tools]
+        api_tools.append(_respond_tool(output_model))
+        kwargs["tools"] = api_tools
+        if not self._thinking:
+            kwargs["thinking"] = {"type": "disabled"}
+        if tools:
+            kwargs["tool_choice"] = {"type": "auto"}
+        elif self._thinking:
+            kwargs["tool_choice"] = {"type": "any"}
         else:
-            # The contract is always on the table, so the model can answer at any
-            # point in the loop. On the last pass the runtime withdraws the real
-            # tools, and forcing the respond tool is what makes "you must answer
-            # now" mean the same thing it means on the native path.
-            #
-            # Kimi's kimi-k3 thinks unless told not to, and rejects a named
-            # tool_choice while it does. So thinking is switched off explicitly
-            # when it is off here, and with thinking on the last pass uses "any",
-            # which is the same thing when respond is the only tool on offer.
-            api_tools = [t.to_api() for t in tools]
-            api_tools.append(_respond_tool(output_model))
-            kwargs["tools"] = api_tools
-            if not self._thinking:
-                kwargs["thinking"] = {"type": "disabled"}
-            if tools:
-                kwargs["tool_choice"] = {"type": "auto"}
-            elif self._thinking:
-                kwargs["tool_choice"] = {"type": "any"}
-            else:
-                kwargs["tool_choice"] = {"type": "tool", "name": RESPOND_TOOL}
-            response = await self._client.messages.create(**kwargs)
-            parsed = None
+            kwargs["tool_choice"] = {"type": "tool", "name": RESPOND_TOOL}
+        response = await self._client.messages.create(**kwargs)
+        parsed = None
 
         content = getattr(response, "content", []) or []
         calls: list[ToolCall] = []
@@ -298,3 +260,30 @@ def tool_use_turn(calls: Sequence[tuple[str, dict[str, Any]]]) -> ProviderRespon
             for c in tool_calls
         ],
     )
+
+
+async def structured_call(
+    provider: LLMProvider,
+    *,
+    agent: str,
+    model: str,
+    system: list[dict[str, Any]],
+    prompt: str,
+    output_model: type[BaseModel],
+    max_tokens: int,
+) -> BaseModel | None:
+    """One tool-free question, one structured answer (``None`` if it was invalid).
+
+    For the post-session layers (orchestrator, eval judge) that need a typed
+    answer but no tool loop.
+    """
+    response = await provider.complete(
+        agent=agent,
+        model=model,
+        system=system,
+        messages=[{"role": "user", "content": prompt}],
+        tools=(),
+        output_model=output_model,
+        max_tokens=max_tokens,
+    )
+    return response.output

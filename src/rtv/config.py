@@ -48,59 +48,34 @@ class Settings(BaseSettings):
         "larger arrays are stored as LIST columns.",
     )
 
-    # --- LLM backend (shared by coaching Layer 3 and the pitwall agents) --
+    # --- LLM backend: Kimi Code (shared by every LLM layer) --------------
     #
-    # Every LLM layer in this repo speaks the Anthropic Messages wire format.
-    # Kimi publishes an Anthropic-compatible endpoint, so switching backend is a
-    # base-URL + credential + model-id change rather than a rewrite. The one thing
-    # that is NOT portable is Anthropic's native structured output
-    # (``messages.parse(output_format=...)``), so the provider carries a
-    # tool-forced fallback -- see ``llm_structured_output``.
-    llm_provider: str = Field(
-        default="kimi",
-        description="Which backend the LLM layers talk to: 'kimi' or 'anthropic'. "
-        "Selects the default base URL, credential env var, structured-output "
-        "strategy and model ids; every one of those stays individually overridable.",
-    )
+    # Kimi's endpoint speaks the Anthropic Messages wire format, so the anthropic
+    # SDK is the transport. Structured answers come from a forced respond tool;
+    # see rtv.llm and rtv.pitwall.provider.
     llm_base_url: str = Field(
         default="",
-        description="Override the backend base URL. Empty = the provider default "
-        "(Anthropic's own, or RTV_LLM_KIMI_BASE_URL for kimi).",
+        description="Override the endpoint. Empty = RTV_LLM_KIMI_BASE_URL.",
     )
     llm_api_key_env: str = Field(
         default="",
         description="Name of the env var holding the credential. Empty = "
-        "ANTHROPIC_API_KEY for anthropic, KIMI_CODE_API_KEY (falling back to "
-        "KIMI_API_KEY) for kimi. The value is read "
-        "at client-construction time and never logged.",
-    )
-    llm_structured_output: str = Field(
-        default="",
-        description="How a structured answer is obtained: 'native' uses "
-        "messages.parse(output_format=...); 'tool' forces a single respond tool and "
-        "validates its input. Empty = native for anthropic, tool for kimi -- "
-        "Kimi's compatibility layer implements tools but not output_format.",
+        "KIMI_CODE_API_KEY (falling back to KIMI_API_KEY). The value is read at "
+        "client-construction time and never logged.",
     )
     llm_kimi_base_url: str = Field(
         default="https://api.kimi.com/coding",
-        description="Anthropic-compatible endpoint for the Kimi Coding subscription. "
-        "Use https://api.moonshot.ai/anthropic for the pay-per-token developer API.",
-    )
-
-    # --- coaching (Layer 3: LLM orchestration) ---------------------------
-    coaching_model: str = Field(
-        default="claude-opus-4-8",
-        description="Model for the orchestration + eval layer. Overridden by "
-        "RTV_LLM_KIMI_MODEL_REASONING when llm_provider=kimi and left at its default.",
+        description="Anthropic-compatible endpoint for the Kimi Code subscription.",
     )
     llm_kimi_model_reasoning: str = Field(
         default="kimi-k3",
-        description="Kimi model used wherever a reasoning-grade model is called.",
+        description="Kimi model for reasoning-grade calls: the coach, the orchestrator, "
+        "the eval judge and the strategist.",
     )
     llm_kimi_model_fast: str = Field(
         default="kimi-k3",
-        description="Kimi model used wherever a fast-tier model is called. K3 is one "
-        "tier, so both point at it; split them if a smaller sibling ships.",
+        description="Kimi model for the high-frequency pitwall agents. K3 is one tier, "
+        "so both point at it; split them if a smaller sibling ships.",
     )
 
     # --- pitwall (v2: deterministic race-state engine + agents) ----------
@@ -191,27 +166,19 @@ class Settings(BaseSettings):
         description="Global kill switch applied at startup. False mounts the agent "
         "layer but never invokes a model (radio stays silent).",
     )
-    pitwall_agent_model_fast: str = Field(
-        default="claude-haiku-4-5-20251001",
-        description="Model for high-frequency, low-stakes agents.",
-    )
-    pitwall_agent_model_reasoning: str = Field(
-        default="claude-sonnet-4-6",
-        description="Model for strategy-grade reasoning.",
-    )
     pitwall_strategist_model: str = Field(
         default="",
-        description="Override the strategist's model. Empty = the reasoning model.",
+        description="Override the strategist's model. Empty = RTV_LLM_KIMI_MODEL_REASONING.",
     )
     pitwall_vehicle_engineer_model: str = Field(
         default="",
-        description="Override the vehicle engineer's model. Empty = the fast model.",
+        description="Override the vehicle engineer's model. Empty = RTV_LLM_KIMI_MODEL_FAST.",
     )
     pitwall_spotter_model: str = Field(
-        default="", description="Override the spotter's model. Empty = the fast model."
+        default="", description="Override the spotter's model. Empty = RTV_LLM_KIMI_MODEL_FAST."
     )
     pitwall_coach_model: str = Field(
-        default="", description="Override the live coach's model. Empty = the fast model."
+        default="", description="Override the live coach's model. Empty = RTV_LLM_KIMI_MODEL_FAST."
     )
     pitwall_agents_only: str = Field(
         default="",
@@ -319,12 +286,6 @@ class Settings(BaseSettings):
     port: int = 8000
     autostart_live: bool = Field(
         default=False, description="Start the live poller on server startup."
-    )
-    seed_demo: bool = Field(
-        default=True,
-        description="Seed a simulated demo session on startup when the store is "
-        "empty, so the frontend has real chart + coaching data to show without an "
-        "imported .ibt file.",
     )
     log_level: str = "INFO"
 

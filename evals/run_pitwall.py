@@ -10,7 +10,7 @@ event, a coaching cue against the corner the pattern is actually at.
     python evals/run_pitwall.py                     # every agent (needs a key)
     python evals/run_pitwall.py --dry-run           # cases + ground truth, no key
     python evals/run_pitwall.py --agent spotter
-    python evals/run_pitwall.py --model claude-opus-4-8
+    python evals/run_pitwall.py --model kimi-k3
 
 Needs the LLM key (KIMI_CODE_API_KEY by default) unless --dry-run. It does *not* need iRacing or a
 populated store: the golden sets are generated from the scripted race.
@@ -70,14 +70,15 @@ def _kwargs_for(agent: str, case, pit_loss: float) -> dict:
 
 
 async def _run_agent(agent: str, cases: list, args) -> list[dict]:
-    from rtv.pitwall.provider import AnthropicProvider
+    from rtv import llm
+    from rtv.pitwall.provider import KimiProvider
 
     spec = SPECS[agent]
-    if args.model:
-        spec = replace(spec, model=args.model)
+    tier = "reasoning" if agent == "strategist" else "fast"
+    spec = replace(spec, model=llm.model(tier, args.model))
     runtime = AgentRuntime(
         spec,
-        AnthropicProvider(),
+        KimiProvider(),
         tool_config={
             "pit_lane_loss_s": args.pit_loss,
             "standings_window": 3,

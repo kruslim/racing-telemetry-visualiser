@@ -165,7 +165,11 @@ def flag_phase(raw: int | None) -> tuple[FlagPhase, list[str]]:
         phase = FlagPhase.YELLOW
     elif "white" in aset:
         phase = FlagPhase.WHITE
-    elif aset & {"green", "green_held"}:
+    elif aset & {"green", "green_held"} or (
+        "start_hidden" in aset and "one_lap_to_green" not in aset
+    ):
+        # iRacing clears the green bit soon after the start; for the rest of a
+        # race the only flag left is "start_hidden" (start lights put away).
         phase = FlagPhase.GREEN
     else:
         phase = FlagPhase.UNKNOWN
@@ -341,11 +345,16 @@ def detect_lap_completion(window: Window) -> dict | None:
     prev_l, cur_l = as_int(prev, ch.LAP), as_int(cur, ch.LAP)
     if prev_l is None or cur_l is None or cur_l <= prev_l:
         return None
+    # iRacing publishes LapLastLapTime a second or two *after* the Lap counter
+    # moves, so at the crossing it usually still holds the previous lap's time.
+    # Only a value that changed on this very frame belongs to the lap just ended;
+    # otherwise the engine falls back to the session time the lap took.
     last_time = as_float(cur, ch.LAP_LAST_LAP_TIME)
+    fresh = last_time != as_float(prev, ch.LAP_LAST_LAP_TIME)
     return {
         "lap": prev_l,
         "new_lap": cur_l,
-        "lap_time": last_time if (last_time or 0) > 0 else None,
+        "lap_time": last_time if fresh and (last_time or 0) > 0 else None,
     }
 
 

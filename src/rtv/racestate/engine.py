@@ -152,6 +152,8 @@ class RaceStateEngine:
             self._faults = 0
 
             self._last_lap: int | None = None
+            # Session time the current lap started at; None until a crossing.
+            self._lap_started_at: float | None = None
             self._latched: set[str] = set()
             self._last_fire: dict[str, float] = {}
 
@@ -1027,6 +1029,11 @@ class RaceStateEngine:
             return
         lap = completion["lap"]
         lap_time = completion["lap_time"]
+        if lap_time is None and self._lap_started_at is not None:
+            # The official time has not been published yet (see the detector);
+            # start-to-start session time is the same lap to one frame.
+            lap_time = round(frame.session_time - self._lap_started_at, 3)
+        self._lap_started_at = frame.session_time
         p = self._state.player
 
         events.append(

@@ -20,6 +20,12 @@ from evals.pitwall_checks import (
     engineer_check,
     spotter_check,
 )
+from evals.synthetic_race import (
+    ScenarioSpec,
+    scenario_catalog,
+    scenario_frames,
+    scenario_session_info,
+)
 
 from rtv.pitwall.agents import AGENT_REGISTRY, build_agents
 from rtv.pitwall.agents.coach import COACH, CoachCall
@@ -34,12 +40,6 @@ from rtv.pitwall.tools import ALL_TOOLS, TOOLS_BY_NAME
 from rtv.racestate import RaceStateEngine
 from rtv.racestate.detectors import DEFAULT_CONFIG
 from rtv.racestate.models import EventType, RaceEvent, RaceState, Severity
-from rtv.racestate.scenario import (
-    ScenarioSpec,
-    scenario_catalog,
-    scenario_frames,
-    scenario_session_info,
-)
 
 ROLE_SPEC = ScenarioSpec(lockup_laps=(1, 2), corner_pcts=(0.44,))
 ROLE_CONFIG = replace(
@@ -282,8 +282,9 @@ def test_corner_detail_accepts_an_explicit_corner_label(state, events, recurrenc
 
 def test_corner_detail_reuses_the_layer_1_coaching_service(tmp_path, state, events, recurrence):
     """The same deterministic corner analysis the v1 coaching endpoints serve."""
+    from evals.synthetic_race import seed_scenario_session
+
     from rtv.coaching.features import CoachingService
-    from rtv.racestate.scenario import seed_scenario_session
     from rtv.store.duck import Database
     from rtv.store.repository import Repository
     from rtv.store.writer import TelemetryWriter

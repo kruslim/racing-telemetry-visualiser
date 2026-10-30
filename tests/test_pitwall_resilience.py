@@ -14,16 +14,15 @@ Three failure modes the spec names, each of which is silent by default:
 from __future__ import annotations
 
 import pytest
+from evals.synthetic_race import ScenarioSpec, replay_scenario, scenario_source
 
 from rtv.pitwall.agents.strategist import STRATEGIST, PitCall
 from rtv.pitwall.framework import RadioPriority
 from rtv.pitwall.orchestrator import PitwallOrchestrator
 from rtv.pitwall.provider import ScriptedProvider
 from rtv.pitwall.radio import RadioFeed
-from rtv.racestate import RaceStateEngine, replay_scenario
+from rtv.racestate import RaceStateEngine
 from rtv.racestate.models import EventType, RaceEvent, Severity
-from rtv.racestate.replay import scenario_source
-from rtv.racestate.scenario import ScenarioSpec
 
 
 def _event(event_type="pit_window_open", *, t=42.0, severity=Severity.ADVISORY, **payload):

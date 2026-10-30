@@ -8,6 +8,7 @@ turn and the grounded refusal -- rather than anything Claude does.
 from __future__ import annotations
 
 import pytest
+from evals.synthetic_race import ScenarioSpec, replay_scenario
 
 from rtv.pitwall.agents.strategist import STRATEGIST, PitCall
 from rtv.pitwall.framework import (
@@ -19,9 +20,8 @@ from rtv.pitwall.provider import ScriptedProvider, tool_use_turn
 from rtv.pitwall.radio import RadioFeed, airtime_s
 from rtv.pitwall.tools import TOOLS_BY_NAME
 from rtv.pitwall.validator import FactSet, validate_output
-from rtv.racestate import RaceStateEngine, replay_scenario
+from rtv.racestate import RaceStateEngine
 from rtv.racestate.models import EventType, RaceEvent, RaceState, Severity
-from rtv.racestate.scenario import ScenarioSpec
 
 
 # --------------------------------------------------------------------------
