@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Bash(uv venv .venv *)",
+      "Bash(uv pip install --python .venv/Scripts/python.exe -r requirements-dev.txt *)",
+      "Bash(.venv/Scripts/python.exe -m pip install -r requirements-dev.txt *)",
+      "Bash(.venv/Scripts/python.exe -m pytest)",
+      "Bash(.venv/Scripts/python.exe -m pytest *)",
+      "Bash(.venv/Scripts/python.exe -m ruff check *)",
+      "Bash(.venv/Scripts/python.exe -m ruff format *)",
+      "Bash(.venv/Scripts/python.exe scripts/build_pages.py)",
+      "Bash(.venv/Scripts/python.exe scripts/smoke_offline.py)",
+      "Bash(git status *)",
+      "Bash(git diff *)",
+      "Bash(git log *)",
+      "Bash(git show *)",
+      "Bash(git check-ignore *)",
+      "PowerShell(uv venv .venv *)",
+      "PowerShell(uv pip install --python .venv\\Scripts\\python.exe -r requirements-dev.txt *)",
+      "PowerShell(.venv\\Scripts\\python.exe -m pip install -r requirements-dev.txt *)",
+      "PowerShell(.venv\\Scripts\\python.exe -m pytest)",
+      "PowerShell(.venv\\Scripts\\python.exe -m pytest *)",
+      "PowerShell(.venv\\Scripts\\python.exe -m ruff check *)",
+      "PowerShell(.venv\\Scripts\\python.exe -m ruff format *)",
+      "PowerShell(.venv\\Scripts\\python.exe scripts\\build_pages.py)",
+      "PowerShell(.venv\\Scripts\\python.exe scripts\\smoke_offline.py)",
+      "PowerShell(git status *)",
+      "PowerShell(git diff *)",
+      "PowerShell(git log *)",
+      "PowerShell(git show *)",
+      "PowerShell(git check-ignore *)"
+    ],
+    "ask": [
+      "Bash(git push *)",
+      "Bash(git add -f *)",
+      "Bash(git add --force *)",
+      "Bash(.venv/Scripts/python.exe evals/run.py *)",
+      "Bash(.venv/Scripts/python.exe scripts/deep_coach.py *)",
+      "PowerShell(git push *)",
+      "PowerShell(git add -f *)",
+      "PowerShell(git add --force *)",
+      "PowerShell(.venv\\Scripts\\python.exe evals\\run.py *)",
+      "PowerShell(.venv\\Scripts\\python.exe scripts\\deep_coach.py *)"
+    ],
+    "deny": [
+      "Read(./.env)",
+      "Read(./.env.*)"
+    ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|MultiEdit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "py=\"$CLAUDE_PROJECT_DIR/.venv/Scripts/python.exe\"; [ -x \"$py\" ] || py=\"$CLAUDE_PROJECT_DIR/.venv/bin/python\"; [ -x \"$py\" ] || exit 0; \"$py\" \"$CLAUDE_PROJECT_DIR/.claude/hooks/ruff_format.py\"",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}
