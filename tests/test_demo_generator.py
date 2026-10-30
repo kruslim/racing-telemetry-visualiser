@@ -58,7 +58,7 @@ def test_seeded_endpoints_and_coaching(seeded):
 
     laps = repo.get_laps(DEMO_SESSION_ID)
     assert len(laps) >= 6
-    lap_nums = [l["lap"] for l in laps]
+    lap_nums = [lap["lap"] for lap in laps]
 
     # Chart data comes back non-empty for a real lap.
     ch = repo.get_channels(DEMO_SESSION_ID, ["Speed", "Throttle", "Brake"],
@@ -71,7 +71,8 @@ def test_seeded_endpoints_and_coaching(seeded):
     assert tm["count"] > 50
 
     # The deterministic coach finds corners with distances and real losses.
-    findings = CoachingService(repo).lap_findings(DEMO_SESSION_ID, lap_nums[4], lap_nums[0]).to_dict()
+    coach = CoachingService(repo)
+    findings = coach.lap_findings(DEMO_SESSION_ID, lap_nums[4], lap_nums[0]).to_dict()
     assert findings["lap_length_m"] > 1000
     assert len(findings["corners"]) >= 8
     assert all("distance" in c and "label" in c for c in findings["corners"])

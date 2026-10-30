@@ -117,7 +117,7 @@ def test_chat_503_without_key(tmp_path, monkeypatch):
 def _demo_laps(client):
     js = client.get("/api/v1/sessions").json()
     sid = js["sessions"][0]["session_id"]
-    laps = [l["lap"] for l in client.get(f"/api/v1/sessions/{sid}/laps").json()["laps"]]
+    laps = [lap["lap"] for lap in client.get(f"/api/v1/sessions/{sid}/laps").json()["laps"]]
     return sid, laps
 
 

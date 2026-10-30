@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+    env:
+      # The suite is offline by design: no key, no network calls, no iRacing.
+      ANTHROPIC_API_KEY: ""
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: |
+            requirements*.txt
+            pyproject.toml
+      - name: Install
+        run: python -m pip install -r requirements-dev.txt -e ".[mcp]"
+      - name: Lint
+        run: ruff check .
+      - name: Test
+        run: pytest -q
+      - name: Offline smoke test
+        run: python scripts/smoke_offline.py

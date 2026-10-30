@@ -22,6 +22,8 @@ In Git Bash write `.venv/Scripts/python.exe`, in PowerShell `.venv\Scripts\pytho
 - Lint: `.venv/Scripts/python.exe -m ruff check .`
 - Run: `.\run.ps1` (or `-Reload`), then http://127.0.0.1:8000/ (API docs at `/docs`).
 - Offline HTTP smoke test: `.venv/Scripts/python.exe scripts/smoke_offline.py`
+- CI (`.github/workflows/ci.yml`) runs ruff, pytest and the smoke test on Python 3.11-3.13
+  for every push to main and every PR, with no API key.
 - Publish the Pages showcase: `.venv/Scripts/python.exe scripts/build_pages.py`
 
 `ruff format` and `black` are configured but most files are not formatted with them.
