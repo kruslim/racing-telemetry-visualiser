@@ -167,12 +167,22 @@ class AnthropicProvider:
             # point in the loop. On the last pass the runtime withdraws the real
             # tools, and forcing the respond tool is what makes "you must answer
             # now" mean the same thing it means on the native path.
+            #
+            # Kimi's kimi-k3 thinks unless told not to, and rejects a named
+            # tool_choice while it does. So thinking is switched off explicitly
+            # when it is off here, and with thinking on the last pass uses "any",
+            # which is the same thing when respond is the only tool on offer.
             api_tools = [t.to_api() for t in tools]
             api_tools.append(_respond_tool(output_model))
             kwargs["tools"] = api_tools
-            kwargs["tool_choice"] = (
-                {"type": "auto"} if tools else {"type": "tool", "name": RESPOND_TOOL}
-            )
+            if not self._thinking:
+                kwargs["thinking"] = {"type": "disabled"}
+            if tools:
+                kwargs["tool_choice"] = {"type": "auto"}
+            elif self._thinking:
+                kwargs["tool_choice"] = {"type": "any"}
+            else:
+                kwargs["tool_choice"] = {"type": "tool", "name": RESPOND_TOOL}
             response = await self._client.messages.create(**kwargs)
             parsed = None
 
