@@ -207,6 +207,11 @@ class Settings(BaseSettings):
         ge=1,
         description="Radio messages kept in the ring buffer for late joiners.",
     )
+    journal_state_interval_s: float = Field(
+        default=1.0,
+        gt=0,
+        description="Session seconds between race-state snapshots in the race journal.",
+    )
     pitwall_max_calls_per_session: int = Field(
         default=400,
         ge=0,
@@ -302,6 +307,11 @@ class Settings(BaseSettings):
         """Create the data directories if they don't exist."""
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self.parquet_dir.mkdir(parents=True, exist_ok=True)
+
+    @property
+    def journal_dir(self) -> Path:
+        """Race journals (see :mod:`rtv.store.journal`), one folder per session."""
+        return self.data_dir / "sessions"
 
     def session_parquet_dir(self, session_id: str) -> Path:
         return self.parquet_dir / f"session_id={session_id}"

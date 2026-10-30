@@ -2559,3 +2559,47 @@ pipeline). `frontend/js/live/` has the run waterfall and the raw-telemetry strip
 
 The analysis-mode launcher is gone: the header links to `/review/` (post-race review,
 which also takes over lap analysis). The replay picker lists stored sessions only.
+
+## Race journal — the post-race review's record
+
+Race events and radio calls otherwise live only in ring buffers, so nothing but the
+telemetry outlived a session. `rtv.store.journal.SessionRecorder` (built in
+`build_services` whenever `RTV_PITWALL` is on, `AppServices.recorder`) writes one
+JSON-lines file per *run* of a session:
+
+    data/sessions/<session_id>/runs/<YYYYMMDDTHHMMSSZ>-<nn>-<live|replay>.jsonl
+
+A run opens when a replay starts (`ReplayDriver` `on_lifecycle`) or when the live
+poller reports `IN_SESSION` for a new session id, and closes when the replay ends
+or iRacing disconnects, writing a final state snapshot. Runs never overwrite each
+other, so a free agents-off replay of an `.ibt` cannot clobber a live run.
+
+Each line is the activity envelope from `rtv.pitwall.activity` (`seq`, `wall_ms`,
+`session_time`, `tick`, `kind`, `agent`, `run_id`, `event_key`, `data`). `seq` is
+renumbered per file across every kind (an activity record's own counter becomes
+`data.activity_seq`). The recorder's own kinds:
+
+| kind | source | data |
+|---|---|---|
+| `lifecycle` | run start / end | `phase`, `source`, `session_id`, `agents` (name, model, enabled), `agents_enabled`; `reason` on end |
+| `race_event` | `engine.bus` callback | `RaceEvent.to_api()` |
+| `radio` | `RadioFeed` callback (aired) | full `RadioMessage` dump incl. `message_id` |
+| `state` | per frame, every `RTV_JOURNAL_STATE_INTERVAL_S` session seconds (default 1) and on each lap change | `RaceState.to_api()`; the last one has `"final": true` |
+
+Every `AppServices.activity` record (dispatch, run_start, llm_call_*, tool_call,
+validate, run_end, radio_*) is passed through as-is via a bus callback.
+
+Endpoints (always mounted, read-only):
+
+- `GET /api/v1/sessions/{id}/pitwall-runs` lists runs with counts per kind,
+  session-time bounds, `has_agents`, `complete`, and `default_run` (the newest run
+  the agents spoke in, else the newest).
+- `GET /api/v1/sessions/{id}/pitwall-log?run=&kinds=&exclude=state&agent=&from=&to=&after_seq=&limit=`
+  returns records in file order; `state` is excluded unless asked for.
+- `GET /api/v1/sessions/{id}/pitwall-log/state?t=&run=` returns the snapshot at or just before `t`.
+
+On the real 19-lap Spa fixture an agents-off replay writes 72 race events and 2,512
+snapshots in 6.5 MB, the log reads in about 0.2 s, and a state lookup takes about
+0.15 s. This covers item 3 of `prompts/07` (the journal) with JSON lines rather
+than DuckDB: append-only on the hot path, no second writer on the database the
+poller is using, and a crash loses at most one flush interval (1 s).

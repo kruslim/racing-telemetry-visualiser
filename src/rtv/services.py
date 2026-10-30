@@ -24,6 +24,7 @@ from rtv.racestate.detectors import DEFAULT_CONFIG
 from rtv.racestate.engine import RaceStateEngine
 from rtv.racestate.replay import ReplayDriver
 from rtv.store.duck import Database
+from rtv.store.journal import SessionRecorder
 from rtv.store.repository import Repository
 from rtv.store.writer import TelemetryWriter
 from rtv.stream.hub import LiveHub
@@ -114,11 +115,15 @@ class AppServices:
     #: v2 activity trace of the agent layer (routing, model and tool calls,
     #: validator verdicts, radio transitions). Present whenever the engine is.
     activity: ActivityLog | None = None
+    #: The race journal writer; None when RTV_PITWALL is false (no engine to record).
+    recorder: SessionRecorder | None = None
 
     def close(self) -> None:
         try:
             if self.replay is not None:
                 self.replay.stop()
+            if self.recorder is not None:
+                self.recorder.end(reason="shutdown")
         finally:
             try:
                 self.poller.stop()
@@ -138,6 +143,7 @@ def build_services(settings: Settings) -> AppServices:
     replay: ReplayDriver | None = None
     pitwall: PitwallOrchestrator | None = None
     activity: ActivityLog | None = None
+    recorder: SessionRecorder | None = None
     tts = build_radio_tts(settings)
     if settings.pitwall:
         engine = RaceStateEngine(
@@ -171,18 +177,37 @@ def build_services(settings: Settings) -> AppServices:
         def on_replay(running: bool, session_id: str | None) -> None:
             if running:
                 hub.publish_state(ConnectionState.REPLAY, session_id)
+                if session_id:
+                    _begin_journal(recorder, pitwall, session_id, "replay")
             else:
                 hub.publish_state(ConnectionState.DISCONNECTED, None)
+                recorder.end(reason="replay_finished")
 
-        replay = ReplayDriver(engine, publish=hub.publish_frame, on_lifecycle=on_replay)
         race = engine  # bound for the closure; engine.state is replaced on reset
         activity = ActivityLog(clock=lambda: (race.state.session_time, race.state.tick))
+
+        def on_replay_frame(frame: Frame, catalog) -> None:
+            hub.publish_frame(frame, catalog)
+            _journal_frame(recorder, engine)
+
+        replay = ReplayDriver(engine, publish=on_replay_frame, on_lifecycle=on_replay)
         if settings.pitwall_agents:
             pitwall = build_pitwall(
                 engine, settings, coaching=coaching, repo=repo, tts=tts
             )
             if pitwall is not None:
                 pitwall.attach_activity(activity)
+        # Every session the engine consumes, live or replayed, is written to the
+        # race journal so the post-race review can play it back.
+        recorder = SessionRecorder(
+            settings.journal_dir,
+            state_interval_s=settings.journal_state_interval_s,
+            snapshot=engine.snapshot,
+        )
+        engine.bus.subscribe_callback(recorder.on_race_event)
+        activity.subscribe_callback(recorder.on_activity)
+        if pitwall is not None:
+            pitwall.feed.subscribe_callback(recorder.on_radio)
 
     def on_frame(frame: Frame, catalog) -> None:
         hub.publish_frame(frame, catalog)
@@ -195,6 +220,7 @@ def build_services(settings: Settings) -> AppServices:
                 engine.on_frame(frame, catalog)
             except Exception:  # pragma: no cover - defensive on the hot path
                 log.exception("Race-state update failed at tick %s", frame.tick)
+            _journal_frame(recorder, engine)
 
     def on_state(state: ConnectionState, session_id: str | None) -> None:
         hub.publish_state(state, session_id)
@@ -205,6 +231,16 @@ def build_services(settings: Settings) -> AppServices:
         # which is worse: "P4, 2.1 s behind" reads the same whether it is current
         # or four minutes old. Flag it, and stand the agents down so none of them
         # reasons over a race that has stopped.
+        try:
+            if recorder is not None:
+                active = recorder.active
+                if state is ConnectionState.IN_SESSION and session_id:
+                    if active is None or active["session_id"] != session_id:
+                        _begin_journal(recorder, pitwall, session_id, "live")
+                elif active is not None and active["source"] == "live":
+                    recorder.end(reason=f"iRacing telemetry {state.value}")
+        except Exception:  # pragma: no cover - never break the live feed
+            log.exception("Could not update the race journal for %s", state)
         try:
             if state is ConnectionState.IN_SESSION:
                 engine.mark_live()
@@ -254,7 +290,44 @@ def build_services(settings: Settings) -> AppServices:
         pitwall=pitwall,
         tts=tts,
         activity=activity,
+        recorder=recorder,
     )
+
+
+def _begin_journal(
+    recorder: SessionRecorder | None,
+    pitwall: PitwallOrchestrator | None,
+    session_id: str,
+    source: str,
+) -> None:
+    """Open a journal run, noting which agents (if any) were listening."""
+    if recorder is None:
+        return
+    try:
+        agents = []
+        if pitwall is not None:
+            agents = [
+                {"name": a.get("name"), "model": a.get("model"), "enabled": a.get("enabled")}
+                for a in pitwall.status().get("agents", [])
+            ]
+        recorder.begin(
+            session_id,
+            source,
+            agents=agents,
+            agents_enabled=bool(pitwall is not None and pitwall.enabled),
+        )
+    except Exception:  # pragma: no cover - recording must never stop a session
+        log.exception("Could not open a journal run for %s", session_id)
+
+
+def _journal_frame(recorder: SessionRecorder | None, engine: RaceStateEngine) -> None:
+    if recorder is None or recorder.active is None:
+        return
+    try:
+        state = engine.state
+        recorder.on_frame(state.session_time, state.tick, state.player.lap)
+    except Exception:  # pragma: no cover - defensive on the hot path
+        log.exception("Race journal frame hook failed")
 
 
 def build_pitwall(
