@@ -399,7 +399,7 @@ async function loadSessions() {
 // --------------------------------------------------------------------------
 async function startReplay(sessionId) {
   if (!sessionId) {
-    notice('Pick a recorded session to replay (import an .ibt from the lap analysis app first).');
+    notice('Pick a recorded session to replay (import an .ibt first).');
     return;
   }
   const speed = Number($('replay-speed').value) || 1;

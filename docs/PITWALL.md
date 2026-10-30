@@ -2557,5 +2557,5 @@ pipeline). `frontend/js/live/` has the run waterfall and the raw-telemetry strip
 (`/ws/live`). `node frontend/js/run-shared-tests.mjs` runs the pure tests;
 `tests/test_live_view_frontend.py` runs it under pytest when node is present.
 
-The analysis-mode launcher is gone: the header links to `/app/` (lap analysis) and
-`/review/` (post-race review). The replay picker lists stored sessions only.
+The analysis-mode launcher is gone: the header links to `/review/` (post-race review,
+which also takes over lap analysis). The replay picker lists stored sessions only.

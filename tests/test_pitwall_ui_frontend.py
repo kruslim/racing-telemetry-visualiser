@@ -109,9 +109,8 @@ def test_the_root_is_the_live_pitwall_with_links_to_the_other_views(client):
     body = client.get("/").text
     assert 'id="live-view"' in body
     assert "/js/pitwall-app.js" in body
-    # The lap-analysis worksheets and the post-race review are their own pages;
-    # the live view links to them rather than pretending to be them.
-    assert 'href="/app/"' in body
+    # Post-race review (which now holds lap analysis) is its own page; the live
+    # view links to it rather than pretending to be it.
     assert 'href="/review/"' in body
 
 
