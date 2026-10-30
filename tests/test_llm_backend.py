@@ -187,6 +187,28 @@ async def test_the_contract_is_forced_only_once_the_real_tools_are_withdrawn():
 
 
 @pytest.mark.asyncio
+async def test_tool_mode_switches_thinking_off_explicitly():
+    """kimi-k3 thinks by default and then rejects a named tool_choice (HTTP 400)."""
+    provider, client = _provider([_Block("text", text="hi")])
+    await _complete(provider)
+    assert client.messages.calls[0]["thinking"] == {"type": "disabled"}
+
+
+@pytest.mark.asyncio
+async def test_with_thinking_on_the_last_pass_forces_any_tool_not_a_named_one():
+    provider = AnthropicProvider(
+        client=_FakeClient(_Response([_Block("text", text="hi")])),
+        structured_output="tool",
+        thinking=True,
+    )
+    await _complete(provider)
+    sent = provider._client.messages.calls[0]
+    assert sent["thinking"] == {"type": "adaptive"}
+    assert sent["tool_choice"] == {"type": "any"}
+    assert [t["name"] for t in sent["tools"]] == [RESPOND_TOOL]
+
+
+@pytest.mark.asyncio
 async def test_a_respond_call_becomes_the_output_and_is_not_a_tool_call():
     provider, _ = _provider(
         [_Block("tool_use", id="t1", name=RESPOND_TOOL, input={"call": "box_now", "laps": 5})]
