@@ -35,3 +35,31 @@ jobs:
         run: pytest -q
       - name: Offline smoke test
         run: python scripts/smoke_offline.py
+
+  real-data:
+    # The same suite's real-telemetry tests (tests/test_real_ibt.py) on a 42-minute
+    # iRacing race. The tests themselves stay offline; only this step downloads the
+    # pinned, sha256-checked fixture, and the cache means that happens rarely.
+    runs-on: ubuntu-latest
+    env:
+      KIMI_CODE_API_KEY: ""
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            requirements*.txt
+            pyproject.toml
+      - name: Install
+        run: python -m pip install -r requirements-dev.txt -e .
+      - name: Cache real telemetry fixtures
+        uses: actions/cache@v4
+        with:
+          path: tests/fixtures/real
+          key: real-fixtures-${{ hashFiles('scripts/fetch_fixtures.py') }}
+      - name: Fetch real telemetry fixtures
+        run: python scripts/fetch_fixtures.py
+      - name: Real-data tests
+        run: pytest -q tests/test_real_ibt.py -rs

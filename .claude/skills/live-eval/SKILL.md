@@ -7,13 +7,12 @@ disable-model-invocation: true
 
 # Live coaching eval
 
-This calls the LLM backend (Kimi Code by default) and costs money or quota. The user invoked it, so the run is approved;
+This calls Kimi Code and uses the user's quota. The user invoked it, so the run is approved;
 run it once, with the flags given, and no more.
 
 Arguments: $ARGUMENTS (default: all cases in `evals/golden_laps.json`, with the judge).
 
-1. Check the setup without reading `.env`: the backend's key (`KIMI_CODE_API_KEY` by
-   default, `ANTHROPIC_API_KEY` with `RTV_LLM_PROVIDER=anthropic`) must be set in the
+1. Check the setup without reading `.env`: `KIMI_CODE_API_KEY` must be set in the
    environment (print only whether it is set, never its value), and the store must hold
    the sessions the cases name. Cases whose `session_id` is still
    `REPLACE_WITH_REAL_SESSION_ID` can't run; list real ones with

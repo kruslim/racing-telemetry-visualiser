@@ -150,10 +150,8 @@ def import_ibt(
                     float(values["SessionTime"]) if has_session_time else float(idx)
                 )
                 tick = int(values["SessionTick"]) if has_tick else idx
-                completed = tracker.update(
-                    values, tick=tick, session_time=session_time
-                )
-                lap = completed.lap if completed else tracker_current_lap(tracker)
+                tracker.update(values, tick=tick, session_time=session_time)
+                lap = tracker.current_lap
                 buf.append(
                     values,
                     tick=tick,
@@ -165,7 +163,7 @@ def import_ibt(
             if progress:
                 progress(processed / total if total else 1.0)
 
-        tracker.finalize(tick=total - 1, session_time=float(total - 1))
+        tracker.finalize()
         sink.write_laps(session_id, tracker.laps)
         sink.end_session(session_id, sample_count=total, ended_at=time.time())
         log.info(
@@ -178,10 +176,6 @@ def import_ibt(
         return session_id
     finally:
         ibt.close()
-
-
-def tracker_current_lap(tracker: LapTracker) -> int:
-    return tracker._current.lap if tracker._current else 0
 
 
 def _ids_from_info(info: dict[str, Any]):

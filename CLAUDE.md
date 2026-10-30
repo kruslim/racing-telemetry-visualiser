@@ -25,7 +25,9 @@ In Git Bash write `.venv/Scripts/python.exe`, in PowerShell `.venv\Scripts\pytho
 - Lint: `.venv/Scripts/python.exe -m ruff check .`
 - Run: `.\run.ps1` (or `-Reload`), then http://127.0.0.1:8000/ for the live pitwall and
   http://127.0.0.1:8000/app/ for the analysis app (API docs at `/docs`).
-- Pitwall demo, no key or iRacing: `.venv/Scripts/python.exe scripts/demo_pitwall.py`
+- Real-data fixture (162 MB Spa race .ibt, gitignored):
+  `.venv/Scripts/python.exe scripts/fetch_fixtures.py`; `tests/test_real_ibt.py` skips
+  without it, and CI fetches and caches it in a separate job.
 - Check the LLM backend (one tiny real call): `.venv/Scripts/python.exe scripts/check_llm.py`
 - Offline HTTP smoke test: `.venv/Scripts/python.exe scripts/smoke_offline.py`
 - CI (`.github/workflows/ci.yml`) runs ruff, pytest and the smoke test on Python 3.11-3.13
@@ -43,16 +45,16 @@ files that were already formatted and sorts imports in every edited file.
   (DuckDB, Parquet writer, queries), `stream/`, `api/` (routes, `ws.py`),
   `coaching/` (Layer 1 `features.py`, Layer 3a `orchestrator.py`, Layer 3b `agent/`),
   `racestate/` (v2 race-state engine, detectors, event bus, replay), `pitwall/` (v2
-  agents, provider, radio, TTS), `director/` (interfaces only), `demo/` (simulated
-  session seeded on startup), `llm.py` (backend selection), `config.py`, `services.py`,
-  `main.py`.
+  agents, provider, radio, TTS), `director/` (interfaces only), `llm.py` (the Kimi
+  Code client), `config.py`, `services.py`, `main.py`.
 - `frontend/` served by FastAPI at `/`: the live pitwall (`index.html`, `css/`, `js/`),
   `radio.html` and two self-test pages. `frontend/app/` is the analysis app, served at
   `/app/`; `docs/*.html|css|js` are a copy of `frontend/app/` for GitHub Pages and
   `docs/*.md` are hand-written docs.
 - `mcp_server/telemetry_coach.py` Layer 2 MCP server over the REST API.
 - `evals/` checks shared with the in-loop validator, fixtures, cases, runner, LLM judge,
-  and `run.py` (the live, paid eval).
+  `run.py` (the live, paid eval), and the test-only generated data
+  (`synthetic_race.py`, `synthetic_session.py`).
 - `tests/` pytest suite; `conftest.py` has the `ScriptedModel` that drives the coach.
 - `scripts/` build, smoke, import and deep-coach helpers.
 
@@ -68,6 +70,11 @@ files that were already formatted and sorts imports in every edited file.
 - Every test runs offline: LLM layers are mocked or driven by `ScriptedModel`; never add a
   test that needs a key or the network.
 - Raw 60 Hz telemetry never goes to an LLM; models see Layer-1 findings only.
+- No fake data in the app: nothing generated is seeded, served or replayed at runtime.
+  Generated sessions live in `evals/synthetic_*.py` for tests only; real behaviour is
+  checked against the real `.ibt` fixture.
+- Coaching heuristics exist once, in `src/rtv/coaching/features.py`; UIs render
+  `/coaching/lap-findings` and never recompute it.
 - Edit `frontend/app/`, never `docs/` copies; after a change there run `build_pages.py`
   and commit both.
 - Pitwall agents never assert a number that isn't traceable to deterministic data; the
@@ -80,20 +87,20 @@ files that were already formatted and sorts imports in every edited file.
 - Windows 11; Claude Code hooks run in Git Bash, the user's shell is PowerShell.
 - Keys and settings come from `.env` (copy `.env.example`); `.env` is gitignored, never
   read it, print a key or commit it.
-- LLM backend: every LLM layer goes through `src/rtv/llm.py`. The default is Kimi
-  (`RTV_LLM_PROVIDER=kimi`, model `kimi-k3`) on the Kimi Code endpoint
-  `https://api.kimi.com/coding`, with the key in `KIMI_CODE_API_KEY` (a Kimi Code key,
-  not a Moonshot developer-API key; `KIMI_API_KEY` is still read as a fallback).
-  `RTV_LLM_PROVIDER=anthropic` switches to Claude via `ANTHROPIC_API_KEY`.
-- Runtime data lands in `./data/` (gitignored). The demo session is seeded when the
-  store is empty (`RTV_SEED_DEMO=true`).
+- LLM backend: Kimi Code only. Every LLM layer goes through `src/rtv/llm.py`: model
+  `kimi-k3` on `https://api.kimi.com/coding`, key in `KIMI_CODE_API_KEY` (a Kimi Code
+  key, not a Moonshot developer-API key; `KIMI_API_KEY` is still read as a fallback).
+  The endpoint speaks the Anthropic Messages format, so the `anthropic` and
+  `langchain-anthropic` packages are only the transport. Structured answers come from
+  a forced respond tool (`KimiProvider`); never use `messages.parse(output_format=)`.
+- Runtime data lands in `./data/` (gitignored). A fresh store is empty.
 - `.mcp.json` runs `${RTV_PYTHON:-python}`; set `RTV_PYTHON=.venv/Scripts/python.exe`
   since `python` is not on PATH here.
 
 ## Costs: ask first
 
-Anything that calls the LLM backend (Kimi or Anthropic) uses the user's quota or costs
-money and needs the user's go-ahead first: `evals/run.py` (coach plus judge; `--no-judge`
+Anything that calls Kimi uses the user's Kimi Code quota and needs the user's go-ahead
+first: `evals/run.py` (coach plus judge; `--no-judge`
 still calls the coach), `evals/run_pitwall.py` without `--dry-run`,
 `scripts/deep_coach.py` without `--findings-only`, `scripts/check_llm.py`, the
 `orchestrator`, the pitwall agents (`RTV_PITWALL_AGENTS=true`), and

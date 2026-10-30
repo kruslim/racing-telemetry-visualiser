@@ -138,6 +138,14 @@ def test_lap_completion_reports_the_lap_that_ended():
     assert det.detect_lap_completion(window(a, a)) is None
 
 
+def test_lap_completion_ignores_a_lap_time_that_has_not_been_published_yet():
+    """iRacing updates LapLastLapTime ~1.5 s after the line (measured on a real
+    Spa .ibt), so at the crossing it still holds the previous lap's time."""
+    a = frame(Lap=3, LapLastLapTime=141.754)
+    b = frame(Lap=4, LapLastLapTime=141.754)
+    assert det.detect_lap_completion(window(a, b))["lap_time"] is None
+
+
 def test_lap_completion_drops_a_zero_lap_time():
     a, b = frame(Lap=1), frame(Lap=2, LapLastLapTime=0.0)
     assert det.detect_lap_completion(window(a, b))["lap_time"] is None
@@ -157,6 +165,16 @@ def test_flag_phase_priority():
     assert det.flag_phase(0x00000002 | 0x00000008)[0] is FlagPhase.YELLOW
     assert det.flag_phase(0x00000001 | 0x00000004)[0] is FlagPhase.CHECKERED
     assert det.flag_phase(None) == (FlagPhase.UNKNOWN, [])
+
+
+def test_racing_after_the_start_is_green_even_without_the_green_bit():
+    """Real iRacing races clear the green bit after the start and leave only
+    start_hidden (plus servicible); that is green-flag running."""
+    start_hidden, servicible, one_lap_to_green = 0x10000000, 0x00040000, 0x00000200
+    assert det.flag_phase(start_hidden | servicible)[0] is FlagPhase.GREEN
+    assert det.flag_phase(start_hidden | 0x00000008)[0] is FlagPhase.YELLOW
+    # The formation lap is not green running.
+    assert det.flag_phase(start_hidden | one_lap_to_green)[0] is FlagPhase.UNKNOWN
 
 
 def test_flag_phase_lists_active_names():

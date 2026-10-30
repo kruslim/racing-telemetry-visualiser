@@ -414,7 +414,13 @@ class CoachingService:
             Priority(index=c.index, label=c.label, gain=c.net_dt, why=_top_reason(c))
             for c in sorted(losing, key=lambda c: c.net_dt, reverse=True)[:3]
         ]
-        times = [r["lap_time"] for r in laps.values() if r.get("lap_time")]
+        # Clean laps only: the pre-start segment, a partial final lap or a pit
+        # stop would turn "how consistent were you" into "how long was the stop".
+        times = [
+            r["lap_time"] for r in laps.values()
+            if r.get("lap_time") and r.get("is_valid", True)
+            and not r.get("is_out_lap") and not r.get("is_in_lap")
+        ]
         spread = (max(times) - min(times)) if len(times) >= 2 else None
         return ChiefSummary(
             lost=lost, net_lap=net_lap, losing_n=len(losing), total=len(corners),
