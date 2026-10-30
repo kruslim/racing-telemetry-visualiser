@@ -16,6 +16,7 @@ from rtv.ingest.frame import Frame
 from rtv.ingest.ibt import import_ibt
 from rtv.ingest.live import LivePoller
 from rtv.logging import get_logger
+from rtv.pitwall.activity import ActivityLog
 from rtv.pitwall.orchestrator import PitwallOrchestrator
 from rtv.pitwall.radio import RadioFeed
 from rtv.pitwall.tts import RadioTTS, build_radio_tts
@@ -110,6 +111,9 @@ class AppServices:
     #: provider configured the browser's Web Speech API does the talking, so this
     #: object's job is mostly to explain that on /api/v1/pitwall/tts.
     tts: RadioTTS | None = None
+    #: v2 activity trace of the agent layer (routing, model and tool calls,
+    #: validator verdicts, radio transitions). Present whenever the engine is.
+    activity: ActivityLog | None = None
 
     def close(self) -> None:
         try:
@@ -133,6 +137,7 @@ def build_services(settings: Settings) -> AppServices:
     engine: RaceStateEngine | None = None
     replay: ReplayDriver | None = None
     pitwall: PitwallOrchestrator | None = None
+    activity: ActivityLog | None = None
     tts = build_radio_tts(settings)
     if settings.pitwall:
         engine = RaceStateEngine(
@@ -170,9 +175,11 @@ def build_services(settings: Settings) -> AppServices:
                 hub.publish_state(ConnectionState.DISCONNECTED, None)
 
         replay = ReplayDriver(engine, publish=hub.publish_frame, on_lifecycle=on_replay)
+        race = engine  # bound for the closure; engine.state is replaced on reset
+        activity = ActivityLog(clock=lambda: (race.state.session_time, race.state.tick))
         if settings.pitwall_agents:
             pitwall = build_pitwall(
-                engine, settings, coaching=coaching, repo=repo, tts=tts
+                engine, settings, coaching=coaching, repo=repo, tts=tts, activity=activity
             )
 
     def on_frame(frame: Frame, catalog) -> None:
@@ -244,6 +251,7 @@ def build_services(settings: Settings) -> AppServices:
         replay=replay,
         pitwall=pitwall,
         tts=tts,
+        activity=activity,
     )
 
 
@@ -254,6 +262,7 @@ def build_pitwall(
     coaching: CoachingService | None = None,
     repo: Repository | None = None,
     tts: RadioTTS | None = None,
+    activity: ActivityLog | None = None,
 ) -> PitwallOrchestrator | None:
     """Assemble the agent layer, or return None when it cannot run.
 
@@ -330,6 +339,7 @@ def build_pitwall(
         # reads the *same* deterministic corner analysis the v1 endpoints serve.
         tool_extras={"coaching": coaching, "repo": repo},
         tts=tts,
+        activity=activity,
     )
 
 

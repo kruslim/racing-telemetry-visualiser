@@ -23,6 +23,7 @@ from collections.abc import Callable, Iterator
 from typing import Any
 
 from rtv.logging import get_logger
+from rtv.pitwall.activity import Tracer, safe_trace
 from rtv.pitwall.framework import PRIORITY_RANK, RadioMessage, RadioPriority
 
 log = get_logger("pitwall.radio")
@@ -121,8 +122,11 @@ class RadioFeed:
         history: int = DEFAULT_HISTORY,
         queue_size: int = DEFAULT_QUEUE_SIZE,
         airtime: Callable[[RadioMessage], float] | None = None,
+        tracer: Tracer | None = None,
     ) -> None:
         self._lock = threading.Lock()
+        #: Optional activity tracer (see :mod:`rtv.pitwall.activity`).
+        self.tracer = tracer
         self._pending: list[RadioMessage] = []
         self._history: deque[RadioMessage] = deque(maxlen=history)
         self._subs: list[RadioSubscription] = []
@@ -187,6 +191,8 @@ class RadioFeed:
                 "Radio: %s/%s superseded (seq %d -> %d)",
                 message.agent, message.subject, replaced.seq, message.seq,
             )
+            self._trace("radio_superseded", replaced, by=message.message_id)
+        self._trace("radio_queued", message)
         self._signal()
         return replaced
 
@@ -210,6 +216,7 @@ class RadioFeed:
             self.emitted += 1
             subs = list(self._subs)
             callbacks = list(self._callbacks)
+        self._trace("radio_aired", message)
         for sub in subs:
             sub._deliver(message)
         for fn in callbacks:
@@ -217,6 +224,20 @@ class RadioFeed:
                 fn(message)
             except Exception:  # pragma: no cover - a bad consumer must not stop radio
                 log.exception("Radio callback failed for %s", message.agent)
+
+    def _trace(self, kind: str, message: RadioMessage, **extra: Any) -> None:
+        safe_trace(
+            self.tracer,
+            kind,
+            agent=message.agent,
+            event_key=message.event_ref.key,
+            message_id=message.message_id,
+            seq=message.seq,
+            priority=message.priority.value,
+            subject=message.subject,
+            refused=message.refused,
+            **extra,
+        )
 
     def pump(self, now: float) -> list[RadioMessage]:
         """Advance the channel to session time ``now``, respecting airtime.

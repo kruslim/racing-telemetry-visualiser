@@ -57,6 +57,30 @@ def pitwall_radio(
     }
 
 
+@router.get(
+    "/pitwall/activity",
+    summary="Recent agent-layer activity records (routing, model/tool calls, radio)",
+)
+def pitwall_activity(
+    since: int = Query(0, ge=0, description="Only records with a larger seq."),
+    limit: int = Query(500, ge=1, le=2000),
+    services: AppServices = Depends(get_services),
+) -> dict:
+    activity = services.activity
+    if activity is None:
+        raise HTTPException(503, "The race-state engine is off (RTV_PITWALL=false).")
+    records = activity.since(since)
+    # The newest `limit`, so a client that fell far behind catches up to now.
+    records = records[-limit:]
+    return {
+        "count": len(records),
+        "last_seq": records[-1]["seq"] if records else since,
+        "agents_mounted": services.pitwall is not None,
+        "stats": activity.stats(),
+        "records": records,
+    }
+
+
 class EnabledRequest(BaseModel):
     enabled: bool = Field(description="False is the kill switch: no agent is invoked.")
 

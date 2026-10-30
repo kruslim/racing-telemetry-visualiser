@@ -12,6 +12,9 @@ different value profiles:
 * ``radio`` -- an agent's call, already prioritised and de-duplicated by the
   :class:`~rtv.pitwall.radio.RadioFeed`. Also never coalesced: the feed has
   already decided what was worth saying, and this socket must not second-guess it.
+* ``activity`` -- one record of the agent layer working (a routing decision, a
+  model or tool call, a validator verdict, a radio transition; see
+  :mod:`rtv.pitwall.activity`). Pushed as it happens, bounded like ``event``.
 """
 
 from __future__ import annotations
@@ -49,6 +52,8 @@ async def pitwall_ws(ws: WebSocket) -> None:
     sub = engine.bus.subscribe(name="ws-pitwall")
     pitwall = services.pitwall
     radio_sub = pitwall.feed.subscribe(name="ws-pitwall") if pitwall is not None else None
+    activity = services.activity
+    activity_sub = activity.subscribe(name="ws-pitwall") if activity is not None else None
 
     # Open with the current state so a client is never blank while it waits.
     await _send(ws, {"type": "state", "state": engine.snapshot().to_api()})
@@ -99,9 +104,18 @@ async def pitwall_ws(ws: WebSocket) -> None:
             for message in messages:
                 await _send(ws, {"type": "radio", "message": message.to_api()})
 
+    async def activity_sender() -> None:
+        assert activity_sub is not None
+        while True:
+            records = await activity_sub.next_events(timeout=1.0)
+            for record in records:
+                await _send(ws, {"type": "activity", "activity": record})
+
     senders = [receiver(), state_sender(), event_sender()]
     if radio_sub is not None:
         senders.append(radio_sender())
+    if activity_sub is not None:
+        senders.append(activity_sender())
 
     try:
         await asyncio.gather(*senders)
@@ -113,6 +127,8 @@ async def pitwall_ws(ws: WebSocket) -> None:
         sub.close()
         if radio_sub is not None:
             radio_sub.close()
+        if activity_sub is not None:
+            activity_sub.close()
         try:
             await ws.close()
         except Exception:
