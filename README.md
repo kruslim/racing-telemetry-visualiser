@@ -2,7 +2,10 @@
 
 **A full-stack iRacing telemetry platform: real-time ingest → columnar storage → a MoTeC-i2-style web analysis UI → a tiered AI race engineer → a live multi-agent pitwall with a voice.**
 
-**▶ [Live showcase](https://kruslim.github.io/racing-telemetry-visualiser/)**
+**▶ [Live demo](https://kruslim.github.io/racing-telemetry-visualiser/)** — the actual
+analysis app running in your browser on a simulated session: scrub the traces, compare
+laps, open the Coach worksheet, and ask the AI race engineer where you're losing time.
+No backend, no key — every worksheet and the grounded chat run entirely client-side.
 
 Racing Telemetry Visualiser (RTV) captures *every* channel iRacing exposes — from
 the live 60 Hz shared-memory feed or from recorded `.ibt` files — stores it
@@ -10,8 +13,9 @@ columnar in DuckDB/Parquet, and serves it three ways:
 
 - a **REST API** for charts, lap comparison and track maps,
 - a **WebSocket stream** for live dashboards,
-- a **three-layer AI coaching system** that turns a million raw points per lap into
-  a prioritised, fact-checked driving plan, and
+- a **layered AI coaching system** that turns a million raw points per lap into
+  a prioritised, fact-checked driving plan — and refuses questions the telemetry
+  can't answer instead of inventing one, and
 - a **live multi-agent pitwall** — a deterministic race-state engine with four
   event-driven agents (strategist, vehicle engineer, spotter, coach) merging onto
   one prioritised radio channel that the browser speaks out loud.
@@ -63,16 +67,18 @@ prunes to one or two small files instead of scanning a session.
 at the poll rate). Slow clients coalesce to the newest sample instead of building
 an ever-growing backlog — no unbounded buffering, no lag death-spiral.
 
-### 5. A MoTeC-i2-style web frontend
-A separately-built vanilla-JS canvas UI (no build step) reads the REST API and
-renders: multi-channel time/distance worksheets, **GPS track maps** (with a
-heading-integration fallback for live sessions that lack GPS), histograms,
-suspension and track-report worksheets, a live **Pitwall** console, and a
-**Coach** worksheet. It also supports **alien-lap cross-session compare** — merge
-another driver's clean laps into your lap list (same track) and set any as
-Main/Reference against your own.
+### 5. A MoTeC-i2-style web frontend — with an AI chat engineer
+A vanilla-JS canvas UI (no build step, in `frontend/app/`, **served by FastAPI at
+`/app/`**) reads the REST API and renders: multi-channel time/distance worksheets,
+**GPS track maps**, histograms, suspension and track-report worksheets, and a
+**Coach** worksheet. The layout puts an **AI race-engineer chat on the left and
+the graphs on the right**: ask a question, the LLM answers grounded on the
+telemetry, and the corners it flags are **annotated directly onto the graph**
+(click a flag to jump the cursor there). If no `.ibt` is imported, a **simulated
+demo session is generated through the real store** on startup, so every endpoint
+— charts, coaching and chat — has realistic data to serve.
 
-### 6. Three-layer AI coaching
+### 6. Layered AI coaching
 The centrepiece. See below.
 
 ### 7. A live multi-agent pitwall
@@ -150,7 +156,8 @@ explanation, open-ended Q&A). **Raw 60 Hz telemetry never reaches an LLM.**
 |---|---|---|---|
 | **1 · Features** | `src/rtv/coaching/`, `GET /coaching/lap-findings` | Deterministic feature extraction → `LapFindings` | free |
 | **2 · MCP server** | `mcp_server/telemetry_coach.py` | 6 tools over the API; chat-driven coaching in Claude Desktop/Code | **$0** (subscription) |
-| **3 · Orchestration + evals** | `src/rtv/coaching/orchestrator.py`, `evals/` | Multi-agent Claude pipeline + eval harness | ~cents (API) |
+| **3a · Orchestration** | `src/rtv/coaching/orchestrator.py` | Code-controlled multi-agent Claude pipeline (fan-out → synthesise → verify) | ~cents (API) |
+| **3b · Graph agent + evals** | `src/rtv/coaching/agent/`, `evals/` | LangGraph tool-calling coach: grounded refusal + in-loop citation validation, replayed by a hermetic regression harness | ~cents (API) |
 
 **Layer 1 — deterministic features.** `CoachingService.lap_findings()` aligns a
 main and reference lap on a uniform lap-distance grid, detects corners as prominent
@@ -164,12 +171,25 @@ is *both* the token solution and the eval ground truth.
 Driven from Claude Desktop/Code on your existing subscription — no API bill.
 "Review my lap 5 vs my fastest."
 
-**Layer 3 — multi-agent orchestration + evals.** `CoachOrchestrator` runs a
+**Layer 3a — multi-agent orchestration.** `CoachOrchestrator` runs a
 code-controlled pipeline: **fan-out a specialist per priority corner (parallel) →
 synthesise a session plan → adversarially verify it**, all through structured
-Pydantic outputs. The `evals/` harness then cross-checks the coach's claimed
-figures (e.g. "brake 7 m earlier into T4") against the Layer-1 findings — a
-deterministic hallucination check — with an optional LLM judge on top.
+Pydantic outputs.
+
+**Layer 3b — the graph agent + eval harness.** `src/rtv/coaching/agent/` is a
+**LangGraph** coach: a model drives the same coaching tools in-process
+(`get_lap_findings`, `list_available_channels`, …) through an
+`agent → tools → validate → refuse` state graph. Two behaviours make it more than a
+chat loop: it **refuses questions the telemetry can't answer** — ask for tyre
+temperatures the session never captured and it returns a grounded `CoachRefusal`
+listing the channels that *are* available, instead of inventing a number — and it
+**validates every asserted figure in-loop**, bouncing a claimed time gain or brake
+point that no retrieved finding supports before it can reach the driver. The `evals/`
+harness replays a seed set of these behaviours against a scripted model — fully
+offline, no key — cross-checks the coach's figures against the Layer-1 findings
+(`evals/checks.py`, shared with the in-loop validator), and diffs each run against a
+baseline so a regression is a merge-blocker. An optional LLM judge scores the soft
+qualities on top.
 
 ---
 
@@ -227,20 +247,25 @@ src/rtv/
   store/     duckdb, schema, parquet writer, query builders, repository
   stream/    live hub (fan-out)
   api/       FastAPI routes + /ws/live
-  coaching/  Layer-1 feature extraction, models, Layer-3 orchestrator
+  coaching/  Layer-1 feature extraction, models, Layer-3a orchestrator
+    agent/   Layer-3b LangGraph coach (provider, tools, graph, refusal, validator)
   racestate/ v2 pitwall: deterministic race-state engine, detectors, event bus,
              replay, strategy math
   pitwall/   v2 pitwall: agent framework, tools, citation validator, radio feed,
              TTS, orchestrator, agents/ (strategist, vehicle engineer, spotter, coach)
   director/  v2 pitwall: race-director INTERFACES ONLY (scenario schema, protocol,
              NoopDirector). Planned -- see docs/PITWALL.md stage 5.
+  llm.py     LLM backend selection (kimi | anthropic), shared by every LLM layer
   services.py  wiring; main.py  app factory
 mcp_server/  Layer-2 MCP server (telemetry_coach.py)
-frontend/    vanilla-JS live pitwall UI (index.html + js/pitwall/), radio page,
-             two self-test pages -- no build step, no frameworks
-evals/       ground-truth checks, LLM judge, golden laps, runner
+frontend/    vanilla-JS live pitwall UI at / (index.html + js/pitwall/), radio page,
+             two self-test pages; frontend/app/ is the MoTeC-i2-style analysis app
+             served at /app/ and published to docs/ -- no build step, no frameworks
+evals/       ground-truth checks, LLM judge, hermetic fixtures, trace, seed cases,
+             golden laps, runner
 docs/        VARIABLES.md (catalog reference), COACHING.md (coaching deep-dive),
-             PITWALL.md (v2 pitwall), director_scenario.example.json
+             PITWALL.md (v2 pitwall), director_scenario.example.json, and the
+             Pages build of frontend/app/
 ```
 
 ---
@@ -248,7 +273,7 @@ docs/        VARIABLES.md (catalog reference), COACHING.md (coaching deep-dive),
 ## Stack
 
 Python 3.11+ · FastAPI · uvicorn · pyirsdk · DuckDB · PyArrow · NumPy · orjson ·
-Pydantic · FastMCP · Anthropic SDK.
+Pydantic · FastMCP · LangGraph · Anthropic SDK.
 
 ## Quick start (Windows)
 
@@ -258,16 +283,23 @@ python -m venv .venv
 python -m pip install -r requirements-dev.txt
 python -m pip install -e .
 
-.\run.ps1          # http://127.0.0.1:8000  (interactive docs at /docs)
+.\run.ps1          # http://127.0.0.1:8000  → the analysis app (chat + graphs)
+                   #   API docs at /docs · a demo session is seeded on first run
 pytest             # full suite runs offline — no iRacing, no API key
 ```
+
+On any OS: `uvicorn rtv.main:app --app-dir src` then open **http://127.0.0.1:8000/**.
+The chatbot needs `ANTHROPIC_API_KEY` in the environment; everything else (graphs,
+track map, deterministic findings) works without one. Set `RTV_SEED_DEMO=false` to
+skip the simulated demo session once you've imported real `.ibt` data.
 
 > `pyarrow`/`pyirsdk` wheels may lag the newest Python. If install fails on 3.14,
 > create the venv with Python 3.12: `py -3.12 -m venv .venv`.
 
 **Optional extras:** `pip install -e ".[mcp]"` for the Layer-2 MCP server;
-`pip install -e ".[ai]"` (plus `ANTHROPIC_API_KEY`) for Layer-3 orchestration and
-evals.
+`pip install -e ".[ai]"` (plus `ANTHROPIC_API_KEY`) for Layer-3a orchestration;
+`pip install -e ".[agent]"` for the Layer-3b LangGraph coach. The Layer-3b graph and
+its eval harness run **offline with a scripted model** — no key — under the `dev` extra.
 
 ---
 
@@ -394,6 +426,7 @@ Verify against your own race with `GET /api/v1/pitwall/status`, which reports
 | GET | `/sessions/{id}/compare?name=Speed&laps=3,7&grid=1000` | Lap comparison aligned on lap distance |
 | GET | `/sessions/{id}/trackmap?color=Speed` | Decimated GPS polyline |
 | GET | `/coaching/lap-findings?session_id=…&main_lap=5&ref_lap=3` | Layer-1 corner findings |
+| POST | `/coaching/chat` | LLM race engineer: `{session_id, main_lap, ref_lap, question}` → grounded answer + graph annotations (needs `ANTHROPIC_API_KEY`) |
 | POST | `/import` · GET `/import/{job_id}` | Async `.ibt` import + status |
 | POST | `/live/start` · `/live/stop` · GET `/live/status` | Live poller control |
 | GET | `/racestate` · `/racestate/events` | Live race state + event log (pitwall) |
@@ -439,10 +472,13 @@ event and every agent radio call pushed immediately and never coalesced. See
 
 The full `pytest` suite (450+ tests across catalog, decode, store round-trip, laps,
 API, coaching features, MCP server, orchestrator, evals, the race-state engine, the
-pitwall agent layer, the radio voice and the director seam) runs **entirely
-offline** — DuckDB/PyArrow are import-guarded, the LLM layers are driven by
-scripted providers, and the suite is green whether or not `ANTHROPIC_API_KEY` is
-exported. Seven offline smoke scripts back it up:
+pitwall agent layer, the radio voice, the director seam and the Layer-3b graph
+coach) runs **entirely offline** — DuckDB/PyArrow are import-guarded, the LLM layers
+are driven by scripted providers or a scripted model, and the suite is green whether
+or not `KIMI_CODE_API_KEY` or `ANTHROPIC_API_KEY` is exported. The graph-coach suite
+exercises a **grounded refusal** when a channel wasn't captured, the **in-loop
+citation validator** bouncing a figure the findings don't support, iteration-cap
+termination, and a **baseline-diffing regression runner** over a seed case set. Seven offline smoke scripts back it up:
 
 | Script | What it drives end to end |
 |---|---|

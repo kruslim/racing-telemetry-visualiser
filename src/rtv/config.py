@@ -70,7 +70,8 @@ class Settings(BaseSettings):
     llm_api_key_env: str = Field(
         default="",
         description="Name of the env var holding the credential. Empty = "
-        "ANTHROPIC_API_KEY for anthropic, KIMI_API_KEY for kimi. The value is read "
+        "ANTHROPIC_API_KEY for anthropic, KIMI_CODE_API_KEY (falling back to "
+        "KIMI_API_KEY) for kimi. The value is read "
         "at client-construction time and never logged.",
     )
     llm_structured_output: str = Field(
@@ -318,6 +319,12 @@ class Settings(BaseSettings):
     port: int = 8000
     autostart_live: bool = Field(
         default=False, description="Start the live poller on server startup."
+    )
+    seed_demo: bool = Field(
+        default=True,
+        description="Seed a simulated demo session on startup when the store is "
+        "empty, so the frontend has real chart + coaching data to show without an "
+        "imported .ibt file.",
     )
     log_level: str = "INFO"
 

@@ -37,7 +37,13 @@ ANTHROPIC = "anthropic"
 KIMI = "kimi"
 
 #: Credential env var per backend, when ``llm_api_key_env`` does not name one.
-DEFAULT_KEY_ENV = {ANTHROPIC: "ANTHROPIC_API_KEY", KIMI: "KIMI_API_KEY"}
+#: Kimi means the Kimi Code (coding subscription) key, which is what the default
+#: ``llm_kimi_base_url`` accepts; a Moonshot developer-API key is not valid there.
+DEFAULT_KEY_ENV = {ANTHROPIC: "ANTHROPIC_API_KEY", KIMI: "KIMI_CODE_API_KEY"}
+
+#: Older credential names still honoured, after the default, so an existing .env
+#: that predates the rename keeps working.
+FALLBACK_KEY_ENVS = {KIMI: ("KIMI_API_KEY",)}
 
 #: Structured-output strategy per backend. See the module docstring for why these
 #: differ; ``RTV_LLM_STRUCTURED_OUTPUT`` overrides.
@@ -63,8 +69,19 @@ def provider_name(settings: Settings | None = None) -> str:
 
 
 def key_env_var(settings: Settings | None = None) -> str:
+    """The env var the credential is read from.
+
+    An explicit ``llm_api_key_env`` always wins. Otherwise the backend default,
+    unless only one of its fallback names is set.
+    """
     s = settings or get_settings()
-    return s.llm_api_key_env.strip() or DEFAULT_KEY_ENV[provider_name(s)]
+    if s.llm_api_key_env.strip():
+        return s.llm_api_key_env.strip()
+    name = provider_name(s)
+    for candidate in (DEFAULT_KEY_ENV[name], *FALLBACK_KEY_ENVS.get(name, ())):
+        if os.environ.get(candidate):
+            return candidate
+    return DEFAULT_KEY_ENV[name]
 
 
 def api_key(settings: Settings | None = None) -> str | None:

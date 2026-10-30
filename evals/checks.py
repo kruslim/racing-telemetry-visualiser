@@ -1,19 +1,23 @@
 """Deterministic ground-truth cross-checks for coach output — no LLM, no network.
 
-The coach's structured output carries explicit figures (which corner, how much time).
-The deterministic findings carry the true figures. So factuality is a numeric comparison,
-not a vibe check: a claimed ``gain_s`` must match the corner's ``net_dt``; a cited corner
-must exist; the top priority should be the corner that actually loses the most time.
+The coach's structured output carries explicit figures (which corner, how much time). The
+deterministic findings carry the true figures. So factuality is a numeric comparison, not a
+vibe check: a claimed ``gain_s`` must match the corner's ``net_dt``; a cited corner must exist;
+the top priority should be the corner that actually loses the most time.
 
-This is what makes the eval rigorous and cheap — it catches a coach that invents a
-brake-point metre value or a time gain the data doesn't support.
+The per-figure numeric core lives in :mod:`rtv.coaching.agent.validation` (in the installed
+package) so it is shared with the graph coach's in-loop validate node — the same truth that
+scores a finished result here also bounces a hallucinated figure mid-run. This module keeps the
+result-level scoring (``cross_check``/``aggregate``) the orchestrator eval harness uses.
 """
 
 from __future__ import annotations
 
 from typing import Any
 
-GAIN_TOL = 0.05  # seconds; how close a claimed time gain must be to the finding
+from rtv.coaching.agent.validation import GAIN_TOL, corner_map, gain_issue
+
+__all__ = ["GAIN_TOL", "cross_check", "aggregate"]
 
 
 def cross_check(
@@ -24,7 +28,7 @@ def cross_check(
     Returns factuality metrics and a list of human-readable issues. Each issue is a
     figure the coach asserted that the ground-truth findings do not support.
     """
-    corners = {c["label"]: c for c in findings.get("corners", [])}
+    corners = corner_map(findings)
     top3 = findings.get("chief", {}).get("top3", [])
     truth_top = top3[0]["label"] if top3 else None
 
@@ -45,20 +49,11 @@ def cross_check(
     def check_gain(corner_label: str, claimed: float, where: str) -> None:
         nonlocal claims, supported
         claims += 1
-        c = corners.get(corner_label)
-        if c is None:
-            issues.append(
-                f"{where}: corner {corner_label!r} is not in the findings (hallucinated)."
-            )
-            return
-        truth = c.get("net_dt", 0.0)
-        if abs(claimed - truth) <= gain_tol:
+        issue = gain_issue(corners, corner_label, claimed, where, gain_tol)
+        if issue is None:
             supported += 1
         else:
-            issues.append(
-                f"{where}: {corner_label} claimed +{claimed:.3f}s "
-                f"but finding net_dt is {truth:+.3f}s."
-            )
+            issues.append(issue)
 
     for p in priorities:
         check_gain(p.get("corner", "?"), float(p.get("gain_s", 0.0)), "plan.priority")

@@ -30,13 +30,23 @@ log = get_logger("main")
 
 API_PREFIX = "/api/v1"
 
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings = get_settings()
     configure_logging(settings.log_level)
     services = build_services(settings)
     app.state.services = services
+
+    # Seed a simulated demo session so a fresh install has real chart + coaching
+    # data to show (no .ibt required). Idempotent — skips if already present.
+    if settings.seed_demo:
+        try:
+            from rtv.demo.seed import seed_demo_session
+
+            seed_demo_session(services.repo, services.writer)
+        except Exception:  # pragma: no cover - demo seeding must never block boot
+            log.exception("Demo seeding failed; continuing without it.")
+
     log.info("Racing Telemetry Visualiser %s ready.", __version__)
 
     # Optionally start the live poller on boot (Windows + iRacing only). Disable
@@ -101,7 +111,8 @@ def create_app() -> FastAPI:
 
 #: Vanilla JS + canvas/DOM, no build step. Served from the repo root so the
 #: pitwall radio page and its self-test are one URL away from the API they talk
-#: to -- no second server, no CORS dance, no bundler.
+#: to -- no second server, no CORS dance, no bundler. The MoTeC-i2-style
+#: analysis app lives in ``frontend/app/`` and is therefore served at ``/app/``.
 FRONTEND_DIR = Path(__file__).resolve().parents[2] / "frontend"
 
 

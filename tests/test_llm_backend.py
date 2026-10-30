@@ -29,7 +29,7 @@ def test_kimi_k3_on_the_coding_subscription_is_the_default():
     s = _settings()
     assert llm.provider_name(s) == "kimi"
     assert llm.base_url(s) == "https://api.kimi.com/coding"
-    assert llm.key_env_var(s) == "KIMI_API_KEY"
+    assert llm.key_env_var(s) == "KIMI_CODE_API_KEY"
     # Not 'native': Kimi's compatibility layer need not implement output_format.
     assert llm.structured_output_mode(s) == "tool"
     assert llm.resolve_model("", tier="reasoning", settings=s) == "kimi-k3"
@@ -62,14 +62,31 @@ def test_an_unknown_provider_fails_at_configuration_time():
         llm.structured_output_mode(_settings(llm_structured_output="magic"))
 
 
+def test_the_kimi_code_key_wins_over_the_legacy_name(monkeypatch):
+    monkeypatch.setenv("KIMI_CODE_API_KEY", "code-key")
+    monkeypatch.setenv("KIMI_API_KEY", "legacy-key")
+    s = _settings(llm_provider="kimi")
+    assert llm.key_env_var(s) == "KIMI_CODE_API_KEY"
+    assert llm.api_key(s) == "code-key"
+
+
+def test_the_legacy_kimi_key_name_still_works_alone(monkeypatch):
+    monkeypatch.delenv("KIMI_CODE_API_KEY", raising=False)
+    monkeypatch.setenv("KIMI_API_KEY", "legacy-key")
+    s = _settings(llm_provider="kimi")
+    assert llm.key_env_var(s) == "KIMI_API_KEY"
+    assert llm.api_key(s) == "legacy-key"
+
+
 def test_describe_reports_presence_not_the_credential(monkeypatch):
-    monkeypatch.setenv("KIMI_API_KEY", "sk-secret-value")
+    monkeypatch.setenv("KIMI_CODE_API_KEY", "sk-secret-value")
     payload = llm.describe(_settings(llm_provider="kimi"))
     assert payload["key_present"] is True
     assert "sk-secret-value" not in repr(payload)
 
 
 def test_build_client_without_a_credential_is_a_config_error(monkeypatch):
+    monkeypatch.delenv("KIMI_CODE_API_KEY", raising=False)
     monkeypatch.delenv("KIMI_API_KEY", raising=False)
     with pytest.raises(llm.LLMConfigError):
         llm.build_client(_settings(llm_provider="kimi"))
