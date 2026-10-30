@@ -196,7 +196,9 @@ def test_the_app_only_calls_documented_endpoints(client):
     source = (JS_DIR / "pitwall-app.js").read_text("utf-8")
     called = set(re.findall(r"""\$\{API\}(/[\w/-]+)""", source))
     assert called, "the API call pattern has drifted"
-    routes = {route.path for route in client.app.routes}
+    # The OpenAPI schema, not ``app.routes``: since FastAPI 0.16x an included
+    # router is kept as one ``_IncludedRouter`` entry with no ``.path`` of its own.
+    routes = set(client.app.openapi()["paths"])
     for path in called:
         assert f"/api/v1{path}" in routes, f"the UI calls {path}, which is not a route"
 

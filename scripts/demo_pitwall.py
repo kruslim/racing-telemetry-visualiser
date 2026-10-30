@@ -15,8 +15,8 @@ what it cannot.
     --speed N     playback rate; 1.0 is real time, 4 is a brisk demo (default 4)
     --port N      bind port (default 8000)
     --no-browser  print the URL instead of opening it
-    --agents      also mount the LLM agent layer (needs the LLM key, KIMI_CODE_API_KEY by default; this
-                  is the only flag here that can spend money)
+    --agents      also mount the LLM agent layer (needs the LLM key, KIMI_CODE_API_KEY
+                  by default; this is the only flag here that can spend money)
 """
 
 from __future__ import annotations
