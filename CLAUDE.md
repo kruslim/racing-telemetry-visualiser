@@ -28,6 +28,8 @@ In Git Bash write `.venv/Scripts/python.exe`, in PowerShell `.venv\Scripts\pytho
 - Pitwall demo, no key or iRacing: `.venv/Scripts/python.exe scripts/demo_pitwall.py`
 - Check the LLM backend (one tiny real call): `.venv/Scripts/python.exe scripts/check_llm.py`
 - Offline HTTP smoke test: `.venv/Scripts/python.exe scripts/smoke_offline.py`
+- CI (`.github/workflows/ci.yml`) runs ruff, pytest and the smoke test on Python 3.11-3.13
+  for every push to main and every PR, with no API key.
 - Publish the Pages showcase: `.venv/Scripts/python.exe scripts/build_pages.py`
 
 `ruff format` and `black` are configured but most files are not formatted with them.
