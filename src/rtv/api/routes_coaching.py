@@ -13,12 +13,12 @@ annotations onto the graph.
 
 from __future__ import annotations
 
-import os
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
+from rtv import llm
 from rtv.api.deps import get_coaching, get_repo
 from rtv.coaching.agent.contracts import CoachingAnswer
 from rtv.coaching.agent.graph import run_coach
@@ -207,10 +207,19 @@ def _refusal_markdown(refusal) -> str:
 
 
 def _build_model(model_name: str):
-    """Construct the LangChain Anthropic chat model the graph coach drives."""
+    """Construct the chat model the graph coach drives.
+
+    ``ChatAnthropic`` speaks the Anthropic Messages format, which the Kimi Code
+    endpoint implements too, so ``rtv.llm`` only has to supply the base URL and
+    credential for whichever backend is selected.
+    """
     from langchain_anthropic import ChatAnthropic
 
-    return ChatAnthropic(model=model_name, temperature=0, max_tokens=2048, timeout=90)
+    kwargs = {"api_key": llm.api_key()}
+    url = llm.base_url()
+    if url:
+        kwargs["base_url"] = url
+    return ChatAnthropic(model=model_name, temperature=0, max_tokens=2048, timeout=90, **kwargs)
 
 
 @router.post(
@@ -224,12 +233,13 @@ def coaching_chat(
     coaching: CoachingService = Depends(get_coaching),
 ) -> ChatResponse:
     settings = get_settings()
-    if not os.environ.get("ANTHROPIC_API_KEY"):
+    if not llm.is_configured():
         raise HTTPException(
             503,
-            "The coaching chatbot needs an Anthropic API key. Set ANTHROPIC_API_KEY "
-            "in the server environment to enable it.",
+            f"The coaching chatbot needs an LLM key. Set {llm.key_env_var()} in the "
+            f"server environment to enable it (backend: {llm.provider_name()}).",
         )
+    model_name = llm.resolve_model(settings.coaching_model, tier="reasoning")
 
     # Pin the agent to the frontend's currently-selected laps by naming them in the
     # question — the coach's get_lap_findings tool then retrieves exactly these.
@@ -240,7 +250,7 @@ def coaching_chat(
     provider = RepositoryFindingsProvider(repo)
 
     try:
-        model = _build_model(settings.coaching_model)
+        model = _build_model(model_name)
         state = run_coach(framed, provider, model)
     except HTTPException:
         raise
@@ -254,7 +264,7 @@ def coaching_chat(
             session_id=body.session_id,
             main_lap=body.main_lap,
             ref_lap=body.ref_lap,
-            model=settings.coaching_model,
+            model=model_name,
             markdown=_refusal_markdown(state.refusal),
             refusal=ChatRefusalOut(
                 reason=state.refusal.reason,
@@ -281,7 +291,7 @@ def coaching_chat(
         session_id=body.session_id,
         main_lap=body.main_lap,
         ref_lap=body.ref_lap,
-        model=settings.coaching_model,
+        model=model_name,
         markdown=_answer_markdown(answer),
         headline=answer.headline,
         one_lap_focus=answer.one_lap_focus,

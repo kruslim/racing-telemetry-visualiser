@@ -1,6 +1,6 @@
 # Racing Telemetry Visualiser
 
-**A full-stack iRacing telemetry platform: real-time ingest → columnar storage → a MoTeC-i2-style web analysis UI → a tiered AI race engineer.**
+**A full-stack iRacing telemetry platform: real-time ingest → columnar storage → a MoTeC-i2-style web analysis UI → a tiered AI race engineer → a live multi-agent pitwall with a voice.**
 
 **▶ [Live demo](https://kruslim.github.io/racing-telemetry-visualiser/)** — the actual
 analysis app running in your browser on a simulated session: scrub the traces, compare
@@ -12,10 +12,13 @@ the live 60 Hz shared-memory feed or from recorded `.ibt` files — stores it
 columnar in DuckDB/Parquet, and serves it three ways:
 
 - a **REST API** for charts, lap comparison and track maps,
-- a **WebSocket stream** for live dashboards, and
+- a **WebSocket stream** for live dashboards,
 - a **layered AI coaching system** that turns a million raw points per lap into
   a prioritised, fact-checked driving plan — and refuses questions the telemetry
-  can't answer instead of inventing one.
+  can't answer instead of inventing one, and
+- a **live multi-agent pitwall** — a deterministic race-state engine with four
+  event-driven agents (strategist, vehicle engineer, spotter, coach) merging onto
+  one prioritised radio channel that the browser speaks out loud.
 
 It is deliberately built as an end-to-end system: catalog → ingest → storage →
 query → visualisation → AI. Each layer is independently testable and the whole
@@ -65,8 +68,8 @@ at the poll rate). Slow clients coalesce to the newest sample instead of buildin
 an ever-growing backlog — no unbounded buffering, no lag death-spiral.
 
 ### 5. A MoTeC-i2-style web frontend — with an AI chat engineer
-A vanilla-JS canvas UI (no build step, in `frontend/`, **served by FastAPI at
-`/`**) reads the REST API and renders: multi-channel time/distance worksheets,
+A vanilla-JS canvas UI (no build step, in `frontend/app/`, **served by FastAPI at
+`/app/`**) reads the REST API and renders: multi-channel time/distance worksheets,
 **GPS track maps**, histograms, suspension and track-report worksheets, and a
 **Coach** worksheet. The layout puts an **AI race-engineer chat on the left and
 the graphs on the right**: ask a question, the LLM answers grounded on the
@@ -77,6 +80,68 @@ demo session is generated through the real store** on startup, so every endpoint
 
 ### 6. Layered AI coaching
 The centrepiece. See below.
+
+### 7. A live multi-agent pitwall
+A deterministic race-state engine maintains gaps, fuel consumption, tyre trends and
+pit-window bounds at 60 Hz with **no LLM anywhere** (avg 0.03 ms/frame), and emits
+typed race events. Four agents — strategist, vehicle engineer, spotter and live
+coach — are woken **only** when an event fires one of their triggers, so a race
+costs a handful of model calls rather than a per-tick bill. Aggregation happens
+first and deterministically: one lockup is a driver having a moment, so nobody is
+woken until the *same* one has happened at the *same* corner three times inside
+five laps. Every figure an agent says is checked in-loop against
+the data it was actually shown; one that can't be traced becomes a grounded refusal
+rather than a confident guess. Output merges into a single prioritised radio feed
+where critical calls pre-empt and stale advice supersedes.
+
+That feed has a **voice**: the server ships a small vanilla-JS page (`frontend/`,
+served at `/radio.html`) that speaks the radio through the browser's Web Speech
+API — a distinct voice per role, a radio click ahead of critical calls, a
+critical spotter shout that cancels an advisory mid-sentence, per-agent mutes,
+and push-to-talk back to the pitwall where the browser supports it. Zero cost and
+no setup; an optional backend TTS provider is one env var away. The queue rules
+are a pure module with their own test suite (`frontend/audio-test.html`, or
+`node frontend/js/run-audio-tests.mjs`). See `docs/PITWALL.md`.
+
+It also has a **screen**. The server serves a live pit stand at `/` (still vanilla
+JS + canvas, still no build step): a scrolling radio feed with per-agent mutes and
+driver push-to-talk, a pit-window lap axis with the window, the fuel-limit lap and
+the finish drawn on it, a 2×2 tyre widget with trend arrows, a timing tower around
+the player with closing/opening gap arrows and blue-flag badges, a flag band that
+takes the full width the moment it stops being green, and a ticker of raw
+deterministic events beneath the AI radio so the two are never confused. Anything
+this session's catalog cannot back reads **`n/a`**, never `0.0`. The header
+switches between **Analysis** and **Pitwall**; the replay controls double as a
+zero-setup demo (`scenario`, no key, no iRacing). Its view model is a pure module
+with its own suite (`frontend/pitwall-test.html`, or
+`node frontend/js/run-pitwall-tests.mjs`).
+
+It is also built to survive a race rather than merely start one: a frame that
+raises costs a frame and is counted, never the pitwall; the agent workers and the
+event pump run under a supervisor that restarts them and *says* it did; an agent
+whose provider is dead is taken off the air after three consecutive failures
+instead of billing for a doomed call per race event; and a replay cannot be
+started on top of a live session. `GET /api/v1/pitwall/health` answers "is
+anything still watching?" in one payload — a question `/racestate` structurally
+cannot answer, because a race state full of `null` looks the same whether the
+session has not started or frames stopped arriving four minutes ago.
+
+### 8. A race director — *planned*
+`src/rtv/director/` ships the **interfaces only**: a validated `ScenarioScript`
+schema (timed and conditional injections — a full-course yellow on lap 7, rain at
+half distance, a mandatory stop), the `DirectorEngine` protocol, and a
+`NoopDirector` default that injects nothing. There is no scheduler yet, and the
+docs say so everywhere it matters.
+
+What *is* built and tested is the **seam**: a director's events are published onto
+the same event bus the detectors use, so a scripted safety car reaches the agents,
+the ring buffer and the WebSocket through exactly one code path. A test takes the
+real `flag_change:yellow` the synthetic race throws and the scripted one from
+`docs/director_scenario.example.json` and asserts they wake the same agents and
+produce the same radio, call for call. Provenance is still honest — an injected
+event carries `injected` / `director_id` in its payload, because an event log that
+could not tell a scripted safety car from a real one would be the same failure as
+an agent quoting a number it cannot trace.
 
 ---
 
@@ -154,6 +219,25 @@ qualities on top.
    lap compare)                     (Claude chat)      (multi-agent + ground truth)
 ```
 
+The v2 live path branches off the same 60 Hz frame stream — no LLM anywhere left
+of the dashed line:
+
+```
+   frames (60 Hz) ──► racestate/  engine · detectors · aggregation   [no LLM]
+                          │            avg 0.03 ms/frame
+                          ▼
+                     event bus ──────────────────────────► /ws/pitwall + ring buffer
+                          │      ▲
+                          │      └── director/  (PLANNED: scripted injections)
+   - - - - - - - - - - - -│- - - - - - - - - - - - - - - - - - - - - - - - - - - -
+                          ▼   a trigger fires, and only then
+                    pitwall/  strategist · vehicle engineer · spotter · coach
+                          │   scoped tools → in-loop citation validator
+                          ▼
+                    one radio feed ──► /ws/pitwall ──► browser voice (Web Speech)
+                    priority · supersede · airtime      or a backend TTS provider
+```
+
 ## Package layout
 
 ```
@@ -165,10 +249,23 @@ src/rtv/
   api/       FastAPI routes + /ws/live
   coaching/  Layer-1 feature extraction, models, Layer-3a orchestrator
     agent/   Layer-3b LangGraph coach (provider, tools, graph, refusal, validator)
+  racestate/ v2 pitwall: deterministic race-state engine, detectors, event bus,
+             replay, strategy math
+  pitwall/   v2 pitwall: agent framework, tools, citation validator, radio feed,
+             TTS, orchestrator, agents/ (strategist, vehicle engineer, spotter, coach)
+  director/  v2 pitwall: race-director INTERFACES ONLY (scenario schema, protocol,
+             NoopDirector). Planned -- see docs/PITWALL.md stage 5.
+  llm.py     LLM backend selection (kimi | anthropic), shared by every LLM layer
   services.py  wiring; main.py  app factory
 mcp_server/  Layer-2 MCP server (telemetry_coach.py)
-evals/       ground-truth checks, LLM judge, hermetic fixtures, trace, seed cases, runner
-docs/        VARIABLES.md (catalog reference), COACHING.md (coaching deep-dive)
+frontend/    vanilla-JS live pitwall UI at / (index.html + js/pitwall/), radio page,
+             two self-test pages; frontend/app/ is the MoTeC-i2-style analysis app
+             served at /app/ and published to docs/ -- no build step, no frameworks
+evals/       ground-truth checks, LLM judge, hermetic fixtures, trace, seed cases,
+             golden laps, runner
+docs/        VARIABLES.md (catalog reference), COACHING.md (coaching deep-dive),
+             PITWALL.md (v2 pitwall), director_scenario.example.json, and the
+             Pages build of frontend/app/
 ```
 
 ---
@@ -204,6 +301,116 @@ skip the simulated demo session once you've imported real `.ibt` data.
 `pip install -e ".[agent]"` for the Layer-3b LangGraph coach. The Layer-3b graph and
 its eval harness run **offline with a scripted model** — no key — under the `dev` extra.
 
+---
+
+## The 60-second demo (no iRacing, no API key, no network)
+
+**One command.**
+
+```powershell
+python scripts/demo_pitwall.py
+```
+
+It starts the server, opens the radio page, waits six seconds for you to press
+**Enable audio** (browsers make no sound before a gesture), and replays the
+scripted synthetic race through the *real* race-state engine at 4× — while
+speaking the radio out loud.
+
+You will see every race event land in the log as the engine detects it — a
+full-course yellow on lap 3, a front-axle lock-up on lap 4, the fuel window
+opening, a pit stop — and hear a critical spotter shout cut an advisory off
+mid-sentence and a pit call superseded before it ever airs.
+
+With no `ANTHROPIC_API_KEY` the page plays the **scripted** radio calls and
+labels them as scripted — a canned line presented as a real agent's call would
+be exactly the ungrounded claim this codebase refuses everywhere else. The
+deterministic half — race state, events, replay, and the whole audio-discipline
+layer — is fully live either way. `--agents` mounts the real four (needs a key),
+`--speed 1` runs it in real time, `--no-browser` just prints the URL.
+
+Open `/` in a second tab while it runs and the **live pit stand** is driven by
+the same replay: the flag band goes yellow on lap 3, the pit-window bar fills in
+on lap 5, the tyre corners and the timing tower move, and the ticker streams the
+raw events beneath it. That page shows agent radio only when the agent layer is
+actually mounted — it does not fall back to the scripted calls, and it says so.
+
+Prefer to drive it by hand? `.\run.ps1` (or `uvicorn rtv.main:app --app-dir src`)
+then open `/` and press **Start** on the replay bar with `scenario` — the whole
+pit stand fills in. `/radio.html` is the listening page on its own; the two
+self-tests are at `/audio-test.html` and `/pitwall-test.html`.
+
+### Race with the pitwall (live)
+
+Needs Windows, iRacing running, and an API key.
+
+```powershell
+$env:ANTHROPIC_API_KEY = "sk-ant-..."
+$env:RTV_PITWALL_AGENTS = "true"       # opt-in: the agent layer spends money
+.\run.ps1
+# then: POST http://127.0.0.1:8000/api/v1/live/start
+```
+
+Open `/` for the live pit stand (radio, strategy, timing tower, ticker),
+`/radio.html` for the voice on its own, `GET /api/v1/pitwall/health` for
+one-glance status, and `POST /api/v1/pitwall/enabled {"enabled": false}` to stop spending
+without stopping capture. `RTV_PITWALL_AGENTS_ONLY=strategist,spotter` runs a
+subset. If you have no key, everything except the four agents still works — the
+race-state engine, `/ws/pitwall`, the event log and the replay driver need
+nothing but the sim.
+
+### Replay a stored race (offline)
+
+```powershell
+curl -X POST http://127.0.0.1:8000/api/v1/replay/start `
+     -H "content-type: application/json" `
+     -d '{"session_id":"scenario","speed":1.0}'      # or a real stored session id
+```
+
+`speed: 1.0` is real time, `N` is N×, `0` is as fast as possible. The replay
+driver calls the **same** `engine.on_frame` the live poller calls, so anything
+that works in replay works live — and a replay is refused while the live poller
+is running, because interleaving two frame sources into one race state produces
+numbers nobody can use.
+
+---
+
+## What a race hour costs
+
+Honest arithmetic, with the method stated so you can redo it for your own race.
+
+**Measured** (from the scripted race, `scripts/smoke_pitwall_agents.py`): the
+four agents woke **12 times** and made **24 model calls** — roughly two calls per
+wake-up, because a wake-up is a tool round trip plus the answer. Mean prompt:
+**~8 000 characters** (role prompt + state slice + tool schemas + the event),
+which is **~2 000 tokens**. Replies are radio-length: a few hundred tokens.
+
+**Extrapolated** to an hour of real racing, using the per-trigger cooldowns
+rather than the toy race's compressed clock — call it ~35 wake-ups (a chatty
+spotter in traffic, a strategist on a 5-lap milestone cadence, an engineer and a
+coach held back by 45–180 s cooldowns) at ~2.5 calls each ≈ **90 model calls**.
+
+At the published per-million-token rates (July 2026: Haiku 4.5 $1/$5,
+Sonnet $3/$15 in/out) that is roughly:
+
+| Deployment | Input | Output | **Per race hour** |
+|---|---|---|---|
+| All four on Haiku 4.5 | 180 K tok | 27 K tok | **~$0.32** |
+| Default mix (strategist on Sonnet, three on Haiku) | 180 K tok | 27 K tok | **~$0.5** |
+| All four on Sonnet | 180 K tok | 27 K tok | **~$0.95** |
+
+**Under a dollar an hour**, dominated by the strategist's reasoning-tier calls.
+The figures assume **no** prompt-cache hits, so they are an upper bound — the
+role prompt is the first, `cache_control`-marked system block, and clustered
+calls (a safety-car burst) read it at ~10 % of the input rate.
+
+The reason it is cents rather than dollars is architectural, not a discount:
+**no LLM sees a frame.** All of the continuous mathematics is deterministic, an
+agent is woken only by an event that survived aggregation and a predicate, and
+`RTV_PITWALL_MAX_CALLS_PER_SESSION` is a hard ceiling if any of that is wrong.
+Verify against your own race with `GET /api/v1/pitwall/status`, which reports
+`calls_used` and per-agent call counts and latencies. Check current prices at
+[anthropic.com/pricing](https://www.anthropic.com/pricing) before budgeting.
+
 ## API (prefix `/api/v1`)
 
 | Method | Path | Purpose |
@@ -222,6 +429,13 @@ its eval harness run **offline with a scripted model** — no key — under the 
 | POST | `/coaching/chat` | LLM race engineer: `{session_id, main_lap, ref_lap, question}` → grounded answer + graph annotations (needs `ANTHROPIC_API_KEY`) |
 | POST | `/import` · GET `/import/{job_id}` | Async `.ibt` import + status |
 | POST | `/live/start` · `/live/stop` · GET `/live/status` | Live poller control |
+| GET | `/racestate` · `/racestate/events` | Live race state + event log (pitwall) |
+| POST | `/replay/start` · `/replay/stop` · GET `/replay/status` | Replay a stored or synthetic session |
+| GET | `/pitwall/status` · `/pitwall/radio` | Agent layer status + the merged radio feed |
+| POST | `/pitwall/enabled` · `/pitwall/agents/{name}/enabled` | Kill switch + per-agent flags |
+| GET | `/pitwall/tts` · `/pitwall/audio/{message_id}` | Role voice table + synthesised radio audio |
+| POST | `/pitwall/driver-message` | Push-to-talk from the cockpit onto the channel |
+| GET | `/pitwall/health` | Engine, live poller, replay, agents and director in one payload |
 | GET | `/health` | Liveness |
 
 ### WebSocket `/ws/live`
@@ -238,25 +452,64 @@ its eval harness run **offline with a scripted model** — no key — under the 
 {"type":"data","tick":91234,"t":123.45,"v":{"Speed":61.2,"RPM":7400},"flags":{"SessionFlags":{"green":true}}}
 ```
 
+### WebSocket `/ws/pitwall`
+
+Full `RaceState` snapshots at a client-chosen rate (latest-wins), plus every race
+event and every agent radio call pushed immediately and never coalesced. See
+`docs/PITWALL.md`.
+
+```jsonc
+{"op":"subscribe","rate_hz":10}                        // client -> server
+{"type":"state","state":{ /* RaceState */ }}           // server -> client
+{"type":"event","event":{"key":"pit_window_open", "severity":"advisory", ...}}
+{"type":"radio","message":{"agent":"strategist","priority":"critical",
+                           "spoken_text":"Box this lap, 3.0 litres, we come out P8."}}
+```
+
 ---
 
 ## Testing
 
-The full `pytest` suite (~65 tests across catalog, decode, store round-trip, laps,
-API, coaching features, MCP server, orchestrator, evals, and the Layer-3b graph
+The full `pytest` suite (450+ tests across catalog, decode, store round-trip, laps,
+API, coaching features, MCP server, orchestrator, evals, the race-state engine, the
+pitwall agent layer, the radio voice, the director seam and the Layer-3b graph
 coach) runs **entirely offline** — DuckDB/PyArrow are import-guarded, the LLM layers
-are mocked or driven by a scripted model, no iRacing install and no
-`ANTHROPIC_API_KEY` required. The graph-coach suite exercises the headline behaviours
-hermetically: a **grounded refusal** when a channel wasn't captured, the **in-loop
+are driven by scripted providers or a scripted model, and the suite is green whether
+or not `KIMI_CODE_API_KEY` or `ANTHROPIC_API_KEY` is exported. The graph-coach suite
+exercises a **grounded refusal** when a channel wasn't captured, the **in-loop
 citation validator** bouncing a figure the findings don't support, iteration-cap
-termination, and a **baseline-diffing regression runner** over a seed case set.
-There's also an offline HTTP smoke test (`scripts/smoke_offline.py`) that pushes a
-synthetic session through the real storage writer via FastAPI's `TestClient`.
+termination, and a **baseline-diffing regression runner** over a seed case set. Seven offline smoke scripts back it up:
+
+| Script | What it drives end to end |
+|---|---|
+| `scripts/smoke_offline.py` | a synthetic session through the real storage writer via FastAPI's `TestClient` |
+| `scripts/smoke_pitwall.py` | a scripted synthetic race through the race-state engine, asserting the event sequence and its reproducibility |
+| `scripts/smoke_pitwall_agents.py` | the whole agent layer — tool loop, citation validator, radio queue — over that race |
+| `scripts/smoke_pitwall_roles.py` | all four agents over a race that keeps locking up at one corner, with a real DuckDB store attached so the coach's corner analysis reaches the genuine Layer-1 extractor |
+| `scripts/smoke_pitwall_voice.py` | the voice path, with a fake vendor transport standing in for a cloud TTS API |
+| `scripts/smoke_pitwall_director.py` | the director seam (scripted vs real safety car) and the five live-path hardening properties |
+| `scripts/smoke_pitwall_ui.py` | the pitwall UI: the shell and every module it imports served over HTTP, a scripted race over `/ws/pitwall` at 10 Hz, the replay round trip, and a session with no fuel or tyre channels degrading to `n/a` |
+
+The browser-side modules have their own suites with no JS toolchain at all:
+`node frontend/js/run-audio-tests.mjs` (the radio queue) and
+`node frontend/js/run-pitwall-tests.mjs` (the pitwall view model), or open
+`/audio-test.html` and `/pitwall-test.html`. `pytest` runs both when `node` happens
+to be on `PATH` and skips them otherwise, so the offline guarantee is unchanged
+either way.
 
 ## Docs
 
 - `docs/VARIABLES.md` — the standard iRacing variable set and the six-type system.
 - `docs/COACHING.md` — the tiered coaching architecture in depth.
+- `docs/PITWALL.md` — the v2 live pitwall: race-state schema, event catalog, replay,
+  the event-driven agent layer (framework, grounding, radio, and the four agents:
+  strategist, vehicle engineer, spotter, coach), the TTS radio voice, the planned
+  race-director seam, the live-path hardening and the live pitwall UI. Written as
+  a build log: every
+  stage records what it built, what the next one consumes, and every deviation
+  from its spec with the reasoning.
+- `docs/director_scenario.example.json` — a worked `ScenarioScript` for the
+  **planned** race director (safety car → restart → rain → mandatory stop).
 
 ## License
 

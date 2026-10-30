@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pitwall radio</title>
+<link rel="stylesheet" href="/css/pitwall.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='88'>&#128266;</text></svg>">
+</head>
+<body>
+<header>
+  <h1>Pitwall radio</h1>
+  <span class="sub">/ws/pitwall &rarr; audio discipline &rarr; voice</span>
+  <span id="conn" class="pill">connecting</span>
+  <nav>
+    <a href="/audio-test.html">self-test</a>
+    <a href="/api/v1/pitwall/status">status</a>
+    <a href="/docs">api</a>
+  </nav>
+</header>
+
+<main>
+  <section class="panel">
+    <h2>On the air</h2>
+    <div id="now" class="now">channel clear</div>
+    <div class="meta">queued: <span id="queue">&mdash;</span></div>
+    <div class="meta" id="counters"></div>
+    <div class="meta" id="state-line"></div>
+    <p id="notice" hidden></p>
+  </section>
+
+  <section class="panel">
+    <h2>Controls</h2>
+    <div class="row">
+      <button id="enable" class="primary">🔈 Enable audio</button>
+      <button id="master">🔊 Radio on</button>
+      <label class="meta" for="volume">volume</label>
+      <input id="volume" type="range" min="0" max="1" step="0.05">
+      <span class="meta" id="volume-value">90%</span>
+      <span class="pill" id="engine">&hellip;</span>
+      <span class="pill" id="agents">&hellip;</span>
+    </div>
+    <div class="row" id="mutes" style="margin-top:12px"></div>
+    <div class="row" style="margin-top:12px">
+      <button id="demo">▶ Play synthetic scenario</button>
+      <button id="replay">⟲ Replay the scripted race</button>
+    </div>
+    <div class="row" id="ptt-row" style="margin-top:12px">
+      <button id="ptt">🎙 Hold to talk</button>
+      <span class="meta" id="ptt-text"></span>
+    </div>
+    <p class="meta" style="margin-top:12px">
+      Browsers will not make a sound until you interact with the page &mdash; press
+      <em>Enable audio</em> once. Mutes and volume live in this page&rsquo;s URL, so the
+      link is shareable and nothing is written to storage.
+    </p>
+  </section>
+
+  <section class="panel">
+    <h2>Radio log</h2>
+    <div id="log"></div>
+  </section>
+</main>
+
+<script type="module" src="/js/pitwall-radio.js"></script>
+</body>
+</html>

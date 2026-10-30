@@ -2,14 +2,15 @@
 """Publish the web frontend to docs/ for GitHub Pages.
 
 The GitHub Pages showcase at https://kruslim.github.io/racing-telemetry-visualiser/
-is the *real* analysis app (frontend/), served statically. With no backend to
+is the *real* analysis app (frontend/app/), served statically. With no backend to
 reach, api.js falls back to the offline simulation (sim.js + lapdata.js) and the
 chat pane coaches from the deterministic findings — so every worksheet, the track
 map and the AI race engineer all work as a self-contained live demo.
 
-frontend/ is the single source of truth. This copies its static assets into
+frontend/app/ is the single source of truth. This copies its static assets into
 docs/ (leaving the Markdown docs and .nojekyll in place). Run it after changing
-anything under frontend/:
+anything under frontend/app/. The live pitwall UI in the rest of frontend/ needs
+the backend, so it is not published:
 
     python scripts/build_pages.py
 """
@@ -19,7 +20,7 @@ import shutil
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-SRC = ROOT / "frontend"
+SRC = ROOT / "frontend" / "app"
 DST = ROOT / "docs"
 
 # Static assets that make up the app. Keep docs/*.md and docs/.nojekyll untouched.
@@ -28,7 +29,7 @@ SUFFIXES = {".html", ".css", ".js"}
 
 def main() -> int:
     if not SRC.is_dir():
-        raise SystemExit(f"frontend/ not found at {SRC}")
+        raise SystemExit(f"frontend/app/ not found at {SRC}")
     DST.mkdir(exist_ok=True)
     (DST / ".nojekyll").touch()  # ensure Pages serves files starting with '_' etc.
 
@@ -38,7 +39,7 @@ def main() -> int:
             shutil.copy2(path, DST / path.name)
             copied.append(path.name)
 
-    print(f"Published {len(copied)} files from frontend/ -> docs/:")
+    print(f"Published {len(copied)} files from frontend/app/ -> docs/:")
     for name in copied:
         print(f"  {name}")
     print("\ndocs/index.html is now the live analysis app (offline demo).")

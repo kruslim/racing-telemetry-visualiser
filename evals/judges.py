@@ -2,7 +2,7 @@
 
 Factuality is handled deterministically in :mod:`evals.checks`. This judge only rates
 clarity, actionability and grounding — and it is told the findings so it can sanity-check
-grounding too. Needs the ``ai`` extra and ANTHROPIC_API_KEY.
+grounding too. Needs the ``ai`` extra and the LLM key (see ``rtv.llm``).
 """
 
 from __future__ import annotations

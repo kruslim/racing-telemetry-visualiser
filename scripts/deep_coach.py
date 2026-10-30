@@ -7,7 +7,7 @@ Examples:
     # Just the deterministic findings (no API key needed):
     python scripts/deep_coach.py <session_id> <main_lap> <ref_lap> --findings-only
 
-    # Full multi-agent coaching (needs ANTHROPIC_API_KEY):
+    # Full multi-agent coaching (needs the LLM key, KIMI_CODE_API_KEY by default):
     python scripts/deep_coach.py <session_id> <main_lap> <ref_lap>
 """
 
@@ -81,8 +81,10 @@ async def _run(args) -> int:
     _print_findings(findings)
     if args.findings_only:
         return 0
-    if not os.environ.get("ANTHROPIC_API_KEY"):
-        print("\nANTHROPIC_API_KEY not set — re-run with --findings-only, or export the key.")
+    from rtv import llm
+
+    if not llm.is_configured():
+        print(f"\n{llm.key_env_var()} not set — re-run with --findings-only, or export the key.")
         return 1
 
     from rtv.coaching.orchestrator import CoachOrchestrator

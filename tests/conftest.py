@@ -1,12 +1,17 @@
-"""Shared test scaffolding: a scripted chat model so the coach-graph suite is hermetic.
+"""Shared test guarantees and scaffolding.
 
-The graph coach, its eval runner, and (later) the review gate all take a chat model. Driving
-them with a scripted model — no network, no key, no cost — is what lets the regression suite run
-in CI deterministically. The determinism lives in the *fixtures* (the data); the model is
-scripted so the *behavior* under test is fixed too.
+The suite is required to run with no iRacing install, no network and no API key.
+The first two are structural; the third is not, because a developer who has a
+``KIMI_CODE_API_KEY`` or ``ANTHROPIC_API_KEY`` exported for the coach would
+otherwise have the pitwall agent layer wire itself into every app fixture. So
+every LLM credential is removed for the whole session: an offline suite that only
+passes on a machine without a key is not an offline suite.
 
-``ScriptedModel`` satisfies the only interface the graph needs:
-``bind_tools(defs).invoke(messages) -> AIMessage``.
+It also provides a scripted chat model so the coach-graph suite is hermetic. The
+graph coach, its eval runner, and (later) the review gate all take a chat model.
+Driving them with a scripted model — no network, no key, no cost — is what lets the
+regression suite run in CI deterministically. ``ScriptedModel`` satisfies the only
+interface the graph needs: ``bind_tools(defs).invoke(messages) -> AIMessage``.
 """
 
 from __future__ import annotations
@@ -15,15 +20,31 @@ from itertools import count
 
 import pytest
 
-pytest.importorskip("langchain_core")
+#: Every env var any LLM backend reads a credential from (see ``rtv.llm``).
+_LLM_KEY_ENVS = (
+    "ANTHROPIC_API_KEY",
+    "ANTHROPIC_AUTH_TOKEN",
+    "KIMI_CODE_API_KEY",
+    "KIMI_API_KEY",
+)
 
-from langchain_core.messages import AIMessage  # noqa: E402
+
+@pytest.fixture(autouse=True, scope="session")
+def _no_api_key() -> None:
+    monkeypatch = pytest.MonkeyPatch()
+    for name in _LLM_KEY_ENVS:
+        monkeypatch.delenv(name, raising=False)
+    yield
+    monkeypatch.undo()
+
 
 _ids = count(1)
 
 
-def ai_call(tool: str, args: dict) -> AIMessage:
+def ai_call(tool: str, args: dict):
     """An assistant turn requesting exactly one tool call."""
+    from langchain_core.messages import AIMessage
+
     return AIMessage(
         content="", tool_calls=[{"name": tool, "args": args, "id": f"call_{next(_ids)}"}]
     )
@@ -34,7 +55,7 @@ class _Bound:
         self.parent = parent
         self.tool_names = tool_names
 
-    def invoke(self, messages: list) -> AIMessage:
+    def invoke(self, messages: list):
         self.parent.invocations.append({"tools": self.tool_names, "messages": list(messages)})
         assert self.parent.responses, "script exhausted: graph asked for more turns than scripted"
         return self.parent.responses.pop(0)
@@ -52,6 +73,7 @@ class ScriptedModel:
 @pytest.fixture
 def ai():
     """The single-tool-call assistant-turn factory."""
+    pytest.importorskip("langchain_core")
     return ai_call
 
 

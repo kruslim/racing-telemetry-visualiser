@@ -84,7 +84,7 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setenv("RTV_DATA_DIR", str(tmp_path / "data"))
     monkeypatch.setenv("RTV_AUTOSTART_LIVE", "false")
     monkeypatch.setenv("RTV_SEED_DEMO", "true")           # seed the demo session
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")   # pass the 503 guard
+    monkeypatch.setenv("KIMI_CODE_API_KEY", "test-key")   # pass the 503 guard
     from rtv.config import get_settings
 
     get_settings.cache_clear()
@@ -100,7 +100,8 @@ def client(tmp_path, monkeypatch):
 def test_chat_503_without_key(tmp_path, monkeypatch):
     monkeypatch.setenv("RTV_DATA_DIR", str(tmp_path / "data"))
     monkeypatch.setenv("RTV_SEED_DEMO", "false")
-    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("KIMI_CODE_API_KEY", raising=False)
+    monkeypatch.delenv("KIMI_API_KEY", raising=False)
     from rtv.config import get_settings
 
     get_settings.cache_clear()

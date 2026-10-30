@@ -1,0 +1,154 @@
+/* Pitwall radio. Dark, dense, readable in peripheral vision. No build step. */
+:root {
+  --bg: #0e1116;
+  --panel: #161b22;
+  --panel-2: #1c232c;
+  --line: #262d38;
+  --ink: #e6edf3;
+  --muted: #8b949e;
+  --accent: #2f81f7;
+  --critical: #f85149;
+  --advisory: #d29922;
+  --info: #3fb950;
+  --strategist: #a371f7;
+  --engineer: #2f81f7;
+  --spotter: #f85149;
+  --coach: #3fb950;
+  --mono: "Cascadia Code", ui-monospace, Consolas, monospace;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 15px/1.5 "Segoe UI", system-ui, sans-serif;
+}
+
+header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 22px;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
+}
+
+header h1 { font-size: 17px; margin: 0; letter-spacing: -0.01em; }
+header .sub { color: var(--muted); font-family: var(--mono); font-size: 12px; }
+header nav { margin-left: auto; display: flex; gap: 14px; font-size: 13px; }
+header nav a { color: var(--muted); text-decoration: none; }
+header nav a:hover { color: var(--ink); }
+
+main { max-width: 1000px; margin: 0 auto; padding: 22px; display: grid; gap: 18px; }
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 16px 18px;
+}
+
+.panel h2 {
+  margin: 0 0 12px;
+  font-size: 12px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+
+button {
+  background: var(--panel-2);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 8px 13px;
+  font: inherit;
+  font-size: 13.5px;
+  cursor: pointer;
+}
+button:hover { border-color: var(--accent); }
+button:disabled { opacity: 0.45; cursor: default; }
+button.off { color: var(--muted); border-style: dashed; }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+button.listening { background: var(--critical); border-color: var(--critical); color: #fff; }
+
+input[type="range"] { width: 170px; accent-color: var(--accent); }
+
+.pill {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  color: var(--muted);
+}
+.pill.connected { color: var(--info); border-color: var(--info); }
+.pill.offline { color: var(--critical); border-color: var(--critical); }
+
+.now {
+  font-size: 18px;
+  min-height: 27px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border-left: 3px solid var(--line);
+  background: var(--panel-2);
+}
+.now.critical { border-left-color: var(--critical); }
+.now.advisory { border-left-color: var(--advisory); }
+.now.info { border-left-color: var(--info); }
+
+.meta { color: var(--muted); font-family: var(--mono); font-size: 12px; margin-top: 8px; }
+
+#notice {
+  margin-top: 10px;
+  color: var(--advisory);
+  font-size: 13px;
+}
+
+#log { display: grid; gap: 8px; max-height: 60vh; overflow-y: auto; }
+
+.msg {
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--line);
+  border-radius: 8px;
+  padding: 9px 12px;
+  background: var(--panel-2);
+}
+.msg.critical { border-left-color: var(--critical); }
+.msg.advisory { border-left-color: var(--advisory); }
+.msg.info { border-left-color: var(--info); }
+.msg.driver { border-left-style: dashed; }
+
+.msg-head {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--muted);
+}
+.msg .agent { font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; }
+.agent-strategist { color: var(--strategist); }
+.agent-vehicle_engineer { color: var(--engineer); }
+.agent-spotter { color: var(--spotter); }
+.agent-coach { color: var(--coach); }
+.msg .action { margin-left: auto; }
+.msg .spoken { margin-top: 4px; }
+.msg .detail { color: var(--muted); font-size: 13px; margin-top: 2px; }
+
+/* --- self-test page --- */
+table.results { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+table.results td { padding: 7px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+table.results td.verdict { width: 62px; font-family: var(--mono); font-weight: 700; }
+tr.pass td.verdict { color: var(--info); }
+tr.fail td.verdict { color: var(--critical); }
+tr.fail { background: rgba(248, 81, 73, 0.07); }
+.summary { font-size: 20px; font-weight: 700; }
+.summary.pass { color: var(--info); }
+.summary.fail { color: var(--critical); }
+.err { color: var(--critical); font-family: var(--mono); font-size: 12px; }
