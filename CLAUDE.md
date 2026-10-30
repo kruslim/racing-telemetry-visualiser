@@ -16,7 +16,7 @@ In Git Bash write `.venv/Scripts/python.exe`, in PowerShell `.venv\Scripts\pytho
 - Install: `uv venv .venv --python 3.12`, then
   `uv pip install --python .venv/Scripts/python.exe -r requirements-dev.txt -e ".[mcp]"`
   (plain `python -m pip install ...` inside the venv works the same). The `mcp` extra
-  currently needs `"mcp<2"`: mcp 2.x renamed FastMCP, so `mcp_server/` and
+  is pinned to `mcp<2`: mcp 2.x renamed FastMCP, so `mcp_server/` and
   `tests/test_mcp_server.py` break on it until they are migrated.
 - Test: `.venv/Scripts/python.exe -m pytest` (offline, no iRacing, no API key).
 - Lint: `.venv/Scripts/python.exe -m ruff check .`
@@ -66,7 +66,8 @@ files that were already formatted and sorts imports in every edited file.
   read it, print a key or commit it. `ANTHROPIC_API_KEY` enables the chat and Layer 3.
 - Runtime data lands in `./data/` (gitignored). The demo session is seeded when the
   store is empty (`RTV_SEED_DEMO=true`).
-- `.mcp.json` points at an old checkout path (`D:/Personal Projects/...`).
+- `.mcp.json` runs `${RTV_PYTHON:-python}`; set `RTV_PYTHON=.venv/Scripts/python.exe`
+  since `python` is not on PATH here.
 
 ## Costs: ask first
 
