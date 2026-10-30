@@ -52,6 +52,25 @@ def lap_findings(
 
 
 @router.get(
+    "/coaching/delta",
+    summary="Elapsed-time delta (main - ref) along lap distance, for plotting",
+)
+def lap_delta(
+    session_id: str = Query(..., description="Session to analyse."),
+    main_lap: int = Query(..., ge=0),
+    ref_lap: int = Query(..., ge=0),
+    points: int = Query(500, ge=20, le=1500),
+    coaching: CoachingService = Depends(get_coaching),
+) -> dict:
+    try:
+        return coaching.delta_trace(session_id, main_lap, ref_lap, points=points)
+    except KeyError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(404, str(exc)) from exc
+
+
+@router.get(
     "/coaching/agents",
     summary="The deterministic analysts behind lap-findings, in roster order",
 )

@@ -2603,3 +2603,38 @@ snapshots in 6.5 MB, the log reads in about 0.2 s, and a state lookup takes abou
 0.15 s. This covers item 3 of `prompts/07` (the journal) with JSON lines rather
 than DuckDB: append-only on the hot path, no second writer on the database the
 poller is using, and a crash loses at most one flush interval (1 s).
+
+## Post-race review (`/review/`)
+
+`frontend/review/index.html` + `frontend/js/review/` replace the old `/app/` analysis
+app (deleted, with its `docs/` Pages copy, `scripts/build_pages.py` and the
+`publish-pages` skill; the Pages showcase returns later as an export of a real
+recorded session). It reads only recorded data and never re-runs the agents.
+
+- **Replay**: one journal run on the shared `Timeline` in scrub mode (lanes: laps,
+  flags, race events, one per agent, radio). Each seek rebuilds the agent layer with
+  `activity-model.js` `reduce(records, t)` and feeds the live view's own `FlowGraph`
+  and `RunsPanel`; the car panel reads `/pitwall-log/state?t=`. Playback (1-60x)
+  pulses the graph edges of the records it passes.
+- **Race summary**: `GET /api/v1/sessions/{id}/summary?run=` (`rtv.racestate.summary`),
+  deterministic from the lap table and the journal: result (first classified and final
+  position), best / median / spread of clean laps, stints split at in-laps, pit stops,
+  fuel used and added (tank drops and rises of at least 0.5 L between snapshots),
+  incidents, event counts, radio calls, agent runs and model calls. A figure is null
+  when the session did not record it, and `notes` says why.
+- **Lap analysis**: `/compare` traces (speed, throttle, brake, steering, gear) for any
+  two laps, with the elapsed-time delta from the new `GET /api/v1/coaching/delta`
+  (`CoachingService.delta_trace`, the same curve `lap_findings` uses, kept out of
+  `LapFindings` so it never reaches an LLM), and a track map with every detector event
+  that carries `lap_dist_pct` (off-tracks, incidents, lock-ups) pinned on it.
+- **Coaching findings**: `/coaching/lap-findings` rendered as-is (chief summary, corners
+  with each analyst's diagnostics, sectors, driver-input KPIs); clicking a corner
+  highlights its entry-exit window on the traces and on the map.
+- **Agent audit**: one row per agent run from the journal (trigger, model, calls,
+  tools, validator verdict, outcome, latency, what aired), filterable and sortable.
+- "Record a run from the telemetry" starts `POST /replay/start` for the session (max
+  speed while the agents are off, which is free; with agents mounted it asks first,
+  because that calls Kimi). "Import .ibt" uses `POST /import/upload`.
+- URL state: `?session=&run=&main=&ref=&t=` (`lap=` is accepted as `main=`).
+- Pure grouping in `review-model.js`, tested by `node frontend/js/run-review-tests.mjs`
+  (run by `tests/test_review_frontend.py`).

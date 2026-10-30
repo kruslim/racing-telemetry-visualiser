@@ -1,10 +1,9 @@
 # Racing Telemetry Visualiser
 
-**A full-stack iRacing telemetry platform: real-time ingest → columnar storage → a MoTeC-i2-style web analysis UI → a tiered AI race engineer → a live multi-agent pitwall with a voice.**
+**A full-stack iRacing telemetry platform: real-time ingest → columnar storage → a tiered AI race engineer → a live multi-agent pitwall with a voice → a post-race review that replays what the agents did.**
 
-> The UI is being rebuilt (a live agent-activity view and a post-race review). The
-> GitHub Pages showcase still runs the old analysis app on browser-simulated data and
-> will be replaced; the backend itself serves real data only.
+> The app serves real data only. The old GitHub Pages showcase ran on simulated data and
+> has been taken down; it will come back as an export of a real recorded session.
 
 Racing Telemetry Visualiser (RTV) captures *every* channel iRacing exposes — from
 the live 60 Hz shared-memory feed or from recorded `.ibt` files — stores it
@@ -66,16 +65,19 @@ prunes to one or two small files instead of scanning a session.
 at the poll rate). Slow clients coalesce to the newest sample instead of building
 an ever-growing backlog — no unbounded buffering, no lag death-spiral.
 
-### 5. A MoTeC-i2-style web frontend — with an AI chat engineer
-A vanilla-JS canvas UI (no build step, in `frontend/app/`, **served by FastAPI at
-`/app/`**) reads the REST API and renders: multi-channel time/distance worksheets,
-**GPS track maps**, histograms, suspension and track-report worksheets, and a
-**Coach** worksheet. The layout puts an **AI race-engineer chat on the left and
-the graphs on the right**: ask a question, the LLM answers grounded on the
-telemetry, and the corners it flags are **annotated directly onto the graph**
-(click a flag to jump the cursor there). The store starts empty: import an `.ibt`
-(`POST /import` with a path, or `POST /import/upload` with the file's bytes) or
-capture live, and every endpoint serves that real session.
+### 5. A post-race review that replays what the pitwall did
+Every session the race-state engine consumes, live or replayed, is written to a
+**race journal** (`data/sessions/<id>/runs/*.jsonl`): every race event, every agent
+run with its model and tool calls and validator verdict, every radio call, and the
+race state once a second. The review page (vanilla JS, no build step, **served at
+`/review/`**) plays that journal back on one timeline with the live view's own flow
+graph and agent-run panels, so you can scrub to any moment and see what the pitwall
+knew and said. Beside it: a deterministic race summary (result, stints, fuel, events,
+radio), lap-vs-lap traces with a delta-time curve and a track map with every
+off-track and incident pinned on it, the Layer-1 coaching findings per corner, and an
+audit table of every agent call. The store starts empty: import an `.ibt` (from the
+review page, `POST /import` with a path, or `POST /import/upload` with the bytes) or
+capture live.
 
 ### 6. Layered AI coaching
 The centrepiece. See below.
@@ -259,14 +261,14 @@ src/rtv/
   llm.py     the Kimi Code client (endpoint, key, models), shared by every LLM layer
   services.py  wiring; main.py  app factory
 mcp_server/  Layer-2 MCP server (telemetry_coach.py)
-frontend/    vanilla-JS live pitwall UI at / (index.html + js/pitwall/), radio page,
-             two self-test pages; frontend/app/ is the MoTeC-i2-style analysis app
-             served at /app/ and published to docs/ -- no build step, no frameworks
+frontend/    vanilla JS, no build step: the live view at / (index.html, js/live/,
+             js/pitwall/), the post-race review at /review/ (js/review/), shared
+             timeline / activity model / flow graph (js/shared/), radio page,
+             two self-test pages
 evals/       ground-truth checks, LLM judge, hermetic fixtures, trace, seed cases,
              golden laps, runner
 docs/        VARIABLES.md (catalog reference), COACHING.md (coaching deep-dive),
-             PITWALL.md (v2 pitwall), director_scenario.example.json, and the
-             Pages build of frontend/app/
+             PITWALL.md (v2 pitwall), director_scenario.example.json
 ```
 
 ---
@@ -292,7 +294,8 @@ pytest             # full suite runs offline — no iRacing, no API key
 On any OS: `uvicorn rtv.main:app --app-dir src` then open **http://127.0.0.1:8000/**.
 The store starts empty; import an `.ibt` or capture live. The chat and the agents
 need `KIMI_CODE_API_KEY` (a Kimi Code key) in the environment; everything else
-(graphs, track map, deterministic findings, race state, replay) works without one.
+(review, lap traces, track map, deterministic findings, race state, replay) works
+without one.
 
 > `pyarrow`/`pyirsdk` wheels may lag the newest Python. If install fails on 3.14,
 > create the venv with Python 3.12: `py -3.12 -m venv .venv`.

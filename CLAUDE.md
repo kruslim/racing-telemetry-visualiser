@@ -2,7 +2,7 @@
 
 RTV ingests iRacing telemetry (live 60 Hz shared memory or `.ibt` files), stores it in
 DuckDB metadata tables plus per-lap Parquet, and serves it over a FastAPI REST API and
-`/ws/live` to a vanilla-JS MoTeC-i2-style frontend. On top sits a tiered AI coach:
+`/ws/live` to a vanilla-JS frontend (live view at `/`, post-race review at `/review/`). On top sits a tiered AI coach:
 Layer 1 deterministic lap findings (the ground truth), Layer 2 an MCP server, Layer 3a
 a multi-agent orchestrator, Layer 3b a LangGraph coach with grounded refusal and
 in-loop citation checks, plus a hermetic eval harness. v2 adds a live pitwall: a
@@ -24,7 +24,7 @@ In Git Bash write `.venv/Scripts/python.exe`, in PowerShell `.venv\Scripts\pytho
 - Test: `.venv/Scripts/python.exe -m pytest` (offline, no iRacing, no API key).
 - Lint: `.venv/Scripts/python.exe -m ruff check .`
 - Run: `.\run.ps1` (or `-Reload`), then http://127.0.0.1:8000/ for the live pitwall and
-  http://127.0.0.1:8000/app/ for the analysis app (API docs at `/docs`).
+  http://127.0.0.1:8000/review/ for the post-race review and lap analysis (API docs at `/docs`).
 - Real-data fixture (162 MB Spa race .ibt, gitignored):
   `.venv/Scripts/python.exe scripts/fetch_fixtures.py`; `tests/test_real_ibt.py` skips
   without it, and CI fetches and caches it in a separate job.
@@ -32,7 +32,6 @@ In Git Bash write `.venv/Scripts/python.exe`, in PowerShell `.venv\Scripts\pytho
 - Offline HTTP smoke test: `.venv/Scripts/python.exe scripts/smoke_offline.py`
 - CI (`.github/workflows/ci.yml`) runs ruff, pytest and the smoke test on Python 3.11-3.13
   for every push to main and every PR, with no API key.
-- Publish the Pages showcase: `.venv/Scripts/python.exe scripts/build_pages.py`
 
 `ruff format` and `black` are configured but most files are not formatted with them.
 Don't reformat whole files you didn't otherwise change; the edit hook formats only
@@ -47,10 +46,10 @@ files that were already formatted and sorts imports in every edited file.
   `racestate/` (v2 race-state engine, detectors, event bus, replay), `pitwall/` (v2
   agents, provider, radio, TTS), `director/` (interfaces only), `llm.py` (the Kimi
   Code client), `config.py`, `services.py`, `main.py`.
-- `frontend/` served by FastAPI at `/`: the live pitwall (`index.html`, `css/`, `js/`),
-  `radio.html` and two self-test pages. `frontend/app/` is the analysis app, served at
-  `/app/`; `docs/*.html|css|js` are a copy of `frontend/app/` for GitHub Pages and
-  `docs/*.md` are hand-written docs.
+- `frontend/` served by FastAPI at `/`: the live view (`index.html`, `css/`, `js/`), the
+  post-race review at `/review/` (`review/index.html`, `js/review/`), `radio.html` and
+  two self-test pages; `js/shared/` is used by both views. `docs/*.md` are hand-written
+  docs (nothing is published to GitHub Pages until a real session export exists).
 - `mcp_server/telemetry_coach.py` Layer 2 MCP server over the REST API.
 - `evals/` checks shared with the in-loop validator, fixtures, cases, runner, LLM judge,
   `run.py` (the live, paid eval), and the test-only generated data
@@ -75,8 +74,9 @@ files that were already formatted and sorts imports in every edited file.
   checked against the real `.ibt` fixture.
 - Coaching heuristics exist once, in `src/rtv/coaching/features.py`; UIs render
   `/coaching/lap-findings` and never recompute it.
-- Edit `frontend/app/`, never `docs/` copies; after a change there run `build_pages.py`
-  and commit both.
+- Every session the engine consumes is written to a race journal
+  (`data/sessions/<id>/runs/*.jsonl`, `rtv.store.journal`); the review replays it and
+  never re-runs the agents.
 - Pitwall agents never assert a number that isn't traceable to deterministic data; the
   race-state engine has no LLM in it. `docs/PITWALL.md` records the v2 interfaces and
   the pending build stages (`prompts/07-10`; done ones are in `prompts/done/`).

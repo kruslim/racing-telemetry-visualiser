@@ -14,6 +14,8 @@ reads this; nothing recomputes it elsewhere.
 
 from __future__ import annotations
 
+from typing import Any
+
 import numpy as np
 
 from rtv.coaching.models import (
@@ -149,6 +151,46 @@ class CoachingService:
             kpis=kpis,
             agent_stats=_agent_stats(corners, sectors),
         )
+
+    def delta_trace(
+        self, session_id: str, main_lap: int, ref_lap: int, *, points: int = 500
+    ) -> dict[str, Any]:
+        """The (main - ref) elapsed-time curve the findings are built on, for plotting.
+
+        Kept out of :class:`LapFindings` on purpose: the findings go to the LLM
+        layers, and a few hundred samples of curve would be tokens with no finding
+        in them. Same channels, same integration, same lap-time scaling.
+        """
+        laps = {row["lap"]: row for row in self._repo.get_laps(session_id)}
+        for lap in (main_lap, ref_lap):
+            if lap not in laps:
+                raise KeyError(f"Session {session_id} has no lap {lap}")
+        series: dict[str, np.ndarray] = {}
+        for key in ("speed", "dist"):
+            cmp = self._repo.compare(
+                session_id, _CHANNELS[key], [main_lap, ref_lap], grid=self._grid
+            )
+            got = cmp["laps"]
+            if str(main_lap) not in got or str(ref_lap) not in got:
+                raise FileNotFoundError(
+                    f"No {_CHANNELS[key]} for laps {main_lap}/{ref_lap} in session {session_id}"
+                )
+            series[f"{key}_main"] = _fill(got[str(main_lap)])
+            series[f"{key}_ref"] = _fill(got[str(ref_lap)])
+        dist = series["dist_main"]
+        delta = self._delta_curve(
+            series["speed_main"], series["speed_ref"], dist,
+            laps[main_lap].get("lap_time"), laps[ref_lap].get("lap_time"),
+        )
+        idx = np.unique(np.linspace(0, dist.size - 1, min(points, dist.size)).astype(int))
+        return {
+            "session_id": session_id,
+            "main_lap": main_lap,
+            "ref_lap": ref_lap,
+            "lap_length_m": float(np.nanmax(dist)) if dist.size else 0.0,
+            "distance_m": [round(float(v), 2) for v in dist[idx]],
+            "delta_s": [round(float(v), 4) for v in delta[idx]],
+        }
 
     # ------------------------------------------------------------------ fetch
     def _fetch_channels(

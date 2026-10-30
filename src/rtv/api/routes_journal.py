@@ -12,6 +12,7 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from rtv.api.deps import get_services
+from rtv.racestate.summary import race_summary
 from rtv.services import AppServices
 from rtv.store import journal
 
@@ -108,3 +109,26 @@ def get_state(
     if rec is None:
         raise HTTPException(404, f"No state snapshots in run {run_id}")
     return {"session_id": session_id, "run_id": run_id, "record": rec}
+
+
+@router.get(
+    "/sessions/{session_id}/summary",
+    summary="Deterministic post-race summary: laps, stints, fuel, events, radio, agents",
+)
+def get_summary(
+    session_id: str,
+    run: str | None = None,
+    services: AppServices = Depends(get_services),
+) -> dict:
+    if services.repo.get_session(session_id) is None:
+        raise HTTPException(404, f"Unknown session {session_id}")
+    laps = services.repo.get_laps(session_id)
+    run_id: str | None = None
+    records = None
+    try:
+        run_id, path = _run_file(services, session_id, run)
+        records = journal.iter_records(path)
+    except HTTPException as exc:
+        if run is not None or exc.status_code != 404:
+            raise
+    return {"session_id": session_id, "run_id": run_id, **race_summary(laps, records)}
