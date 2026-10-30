@@ -7,6 +7,7 @@ trace the live view draws without a key or the network.
 from __future__ import annotations
 
 import pytest
+from evals.synthetic_race import ScenarioSpec, replay_scenario
 
 from rtv.pitwall.activity import KINDS, ActivityLog, summarize
 from rtv.pitwall.agents.strategist import STRATEGIST, PitCall
@@ -14,9 +15,8 @@ from rtv.pitwall.framework import RadioPriority
 from rtv.pitwall.orchestrator import PitwallOrchestrator
 from rtv.pitwall.provider import ScriptedProvider, tool_use_turn
 from rtv.pitwall.radio import RadioFeed
-from rtv.racestate import RaceStateEngine, replay_scenario
+from rtv.racestate import RaceStateEngine
 from rtv.racestate.models import EventType, RaceEvent, Severity
-from rtv.racestate.scenario import ScenarioSpec
 
 
 @pytest.fixture(scope="module")
