@@ -19,6 +19,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 import pytest
+from evals.synthetic_race import ScenarioSpec, replay_scenario
 from pydantic import ValidationError
 
 from rtv.director import (
@@ -40,9 +41,8 @@ from rtv.pitwall.framework import RadioPriority
 from rtv.pitwall.orchestrator import PitwallOrchestrator
 from rtv.pitwall.provider import ScriptedProvider
 from rtv.pitwall.radio import RadioFeed
-from rtv.racestate import RaceStateEngine, replay_scenario
+from rtv.racestate import RaceStateEngine
 from rtv.racestate.models import EventType, RaceEvent, RaceState, Severity
-from rtv.racestate.scenario import ScenarioSpec
 
 EXAMPLE = Path(__file__).resolve().parents[1] / "docs" / "director_scenario.example.json"
 

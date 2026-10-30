@@ -30,6 +30,11 @@ def _make_client(tmp_path, monkeypatch, *, pitwall: bool = True):
 @pytest.fixture()
 def client(tmp_path, monkeypatch):
     with _make_client(tmp_path, monkeypatch) as c:
+        # The app only replays stored sessions, so the scripted race goes into
+        # the store first, exactly as an import would put it there.
+        from evals.synthetic_race import seed_scenario_session
+
+        seed_scenario_session(c.app.state.services.writer, "scenario")
         yield c
 
 
@@ -102,6 +107,11 @@ def test_replay_stop_halts_a_running_replay(client):
     assert body["running"] is False
 
 
+def test_replay_requires_a_session_id(client):
+    # There is no built-in synthetic race to fall back on any more.
+    assert client.post("/api/v1/replay/start", json={}).status_code == 422
+
+
 def test_replay_of_an_unknown_session_is_404(client):
     r = client.post("/api/v1/replay/start", json={"session_id": "nope", "speed": 0})
     assert r.status_code == 404
@@ -109,7 +119,7 @@ def test_replay_of_an_unknown_session_is_404(client):
 
 def test_replay_from_the_store_reproduces_the_scenario(client):
     """The engine cannot tell a Parquet round-trip from the in-memory script."""
-    from rtv.racestate.scenario import seed_scenario_session
+    from evals.synthetic_race import seed_scenario_session
 
     seed_scenario_session(client.app.state.services.writer, "stored-scenario")
 
@@ -193,3 +203,67 @@ def test_pitwall_routes_absent_when_disabled(tmp_path, monkeypatch):
         # v1 endpoints are untouched.
         assert c.get("/api/v1/health").status_code == 200
         assert c.get("/api/v1/sessions").status_code == 200
+
+
+# --------------------------------------------------------------------------
+# a replay is indistinguishable from live on /ws/live
+# --------------------------------------------------------------------------
+def test_replay_streams_over_ws_live_like_a_live_session(client):
+    with client.websocket_connect("/ws/live") as ws:
+        ws.send_json({"op": "subscribe", "channels": ["Speed", "Lap"], "rate_hz": 60})
+        client.post("/api/v1/replay/start", json={"session_id": "scenario", "speed": 0})
+        seen: dict[str, dict] = {}
+        for _ in range(2000):
+            msg = ws.receive_json()
+            seen.setdefault(msg["type"], msg)
+            if msg["type"] == "state" and msg["connection"] == "replay":
+                seen["replay_state"] = msg
+            if {"replay_state", "catalog", "data"} <= seen.keys():
+                break
+    client.post("/api/v1/replay/stop")
+
+    assert seen["replay_state"]["session_id"] == "scenario"
+    assert "Speed" in {v["name"] for v in seen["catalog"]["variables"]}
+    assert "Speed" in seen["data"]["v"]
+
+
+def test_hub_goes_back_to_disconnected_when_a_replay_ends(client):
+    client.post("/api/v1/replay/start", json={"session_id": "scenario", "speed": 0})
+    assert _await_replay(client)["finished"] is True
+    for _ in range(100):  # the lifecycle sink runs just after the status flips
+        state, session_id, _seq = client.app.state.services.hub.state()
+        if state.value == "disconnected":
+            break
+        time.sleep(0.01)
+    assert state.value == "disconnected" and session_id is None
+
+
+# --------------------------------------------------------------------------
+# .ibt upload
+# --------------------------------------------------------------------------
+def test_upload_rejects_a_non_ibt_file(client):
+    r = client.post("/api/v1/import/upload", params={"filename": "lap.csv"}, content=b"x")
+    assert r.status_code == 400
+
+
+def test_upload_rejects_an_empty_body(client):
+    r = client.post("/api/v1/import/upload", params={"filename": "lap.ibt"}, content=b"")
+    assert r.status_code == 400
+
+
+def test_upload_stores_the_file_and_starts_an_import_job(client):
+    r = client.post(
+        "/api/v1/import/upload", params={"filename": "spa race.ibt"}, content=b"not-ibt"
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["bytes"] == 7
+    assert body["path"].endswith("_spa race.ibt")
+    # The bytes are not a real .ibt, so the job ends in an error, not a session.
+    job = {}
+    for _ in range(200):
+        job = client.get(f"/api/v1/import/{body['job_id']}").json()
+        if job["status"] in ("complete", "error"):
+            break
+        time.sleep(0.02)
+    assert job["status"] == "error"

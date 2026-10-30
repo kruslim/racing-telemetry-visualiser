@@ -1,13 +1,15 @@
-"""Deterministic telemetry feature extraction — the Python port of ``coach.js``.
+"""Deterministic telemetry feature extraction: the single source of coaching truth.
 
 Turns raw per-lap telemetry into ~20 corner-level findings. The heavy lifting
 (resampling each channel onto a uniform lap-distance grid) is delegated to the
 existing :meth:`rtv.store.repository.Repository.compare`, which already aligns laps
 on ``lap_dist_pct``. Everything here is plain NumPy on those aligned arrays — no LLM.
 
-Faithful to coach.js ``build()`` (lines 36-153): corner detection by speed minima,
-an elapsed-time delta curve scaled to the API lap time, and the eight diagnostics
-(speed, brake, lock-up, throttle, gear, grip, consistency, sector).
+Corner detection by speed minima, an elapsed-time delta curve scaled to the API lap
+time, the eight diagnostics (speed, brake, lock-up, throttle, gear, grip,
+consistency, sector), whole-lap driver KPIs and per-analyst stats. Every coaching
+surface (UI, chat coach, MCP server, orchestrator, evals, the live coach agent)
+reads this; nothing recomputes it elsewhere.
 """
 
 from __future__ import annotations
@@ -15,10 +17,13 @@ from __future__ import annotations
 import numpy as np
 
 from rtv.coaching.models import (
+    AGENT_ROSTER,
     AGENTS,
+    AgentStat,
     ChiefSummary,
     CornerFinding,
     Diagnostic,
+    DriverKPIs,
     LapFindings,
     Priority,
     SectorDelta,
@@ -36,6 +41,7 @@ _CHANNELS = {
     "gear": "Gear",
     "latG": "LatAccel",
     "dist": "LapDist",
+    "steer": "SteeringWheelAngle",
 }
 # speed and dist are required; the rest degrade gracefully when absent.
 _REQUIRED = ("speed", "dist")
@@ -43,6 +49,10 @@ _REQUIRED = ("speed", "dist")
 _GRID = 1500  # resample buckets per lap (~2-3 m on a typical road course)
 _SECTORS = (1.0 / 3.0, 2.0 / 3.0)  # equal-distance sector boundaries (fractions)
 _G = 9.80665  # m/s^2 per g
+# Driver-KPI thresholds. Steering is the wheel angle in radians, as iRacing logs it.
+_TURNING_RAD = 0.25  # ~14 deg of wheel: "turning" for trail-braking
+_STEER_SIGN_RAD = 0.08  # ~5 deg: below this the wheel counts as centred
+_PEDAL_ON = 0.05  # pedal fraction that counts as applied
 
 
 def _clamp(v: float, lo: float, hi: float) -> float:
@@ -119,6 +129,8 @@ class CoachingService:
         self._consistency(session_id, corners, di, step, notes)
         sectors = self._sectors(sp_main, sp_ref, dist, lap_length, laps, main_lap, ref_lap)
         chief = self._chief(corners, delta, laps)
+        kpis = {"main": _lap_kpis(chans, "main", lap_length),
+                "ref": _lap_kpis(chans, "ref", lap_length)}
 
         return LapFindings(
             session_id=session_id,
@@ -134,6 +146,8 @@ class CoachingService:
             sectors=sectors,
             chief=chief,
             notes=notes,
+            kpis=kpis,
+            agent_stats=_agent_stats(corners, sectors),
         )
 
     # ------------------------------------------------------------------ fetch
@@ -323,6 +337,7 @@ class CoachingService:
             index=idx, label=f"T{idx + 1}", distance=apex_d, sector=sector,
             type=_corner_type(min_main), min_main=min_main, min_ref=min_ref,
             net_dt=net_dt, diags=diags,
+            entry_m=float(dist[entry]), exit_m=float(dist[exit_]),
         )
 
     # ------------------------------------------------------------------ stint consistency
@@ -372,7 +387,12 @@ class CoachingService:
             b = min(dist.size - 1, int(np.searchsorted(dist, bounds[i + 1])))
             m = float(t_main[b] - t_main[a])
             r = float(t_ref[b] - t_ref[a])
-            out.append(SectorDelta(index=i, name=f"S{i + 1}", main=m, ref=r, delta=m - r))
+            out.append(
+                SectorDelta(
+                    index=i, name=f"S{i + 1}", main=m, ref=r, delta=m - r,
+                    start_m=bounds[i], end_m=bounds[i + 1],
+                )
+            )
         return out
 
     @staticmethod
@@ -450,5 +470,61 @@ def _top_reason(corner: CornerFinding) -> str:
     return "Low minimum speed" if corner.min_main < corner.min_ref else "Lost on line"
 
 
+def _lap_kpis(
+    chans: dict[str, dict[str, np.ndarray]], which: str, lap_length: float
+) -> DriverKPIs:
+    """Whole-lap driving-style scores on the resampled grid; ``None`` where uncaptured."""
+    thr = chans["throttle"][which] if "throttle" in chans else None
+    brk = chans["brake"][which] if "brake" in chans else None
+    steer = chans["steer"][which] if "steer" in chans else None
+
+    avg = smooth = coast = trail = None
+    corrections: int | None = None
+    if thr is not None:
+        avg = float(thr.mean() * 100.0)
+        # Total variation of the pedal per km of lap, so the score does not
+        # depend on the resampling grid or the circuit length.
+        tv_per_km = float(np.abs(np.diff(thr)).sum()) / max(lap_length / 1000.0, 1e-6)
+        smooth = _clamp(100.0 - 3.8 * tv_per_km, 0.0, 100.0)
+    if thr is not None and brk is not None:
+        coast = float(((thr < _PEDAL_ON) & (brk < _PEDAL_ON)).mean() * 100.0)
+    if brk is not None and steer is not None:
+        braking = brk > _PEDAL_ON
+        n_brk = int(braking.sum())
+        turning = braking & (np.abs(steer) > _TURNING_RAD)
+        trail = float(turning.sum() / n_brk * 100.0) if n_brk else 0.0
+    if steer is not None:
+        sign = np.where(steer > _STEER_SIGN_RAD, 1, np.where(steer < -_STEER_SIGN_RAD, -1, 0))
+        held = sign[sign != 0]
+        corrections = int((held[1:] != held[:-1]).sum()) if held.size > 1 else 0
+    return DriverKPIs(
+        trail_brake_pct=trail,
+        avg_throttle_pct=avg,
+        throttle_smoothness=smooth,
+        steer_corrections=corrections,
+        coasting_pct=coast,
+    )
+
+
+def _agent_stats(
+    corners: list[CornerFinding], sectors: list[SectorDelta]
+) -> dict[str, AgentStat]:
+    """Findings and attributed loss per roster analyst, as the Coach roster shows them."""
+    stats = {agent: AgentStat(count=0, time=0.0) for agent in AGENT_ROSTER}
+    for corner in corners:
+        for d in corner.diags:
+            stat = stats.get(d.agent)
+            if stat is None:
+                continue
+            stat.count += 1
+            stat.time += max(0.0, d.time_loss)
+    losing = [c for c in corners if c.net_dt > 0.02]
+    stats["txt"] = AgentStat(count=len(losing), time=sum(c.net_dt for c in losing))
+    stats["sector"] = AgentStat(
+        count=len(sectors), time=sum(max(0.0, s.delta or 0.0) for s in sectors)
+    )
+    return stats
+
+
 # Keep the AGENTS tuple importable from here too (used by orchestrator/evals).
-__all__ = ["CoachingService", "AGENTS"]
+__all__ = ["AGENTS", "AGENT_ROSTER", "CoachingService"]

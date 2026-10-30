@@ -121,6 +121,9 @@ def client(tmp_path_factory):
 
     try:
         with TestClient(create_app()) as c:
+            from evals.synthetic_race import seed_scenario_session
+
+            seed_scenario_session(c.app.state.services.writer, "scenario")
             yield c
     finally:
         monkeypatch.undo()

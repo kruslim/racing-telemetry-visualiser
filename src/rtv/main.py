@@ -37,16 +37,6 @@ async def lifespan(app: FastAPI):
     services = build_services(settings)
     app.state.services = services
 
-    # Seed a simulated demo session so a fresh install has real chart + coaching
-    # data to show (no .ibt required). Idempotent — skips if already present.
-    if settings.seed_demo:
-        try:
-            from rtv.demo.seed import seed_demo_session
-
-            seed_demo_session(services.repo, services.writer)
-        except Exception:  # pragma: no cover - demo seeding must never block boot
-            log.exception("Demo seeding failed; continuing without it.")
-
     log.info("Racing Telemetry Visualiser %s ready.", __version__)
 
     # Optionally start the live poller on boot (Windows + iRacing only). Disable

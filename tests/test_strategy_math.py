@@ -7,8 +7,9 @@ about a stop comes out of here, so these are the numbers that have to be right.
 from __future__ import annotations
 
 import pytest
+from evals.synthetic_race import ScenarioSpec, replay_scenario
 
-from rtv.racestate import RaceStateEngine, replay_scenario
+from rtv.racestate import RaceStateEngine
 from rtv.racestate.models import (
     CarState,
     FlagPhase,
@@ -17,7 +18,6 @@ from rtv.racestate.models import (
     RaceState,
     StandingsState,
 )
-from rtv.racestate.scenario import ScenarioSpec
 from rtv.racestate.strategy_math import (
     YELLOW_PIT_DISCOUNT,
     fuel_projection,

@@ -10,15 +10,15 @@ import asyncio
 from dataclasses import replace
 
 import pytest
+from evals.synthetic_race import ScenarioSpec, replay_scenario
 
 from rtv.pitwall.agents.strategist import STRATEGIST, PitCall
 from rtv.pitwall.framework import RadioPriority, Trigger
 from rtv.pitwall.orchestrator import PitwallOrchestrator
 from rtv.pitwall.provider import ScriptedProvider
 from rtv.pitwall.radio import RadioFeed
-from rtv.racestate import RaceStateEngine, replay_scenario
+from rtv.racestate import RaceStateEngine
 from rtv.racestate.models import EventType, RaceEvent, Severity
-from rtv.racestate.scenario import ScenarioSpec
 
 
 @pytest.fixture(scope="module")

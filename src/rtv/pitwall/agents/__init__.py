@@ -44,10 +44,12 @@ AGENT_REGISTRY: tuple[AgentSpec, ...] = (
     COACH,
 )
 
-#: Sensible tiers. High-frequency, low-stakes agents belong on the fast model;
+#: Default tiers. High-frequency, low-stakes agents belong on the fast model;
 #: strategy is worth the reasoning model because it runs a handful of times a race.
-FAST_MODEL = "claude-haiku-4-5-20251001"
-REASONING_MODEL = "claude-sonnet-4-6"
+#: kimi-k3 is one tier today, so both are the same id; the deployment's
+#: RTV_LLM_KIMI_MODEL_* settings are applied in rtv.services.build_pitwall.
+FAST_MODEL = "kimi-k3"
+REASONING_MODEL = "kimi-k3"
 
 
 def build_agents(

@@ -20,7 +20,6 @@ import sys
 from pydantic import BaseModel
 
 from rtv import llm
-from rtv.config import get_settings
 
 
 class _Probe(BaseModel):
@@ -39,10 +38,10 @@ def _print_config() -> dict:
     return payload
 
 
-async def _probe(model: str, structured_output: str) -> None:
-    from rtv.pitwall.provider import AnthropicProvider
+async def _probe(model: str) -> None:
+    from rtv.pitwall.provider import KimiProvider
 
-    provider = AnthropicProvider(structured_output=structured_output)
+    provider = KimiProvider()
     response = await provider.complete(
         agent="check_llm",
         model=model,
@@ -61,16 +60,7 @@ async def _probe(model: str, structured_output: str) -> None:
         print()
         print("REACHED THE BACKEND, but it did not return a valid structured answer.")
         print(f"  raw text: {response.text[:400]!r}")
-        if structured_output == "tool":
-            print(
-                "  The tool-forced path is in use. If this backend implements "
-                "Anthropic's native output_format, try RTV_LLM_STRUCTURED_OUTPUT=native."
-            )
-        else:
-            print(
-                "  The native path is in use. If this backend does not implement "
-                "output_format, try RTV_LLM_STRUCTURED_OUTPUT=tool."
-            )
+        print("  The model did not call the forced respond tool with a valid payload.")
         raise SystemExit(2)
     print()
     print(f"OK - {model} answered: {response.output.model_dump()}")
@@ -79,15 +69,8 @@ async def _probe(model: str, structured_output: str) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--model", default="", help="Override the model id for this probe.")
-    parser.add_argument(
-        "--structured-output",
-        default="",
-        choices=["", "native", "tool"],
-        help="Override the structured-output strategy for this probe.",
-    )
     args = parser.parse_args()
 
-    settings = get_settings()
     try:
         payload = _print_config()
     except llm.LLMConfigError as exc:
@@ -100,15 +83,12 @@ def main() -> int:
         print("The deterministic engine, replay, UI and tests are unaffected by this.")
         return 1
 
-    model = args.model or llm.resolve_model(
-        settings.pitwall_agent_model_reasoning, tier="reasoning", settings=settings
-    )
-    mode = args.structured_output or payload["structured_output"]
+    model = llm.model("reasoning", args.model)
     print()
-    print(f"Probing model {model!r} via {mode!r} structured output...")
+    print(f"Probing model {model!r}...")
 
     try:
-        asyncio.run(_probe(model, mode))
+        asyncio.run(_probe(model))
     except SystemExit:
         raise
     except Exception as exc:  # the backend's own message is the useful part
@@ -117,9 +97,7 @@ def main() -> int:
         print()
         print("Common causes:")
         print("  - wrong model id for this endpoint (try --model with another id)")
-        print("  - wrong base URL for your plan: the Kimi Coding subscription is")
-        print("    https://api.kimi.com/coding, the developer API is")
-        print("    https://api.moonshot.ai/anthropic")
+        print("  - wrong base URL: the Kimi Code subscription is https://api.kimi.com/coding")
         print(f"  - credential in {payload['key_env']} not valid for that endpoint")
         return 1
     return 0

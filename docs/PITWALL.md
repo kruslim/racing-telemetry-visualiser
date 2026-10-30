@@ -397,7 +397,7 @@ Four things hold that down, in order of how much they matter:
 | Module | Role |
 |--------|------|
 | `framework.py` | `AgentSpec`, `Trigger`, `ToolSpec`, `AgentRuntime`, `RadioMessage`. The only code that talks to a model. |
-| `provider.py` | `AnthropicProvider` (real) and `ScriptedProvider` (offline), behind one `complete()` method. |
+| `provider.py` | `KimiProvider` (real) and `ScriptedProvider` (offline), behind one `complete()` method. |
 | `tools.py` | The deterministic tool registry over `racestate` + `strategy_math`. |
 | `validator.py` | `FactSet` + `validate_output`: the in-loop citation check. |
 | `radio.py` | `RadioFeed`: one channel, priority-ordered, self-superseding, paced. |
@@ -657,7 +657,7 @@ merging, the API, the WebSocket frames, the status payload — already works for
 from rtv.pitwall import (
     AgentSpec, AgentOutput, AgentRuntime, Trigger, ToolSpec, ToolContext,
     RadioMessage, RadioPriority, RadioFeed, PitwallOrchestrator,
-    ScriptedProvider, AnthropicProvider, tool_use_turn,
+    ScriptedProvider, KimiProvider, tool_use_turn,
     FactSet, validate_output, build_agents, ALL_TOOLS, TOOLS_BY_NAME,
 )
 
@@ -694,7 +694,7 @@ not in an agent's tuple is unreachable *and* uncitable by it.
 4. **No `thinking` on agent calls by default.** The Layer-3b coach uses adaptive
    thinking because it runs post-hoc. A pit call that lands two corners late is
    worse than no call, and every number is already computed deterministically
-   upstream, so latency wins. `AnthropicProvider(thinking=True, effort=...)` opts
+   upstream, so latency wins. `KimiProvider(thinking=True, effort=...)` opts
    back in per deployment.
 5. **Five new deterministic events, not agent-side timers.** The spec asked for
    triggers like `stint_lap_milestones` and `fuel_margin_below_threshold` "from a

@@ -17,7 +17,7 @@ jobs:
         python-version: ["3.11", "3.12", "3.13"]
     env:
       # The suite is offline by design: no key, no network calls, no iRacing.
-      ANTHROPIC_API_KEY: ""
+      KIMI_CODE_API_KEY: ""
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

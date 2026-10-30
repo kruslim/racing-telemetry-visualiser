@@ -5,10 +5,10 @@ per lap into a compact set of corner-level findings — the LLM never sees raw 6
 telemetry. Those findings then feed:
 
 * the REST endpoint ``/api/v1/coaching/lap-findings`` (and the MCP server on top of it),
-* the Claude API orchestrator (:mod:`rtv.coaching.orchestrator`),
+* the multi-agent orchestrator (:mod:`rtv.coaching.orchestrator`, over Kimi),
 * the eval harness, which cross-checks LLM claims against these findings as ground truth.
 
-The analysis here is a faithful Python port of the frontend ``coach.js`` heuristics.
+This is the only implementation of the coaching heuristics; UIs render its output.
 """
 
 from __future__ import annotations

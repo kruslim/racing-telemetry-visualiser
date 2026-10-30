@@ -159,7 +159,17 @@ def build_services(settings: Settings) -> AppServices:
                 traffic_gap_s=settings.pitwall_traffic_gap_s,
             ),
         )
-        replay = ReplayDriver(engine)
+        # A replay goes through the same fan-out as live capture: the engine
+        # (and so the agents) plus the /ws/live hub.
+        # The replay API refuses to start while the live poller runs, so when a
+        # replay ends the feed is simply disconnected again.
+        def on_replay(running: bool, session_id: str | None) -> None:
+            if running:
+                hub.publish_state(ConnectionState.REPLAY, session_id)
+            else:
+                hub.publish_state(ConnectionState.DISCONNECTED, None)
+
+        replay = ReplayDriver(engine, publish=hub.publish_frame, on_lifecycle=on_replay)
         if settings.pitwall_agents:
             pitwall = build_pitwall(
                 engine, settings, coaching=coaching, repo=repo, tts=tts
@@ -247,30 +257,26 @@ def build_pitwall(
 ) -> PitwallOrchestrator | None:
     """Assemble the agent layer, or return None when it cannot run.
 
-    The provider is constructed lazily and defensively: with no ``anthropic``
-    package and no credential for the selected backend there is nothing to talk
-    to, so the layer stays unmounted rather than failing at the first race event.
-    That is what keeps the default test path free of any network dependency.
-
-    Which backend, which credential env var and which structured-output strategy
-    are :mod:`rtv.llm`'s decision, not this function's -- so pointing the whole
-    system at Kimi is configuration rather than a code path.
+    The provider is constructed lazily and defensively: with no ``anthropic`` SDK
+    package (the transport for Kimi's endpoint) or no Kimi Code key there is
+    nothing to talk to, so the layer stays unmounted rather than failing at the
+    first race event. That is what keeps the default test path free of any
+    network dependency.
     """
-    from rtv.llm import describe, is_configured, key_env_var
+    from rtv.llm import is_configured, key_env_var
     from rtv.pitwall.agents import build_agents
 
     if not is_configured(settings):
         log.info(
-            "Pitwall agents disabled: %s is not set for provider %s. "
+            "Pitwall agents disabled: %s is not set. "
             "The deterministic race-state engine is unaffected.",
             key_env_var(settings),
-            describe(settings)["provider"],
         )
         return None
     try:
-        from rtv.pitwall.provider import AnthropicProvider
+        from rtv.pitwall.provider import KimiProvider
 
-        provider = AnthropicProvider()
+        provider = KimiProvider()
     except Exception:  # pragma: no cover - the ai extra is optional
         log.warning(
             "Pitwall agents disabled: the 'ai' extra is not installed "
@@ -278,28 +284,17 @@ def build_pitwall(
         )
         return None
 
-    # Model ids are mapped onto the active backend here rather than in the agent
-    # modules, so the per-agent override env vars keep working unchanged whichever
-    # backend is selected. resolve_model() leaves an explicit non-Claude id alone.
-    from rtv.llm import resolve_model
-
-    def _fast(configured: str) -> str:
-        return resolve_model(
-            configured or settings.pitwall_agent_model_fast, tier="fast", settings=settings
-        )
+    from rtv.llm import model
 
     only = [n.strip() for n in settings.pitwall_agents_only.split(",") if n.strip()]
     agents = build_agents(
         models={
-            "strategist": resolve_model(
-                settings.pitwall_strategist_model
-                or settings.pitwall_agent_model_reasoning,
-                tier="reasoning",
-                settings=settings,
+            "strategist": model("reasoning", settings.pitwall_strategist_model, settings),
+            "vehicle_engineer": model(
+                "fast", settings.pitwall_vehicle_engineer_model, settings
             ),
-            "vehicle_engineer": _fast(settings.pitwall_vehicle_engineer_model),
-            "spotter": _fast(settings.pitwall_spotter_model),
-            "coach": _fast(settings.pitwall_coach_model),
+            "spotter": model("fast", settings.pitwall_spotter_model, settings),
+            "coach": model("fast", settings.pitwall_coach_model, settings),
         },
         only=only or None,
     )

@@ -24,7 +24,7 @@ from rtv.coaching.agent.contracts import CoachingAnswer
 from rtv.coaching.agent.graph import run_coach
 from rtv.coaching.agent.provider import RepositoryFindingsProvider
 from rtv.coaching.features import CoachingService
-from rtv.config import get_settings
+from rtv.coaching.models import AGENT_ROSTER
 from rtv.logging import get_logger
 from rtv.store.repository import Repository
 
@@ -49,6 +49,15 @@ def lap_findings(
         raise HTTPException(404, str(exc)) from exc
     except FileNotFoundError as exc:
         raise HTTPException(404, str(exc)) from exc
+
+
+@router.get(
+    "/coaching/agents",
+    summary="The deterministic analysts behind lap-findings, in roster order",
+)
+def coaching_agents() -> dict:
+    """Names and codes for the ids in ``diags[].agent`` and ``agent_stats``."""
+    return {"agents": [{"id": k, **v} for k, v in AGENT_ROSTER.items()]}
 
 
 # ---------------------------------------------------------------------------
@@ -209,17 +218,22 @@ def _refusal_markdown(refusal) -> str:
 def _build_model(model_name: str):
     """Construct the chat model the graph coach drives.
 
-    ``ChatAnthropic`` speaks the Anthropic Messages format, which the Kimi Code
-    endpoint implements too, so ``rtv.llm`` only has to supply the base URL and
-    credential for whichever backend is selected.
+    ``langchain-anthropic`` is only the transport: the Kimi Code endpoint speaks the
+    Anthropic Messages format, and ``rtv.llm`` supplies its base URL and credential.
+    Thinking is switched off explicitly, as in the pitwall provider: kimi-k3 thinks
+    by default, and the coach's answer is grounded in deterministic findings anyway.
     """
     from langchain_anthropic import ChatAnthropic
 
-    kwargs = {"api_key": llm.api_key()}
-    url = llm.base_url()
-    if url:
-        kwargs["base_url"] = url
-    return ChatAnthropic(model=model_name, temperature=0, max_tokens=2048, timeout=90, **kwargs)
+    return ChatAnthropic(
+        model=model_name,
+        temperature=0,
+        max_tokens=2048,
+        timeout=90,
+        api_key=llm.api_key(),
+        base_url=llm.base_url(),
+        thinking={"type": "disabled"},
+    )
 
 
 @router.post(
@@ -232,14 +246,13 @@ def coaching_chat(
     repo: Repository = Depends(get_repo),
     coaching: CoachingService = Depends(get_coaching),
 ) -> ChatResponse:
-    settings = get_settings()
     if not llm.is_configured():
         raise HTTPException(
             503,
-            f"The coaching chatbot needs an LLM key. Set {llm.key_env_var()} in the "
-            f"server environment to enable it (backend: {llm.provider_name()}).",
+            f"The coaching chatbot needs a Kimi Code key. Set {llm.key_env_var()} in "
+            "the server environment to enable it.",
         )
-    model_name = llm.resolve_model(settings.coaching_model, tier="reasoning")
+    model_name = llm.model("reasoning")
 
     # Pin the agent to the frontend's currently-selected laps by naming them in the
     # question — the coach's get_lap_findings tool then retrieves exactly these.

@@ -27,20 +27,22 @@ class JudgeScore(BaseModel):
     comment: str = Field(description="One-sentence justification")
 
 
-async def judge(result: dict[str, Any], findings: dict[str, Any], client: Any, *,
-                model: str = "claude-opus-4-8") -> JudgeScore:
+async def judge(result: dict[str, Any], findings: dict[str, Any], provider: Any, *,
+                model: str) -> JudgeScore | None:
     plan = result.get("plan")
     msg = (
         "FINDINGS:\n" + json.dumps(findings, separators=(",", ":")) + "\n\n"
         "COACH PLAN:\n" + json.dumps({"plan": plan, "advices": result.get("advices", [])},
                                      separators=(",", ":"))
     )
-    resp = await client.messages.parse(
+    from rtv.pitwall.provider import structured_call
+
+    return await structured_call(
+        provider,
+        agent="eval_judge",
         model=model,
+        system=[{"type": "text", "text": JUDGE_SYSTEM}],
+        prompt=msg,
+        output_model=JudgeScore,
         max_tokens=1024,
-        thinking={"type": "adaptive"},
-        system=JUDGE_SYSTEM,
-        messages=[{"role": "user", "content": msg}],
-        output_format=JudgeScore,
     )
-    return resp.parsed_output

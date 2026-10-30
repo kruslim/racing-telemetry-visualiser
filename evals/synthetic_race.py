@@ -1,9 +1,9 @@
-"""A scripted synthetic race -- the deterministic ground truth for the engine.
+"""Test-only: a scripted synthetic race, the deterministic ground truth for the engine.
 
-This extends the demo-session seeding pattern used by ``tests/helpers.py`` and
-``scripts/smoke_offline.py`` into a full multi-car race with events placed at
-known laps, so tests can assert an exact event sequence rather than "something
-fired". The script produces, in order:
+Never served by the app (the replay API only takes stored sessions). It is a
+full multi-car race with events placed at known laps, so tests can assert an
+exact event sequence rather than "something fired". The script produces, in
+order:
 
 ======================  ==================================================
 lap 3, 30%-80%          full-course yellow, then back to green
@@ -32,6 +32,8 @@ from rtv.catalog.builder import RawHeader, build_catalog
 from rtv.catalog.models import Catalog
 from rtv.catalog.types import IRType
 from rtv.ingest.frame import Frame
+from rtv.racestate.engine import RaceStateEngine
+from rtv.racestate.replay import ReplayDriver, ReplaySource
 
 #: Grid offsets in laps relative to the player (index 0), constant through the run.
 DEFAULT_GRID = (0.0, 0.03, 0.06, -0.03, -0.06, 0.12, -0.12, 0.20)
@@ -431,3 +433,26 @@ def seed_scenario_session(
     writer.write_laps(session_id, tracker.laps)
     writer.end_session(session_id, sample_count=n, ended_at=0.0)
     return session_id
+
+
+#: Session id the scripted race reports when it is replayed.
+SCENARIO_SESSION_ID = "scenario"
+
+
+def scenario_source(spec: ScenarioSpec | None = None) -> ReplaySource:
+    """The scripted race as a replay source -- no store or iRacing required."""
+    spec = spec or ScenarioSpec()
+    return ReplaySource(
+        catalog=scenario_catalog(spec),
+        frames=scenario_frames(spec),
+        session_id=SCENARIO_SESSION_ID,
+        session_info=scenario_session_info(spec),
+        total=(spec.laps - 1) * spec.ticks_per_lap + int(spec.end_pct * spec.ticks_per_lap),
+    )
+
+
+def replay_scenario(
+    engine: RaceStateEngine, spec: ScenarioSpec | None = None, *, speed: float = 0.0
+) -> int:
+    """Run the scripted race through ``engine`` synchronously."""
+    return ReplayDriver(engine).run(scenario_source(spec), speed=speed)

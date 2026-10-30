@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from rtv.api.deps import get_services
-from rtv.racestate.replay import SCENARIO_SESSION_ID, scenario_source, store_source
+from rtv.racestate.replay import store_source
 from rtv.services import AppServices
 
 router = APIRouter(tags=["pitwall"])
@@ -87,9 +87,8 @@ def pitwall_health(services: AppServices = Depends(get_services)) -> dict:
 
 class ReplayRequest(BaseModel):
     session_id: str = Field(
-        SCENARIO_SESSION_ID,
-        description="A stored session id, or 'scenario' for the built-in "
-        "scripted synthetic race.",
+        ...,
+        description="A stored session id: an imported .ibt or an earlier live capture.",
     )
     speed: float = Field(
         1.0,
@@ -99,7 +98,7 @@ class ReplayRequest(BaseModel):
     )
 
 
-@router.post("/replay/start", summary="Replay a stored or synthetic session")
+@router.post("/replay/start", summary="Replay a stored session as if it were live")
 def replay_start(
     body: ReplayRequest, services: AppServices = Depends(get_services)
 ) -> dict:
@@ -119,19 +118,16 @@ def replay_start(
             "sources into one race state. Stop it with POST /api/v1/live/stop first.",
         )
 
-    if body.session_id == SCENARIO_SESSION_ID:
-        source = scenario_source()
-    else:
-        try:
-            source = store_source(
-                services.db,
-                services.settings.parquet_dir,
-                body.session_id,
-                flatten_max=services.settings.array_flatten_max,
-                session_info=services.repo.get_session_info(body.session_id),
-            )
-        except KeyError as exc:
-            raise HTTPException(404, str(exc)) from exc
+    try:
+        source = store_source(
+            services.db,
+            services.settings.parquet_dir,
+            body.session_id,
+            flatten_max=services.settings.array_flatten_max,
+            session_info=services.repo.get_session_info(body.session_id),
+        )
+    except KeyError as exc:
+        raise HTTPException(404, str(exc)) from exc
 
     engine.reset()
     driver.start(source, speed=body.speed)

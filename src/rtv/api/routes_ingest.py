@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
 from rtv.api.deps import get_services
@@ -27,6 +28,37 @@ def start_import(
 ) -> dict:
     job_id = services.imports.start(body.path, body.label)
     return {"job_id": job_id, "status": "pending"}
+
+
+@router.post("/import/upload", summary="Upload an .ibt file and import it")
+async def upload_import(
+    request: Request,
+    filename: str = Query(..., description="Original file name, e.g. 'spa 2026-10-30.ibt'."),
+    label: str | None = Query(None, description="Optional friendly name for the session."),
+    services: AppServices = Depends(get_services),
+) -> dict:
+    """Send the file's raw bytes as the request body (``application/octet-stream``).
+
+    For a browser or a client on another machine, where ``POST /import`` with a
+    server-side path does not work. The file is kept under ``<data_dir>/uploads/``
+    and then imported exactly like a path import; poll ``GET /import/{job_id}``.
+    """
+    name = Path(filename).name
+    if not name.lower().endswith(".ibt"):
+        raise HTTPException(400, "Only .ibt telemetry files can be imported.")
+    folder = services.settings.data_dir / "uploads"
+    folder.mkdir(parents=True, exist_ok=True)
+    target = folder / f"{uuid.uuid4().hex[:8]}_{name}"
+    size = 0
+    with target.open("wb") as fh:
+        async for chunk in request.stream():
+            fh.write(chunk)
+            size += len(chunk)
+    if size == 0:
+        target.unlink(missing_ok=True)
+        raise HTTPException(400, "The request body was empty; send the file's bytes.")
+    job_id = services.imports.start(str(target), label or Path(name).stem)
+    return {"job_id": job_id, "status": "pending", "path": str(target), "bytes": size}
 
 
 @router.get("/import/discover", summary="List importable .ibt files in a folder")
@@ -67,6 +99,11 @@ def import_status(job_id: str, services: AppServices = Depends(get_services)) ->
 
 @router.post("/live/start", summary="Start the live shared-memory poller")
 def live_start(services: AppServices = Depends(get_services)) -> dict:
+    if services.replay is not None and services.replay.running:
+        # The mirror of the replay guard: two frame sources into one race state.
+        raise HTTPException(
+            409, "A replay is running; stop it with POST /api/v1/replay/stop first."
+        )
     services.poller.start()
     return _live_status(services)
 

@@ -16,6 +16,8 @@ class ConnectionState(StrEnum):
     DISCONNECTED = "disconnected"
     CONNECTED = "connected"
     IN_SESSION = "in_session"
+    #: A stored session is being replayed through the live path.
+    REPLAY = "replay"
 
 
 @dataclass
