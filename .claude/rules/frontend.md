@@ -1,25 +1,21 @@
 ---
 paths:
   - "frontend/**"
-  - "docs/**"
 ---
 
-# Frontend and the Pages copy
+# Frontend
 
-- `frontend/app/` (the analysis app, served at `/app/`) is the only source for Pages.
-  `docs/*.html|css|js` are generated from it by `scripts/build_pages.py`; never edit
-  them by hand. `docs/*.md` are real docs.
-- The rest of `frontend/` is the live pitwall, served at `/`. It needs the backend, is
-  not published to Pages, and uses ES modules under `js/` with absolute `/css/`,
-  `/js/` paths. Its pure modules have node suites (`node frontend/js/run-*-tests.mjs`)
-  that pytest runs when `node` is on PATH.
-- Vanilla JS, no build step, no npm. In the analysis app each file is an IIFE `(function (global) {
-  'use strict'; ... })` that hangs its module on `window`; `index.html` loads them in
-  dependency order with plain `<script>` tags.
-- The app must work in both modes: against the API, and with no backend (Pages), where
-  `api.js` falls back to `sim.js` + `lapdata.js` and the chat coaches from the
-  deterministic findings. Test a change in both.
+- `frontend/` is served by FastAPI: the live pitwall at `/` (`index.html`), the
+  post-race review at `/review/` (`review/index.html`), plus `radio.html` and the
+  self-test pages. Everything needs the backend; nothing is published to Pages and
+  nothing falls back to simulated data.
+- ES modules under `js/` with absolute `/css/`, `/js/` paths. `js/shared/` (timeline,
+  activity model, flow graph) is used by both the live view and the review.
+- Pure modules have node suites (`node frontend/js/run-*-tests.mjs`) that pytest runs
+  when `node` is on PATH. Keep grouping and maths in those pure modules; panels and
+  `*-app.js` files only wire and draw.
+- Vanilla JS, no build step, no npm. Text from agents or session files goes in through
+  `textContent` (`pitwall/dom.js`), never `innerHTML`.
+- Page state lives in the URL, never in storage.
 - Input uses pointer events so mouse, touch and pen behave alike (iPadOS Safari is a
-  target): no mouse-only handlers, and keep pinch-to-zoom working on the graphs.
-- After a change to `frontend/app/`, run the `publish-pages` skill and commit
-  `frontend/app/` and `docs/` together.
+  target): no mouse-only handlers.

@@ -243,3 +243,81 @@ def test_bad_run_ids_are_refused(client):
     assert r.status_code == 400
     r = client.get("/api/v1/sessions/scenario/pitwall-log", params={"run": "nope"})
     assert r.status_code == 404
+
+
+# --------------------------------------------------------------------------
+# the deterministic race summary
+# --------------------------------------------------------------------------
+def _lap(n, t, **flags):
+    return {"lap": n, "lap_time": t, "is_valid": flags.get("valid", True),
+            "is_in_lap": flags.get("inlap", False), "is_out_lap": flags.get("outlap", False)}
+
+
+def test_summary_counts_laps_stints_fuel_and_the_radio():
+    from rtv.racestate.summary import race_summary
+
+    laps = [_lap(0, 50, valid=False), _lap(1, 100), _lap(2, 98), _lap(3, 105, inlap=True),
+            _lap(4, 120, outlap=True), _lap(5, 99), _lap(6, 20, valid=False)]
+    fuel = [40.0, 37.0, 37.3, 34.0, 60.0, 57.0]  # a 0.3 L slosh, then a refuel
+    pos = [0, 7, 6, 6, 5, 4]
+    records = [
+        {"kind": "state", "data": {"fuel": {"level": f}, "player": {"position": p, "incidents": 2}}}
+        for f, p in zip(fuel, pos, strict=True)
+    ]
+    records += [
+        {"kind": "race_event", "data": {"event_type": "offtrack"}},
+        {"kind": "race_event", "data": {"event_type": "offtrack"}},
+        {"kind": "run_start", "run_id": "s-1", "agent": "strategist", "data": {}},
+        {"kind": "llm_call_end", "run_id": "s-1", "data": {"ok": True, "latency_ms": 1000}},
+        {"kind": "llm_call_end", "run_id": "s-1", "data": {"ok": False, "latency_ms": 3000}},
+        {"kind": "tool_call", "run_id": "s-1", "data": {"tool": "x"}},
+        {"kind": "run_end", "run_id": "s-1", "agent": "strategist", "data": {"outcome": "radio"}},
+        {"kind": "radio", "data": {"agent": "strategist", "grounded": True}},
+        {"kind": "radio", "data": {"agent": "coach", "refused": True, "grounded": False}},
+    ]
+    s = race_summary(laps, records)
+    assert (s["laps"], s["clean_laps"], s["best_lap"], s["pit_stops"]) == (5, 3, 2, 1)
+    assert [(st["from_lap"], st["to_lap"]) for st in s["stints"]] == [(1, 3), (4, 5)]
+    assert s["fuel_used_l"] == pytest.approx(3.0 + 3.3 + 3.0)
+    assert s["fuel_added_l"] == pytest.approx(26.0)
+    assert (s["start_position"], s["finish_position"], s["incidents"]) == (7, 4, 2)
+    assert s["events"] == {"offtrack": 2}
+    assert (s["radio_calls"], s["radio_refused"], s["radio_ungrounded"]) == (2, 1, 1)
+    assert s["radio_by_agent"] == {"strategist": 1, "coach": 1}
+    assert (s["agent_runs"], s["model_calls"], s["model_errors"]) == (1, 2, 1)
+    assert s["model_latency_ms"] == 2000 and s["tool_calls"] == 1
+    assert s["agent_outcomes"] == {"radio": 1}
+    assert s["notes"] == []
+
+
+def test_summary_without_a_journal_says_what_it_cannot_know():
+    from rtv.racestate.summary import race_summary
+
+    s = race_summary([_lap(1, 100)], None)
+    assert s["best_time"] == 100 and s["fuel_used_l"] is None and s["start_position"] is None
+    assert any("No race journal" in n for n in s["notes"])
+    s = race_summary([], [{"kind": "state", "data": {"player": {}}}])
+    assert s["best_lap"] is None and s["median_time"] is None
+    assert any("fuel" in n for n in s["notes"])
+
+
+def test_the_summary_and_delta_endpoints_serve_the_recorded_session(client):
+    r = client.get("/api/v1/sessions/scenario/summary")
+    assert r.status_code == 200 and r.json()["run_id"] is None
+    _replay(client)
+    s = client.get("/api/v1/sessions/scenario/summary").json()
+    assert s["run_id"] and s["laps"] > 0 and sum(s["events"].values()) > 0
+    assert client.get("/api/v1/sessions/nope/summary").status_code == 404
+
+    laps = [lap for lap in client.get("/api/v1/sessions/scenario/laps").json()["laps"]
+            if lap["is_valid"] and not lap["is_out_lap"]]
+    main, ref = laps[0]["lap"], laps[1]["lap"]
+    q = {"session_id": "scenario", "main_lap": main, "ref_lap": ref, "points": 100}
+    d = client.get("/api/v1/coaching/delta", params=q).json()
+    assert len(d["distance_m"]) == len(d["delta_s"]) <= 100
+    assert d["distance_m"] == sorted(d["distance_m"])
+    pair = {k: q[k] for k in ("session_id", "main_lap", "ref_lap")}
+    findings = client.get("/api/v1/coaching/lap-findings", params=pair).json()
+    # The plotted curve ends where the findings' net lap delta says it does.
+    assert d["delta_s"][-1] == pytest.approx(findings["chief"]["net_lap"], abs=1e-3)
+    assert client.get("/api/v1/coaching/delta", params={**q, "main_lap": 999}).status_code == 404

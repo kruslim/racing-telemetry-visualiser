@@ -103,8 +103,8 @@ def create_app() -> FastAPI:
 
 #: Vanilla JS + canvas/DOM, no build step. Served from the repo root so the
 #: pitwall radio page and its self-test are one URL away from the API they talk
-#: to -- no second server, no CORS dance, no bundler. The MoTeC-i2-style
-#: analysis app lives in ``frontend/app/`` and is therefore served at ``/app/``.
+#: to -- no second server, no CORS dance, no bundler. The post-race review lives
+#: in ``frontend/review/`` and is therefore served at ``/review/``.
 FRONTEND_DIR = Path(__file__).resolve().parents[2] / "frontend"
 
 
