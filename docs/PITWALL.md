@@ -473,7 +473,12 @@ The results go in the first message as tool results and into the FactSet, and ea
 is traced as a `tool_call` with `prefetched: true`. On the Spa replay every run
 opened with the same one to three local tool calls, and a model turn averaged
 about 11 s, so a run took two to four turns (15 to 58 s). With the answers already
-in hand, the common case is one turn. The prefetch sets are: strategist
+in hand, the common case is one turn. Measured on the second Spa replay (kimi-k3): 39
+model calls for 27 runs (was 75 for 30), median run 15 s (was 24 s). Prefetch made
+kimi-k3 answer in prose rather than call the respond tool on many turns, so
+`KimiProvider` now sends `tool_choice: any` whenever tools are offered with thinking
+off, and a prose-only turn gets one forced respond pass. The validator also accepts a
+fraction said as a percentage (lap_dist_pct 0.9498 as "94.98 %"). The prefetch sets are: strategist
 `get_fuel_projection` and `simulate_pit_outcome` at the planned stop lap; engineer
 `get_car_health`, `get_tyre_trend` and the last 10 detector events; spotter
 standings plus the last 10 detector events; coach the last 10 detector events plus

@@ -464,3 +464,30 @@ def test_a_slow_consumer_loses_the_oldest_message_and_counts_it():
         feed.emit(_message(subject=str(i), text=f"call {i}"))
     assert [m.spoken_text for m in sub.drain()] == ["call 2", "call 3"]
     assert sub.dropped == 2
+
+
+def test_a_lap_fraction_may_be_said_as_a_percentage():
+    """Second Spa replay: "off at 94.98 %" for lap_dist_pct 0.9498 was refused."""
+    facts = FactSet()
+    facts.add("event", {"lap_dist_pct": 0.94982})
+    assert validate_output("Off at 95 percent.", "At 94.98 % of the lap.", facts).ok
+    assert not validate_output("Off at 60 percent.", "", facts).ok
+
+
+async def test_a_prose_answer_is_asked_for_again_in_the_contract(state):
+    """kimi-k3 sometimes answered in text instead of calling the respond tool."""
+    from rtv.pitwall.provider import ProviderResponse
+
+    offered: list[list[str]] = []
+
+    def handler(*, call_index, tools, **_):
+        offered.append([t.name for t in tools])
+        if call_index == 0:
+            return ProviderResponse(text="Stay out, no stop needed.")
+        return _answer()
+
+    runtime = AgentRuntime(STRATEGIST, ScriptedProvider(handler))
+    message = await runtime.invoke(_event(), state)
+
+    assert message is not None and message.data["recommendation"] == "stay_out"
+    assert offered[1] == []  # the retry withdrew the tools, forcing the contract

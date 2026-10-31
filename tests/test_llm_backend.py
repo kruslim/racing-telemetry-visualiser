@@ -151,7 +151,8 @@ async def test_the_contract_is_forced_only_once_the_real_tools_are_withdrawn():
 
     provider, client = _provider([_Block("text", text="thinking")])
     await _complete(provider, tools=[_Tool()])
-    assert client.messages.calls[0]["tool_choice"] == {"type": "auto"}
+    # Some tool call is required on every pass, so a plain-text answer can't end a run.
+    assert client.messages.calls[0]["tool_choice"] == {"type": "any"}
 
     provider2, client2 = _provider([_Block("text", text="thinking")])
     await _complete(provider2)  # last pass: the runtime withdraws real tools
