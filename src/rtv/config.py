@@ -222,7 +222,7 @@ class Settings(BaseSettings):
         default=400,
         ge=0,
         description="Hard ceiling on billable model calls in one session, counted "
-        "across every agent. Generous on purpose: it is a runaway guard, not a "
+        "across every agent and the live VLM. Generous on purpose: it is a runaway guard, not a "
         "budget (a normal race hour is a low-tens number). 0 = unlimited. The "
         "counter is exposed on GET /api/v1/pitwall/status.",
     )
@@ -356,7 +356,13 @@ class Settings(BaseSettings):
         default=10,
         ge=0,
         le=500,
-        description="VLM calls per session run in live mode; 0 turns the live VLM off.",
+        description="VLM calls per session run in live mode; 0 turns the live VLM off. "
+        "An inner limit: each call also counts against RTV_PITWALL_MAX_CALLS_PER_SESSION.",
+    )
+    vision_live_radio: bool = Field(
+        default=False,
+        description="Let live visual notes wake the spotter and coach (radio calls at info "
+        "priority). Off: they go to the timeline, the journal and the review only.",
     )
     vision_live_min_gap_s: float = Field(
         default=5.0,

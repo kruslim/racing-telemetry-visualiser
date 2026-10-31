@@ -68,6 +68,11 @@ def pitwall_health(services: AppServices = Depends(get_services)) -> dict:
             healthy=status["healthy"],
             restarts=status["restarts"],
             director=status["director"],
+            # One session budget over every model call, split by layer.
+            calls_used=status["calls_used"],
+            calls_by_layer=status["calls_by_layer"],
+            max_calls_per_session=status["max_calls_per_session"],
+            budget_exhausted=status["budget_exhausted"],
             degraded=[
                 a["name"] for a in status["agents"] if a.get("disabled_reason")
             ],

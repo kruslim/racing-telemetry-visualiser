@@ -83,7 +83,8 @@ service) and `src/rtv/api/routes_vision.py`. Tests: `tests/test_vision.py`,
 | `RTV_VISION_CAPTURE_LAG_S` | 0 | Capture latency taken off each frame's stamp. |
 | `RTV_VISION_CAPTURE_AUTO` | `false` | Capture while a live session is on. |
 | `RTV_VISION_LIVE_TRIGGERS` | `incident,offtrack,lockup` | Race events that send their frames to the VLM in live mode. |
-| `RTV_VISION_LIVE_MAX_CALLS` | 10 | VLM calls per live run (one capture or one replay); 0 turns the live VLM off. |
+| `RTV_VISION_LIVE_MAX_CALLS` | 10 | VLM calls per live run (one capture or one replay); 0 turns the live VLM off. An inner limit inside `RTV_PITWALL_MAX_CALLS_PER_SESSION`. |
+| `RTV_VISION_LIVE_RADIO` | `false` | Let live visual notes wake the spotter and coach. Off: notes go to the timeline, the journal and the review only. |
 | `RTV_VISION_LIVE_MIN_GAP_S` | 5 | Events closer than this to the last analysed one are merged into it. |
 
 ffmpeg is a system binary, not a Python package. On Windows: `winget install ffmpeg`.
@@ -329,8 +330,13 @@ of a recorded race**: live mode can be tested on a recording without iRacing.
 Spend is bounded: events closer than `RTV_VISION_LIVE_MIN_GAP_S` (session time) to the
 last analysed one are merged into it, and the run stops calling after
 `RTV_VISION_LIVE_MAX_CALLS`. A run is one capture or one replay of a session; each is
-counted from zero. Every skip is counted (`merged`, `over_cap`, `no_frames`); a moment
-with no frames makes no call and does not count against the cap.
+counted from zero. Each call also counts against the pitwall's session budget
+(`RTV_PITWALL_MAX_CALLS_PER_SESSION`), so that budget's "max calls" is every model call in
+the session; `GET /api/v1/pitwall/health` shows the split (`agents.calls_by_layer`). A
+moment that would exceed it is skipped, both when it is admitted and again when its frames
+arrive, and is written to the live analysis as a `skip` record (`reason: over_budget`).
+Every skip is counted (`merged`, `over_cap`, `over_budget`, `no_frames`); a moment with
+no frames makes no call and does not count against either limit.
 
 Measured on the Spa replay with a test-pattern video synced to it (2026-10-31): kimi-k3
 took 21.8 s on the first call and 5.2 s on the next, with 3 frames at 640 px, and
@@ -345,8 +351,10 @@ correctly answered `trigger_not_seen` (a test pattern is not an onboard).
   observation on the engine's bus, only when the engine is consuming that session. The
   live worker does this for every note, and so does a post-race analysis run with
   `RTV_VISION_MODE=live`. From the bus the recorder journals them, `/ws/pitwall` streams
-  them, and the agents may react.
-- The **spotter** wakes on `traffic`, `track_state` and `damage` notes (cooldown 60 s);
+  them. The agents react only with `RTV_VISION_LIVE_RADIO=true`; by default a live note
+  is review material (REVIEW.md P2-5: it arrives 25-40 s after the moment and is unproven
+  on real footage).
+- With the flag on, the **spotter** wakes on `traffic`, `track_state` and `damage` notes (cooldown 60 s);
   the **coach** on `kerb_use`, `line` and `car_behaviour` notes under green (cooldown
   120 s). The strategist and vehicle engineer never do. A call triggered by a visual
   observation always airs at `info` priority, whatever the agent asked for, so it never
