@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Racing Telemetry Visualiser &mdash; post-race review</title>
+<link rel="stylesheet" href="../css/pitwall.css">
+<link rel="stylesheet" href="../css/app.css">
+<link rel="stylesheet" href="../css/live.css">
+<link rel="stylesheet" href="../css/review.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='88'>&#127937;</text></svg>">
+</head>
+<body class="review">
+
+<header>
+  <h1>Racing Telemetry Visualiser</h1>
+  <nav class="views" aria-label="views">
+    <a href="/" data-server-only>Live</a>
+    <a href="/review/" class="active" aria-current="page">Post-race review &amp; lap analysis</a>
+  </nav>
+  <nav data-server-only>
+    <a href="/radio.html">Pitwall radio</a>
+    <a href="/docs">api</a>
+  </nav>
+</header>
+
+<p id="app-notice" hidden></p>
+
+<main class="review-main">
+
+  <!-- SESSION PICKER ------------------------------------------------------ -->
+  <section class="panel session-bar" id="session-bar">
+    <label class="k" for="session-select">session</label>
+    <select id="session-select" aria-label="recorded session"><option value="">loading&hellip;</option></select>
+    <label class="k" for="run-select">pitwall run</label>
+    <select id="run-select" aria-label="recorded pitwall run"></select>
+    <button id="analyse" data-server-only title="Replay the stored telemetry through the race-state engine to record a run">Record a run from the telemetry</button>
+    <label class="upload" data-server-only title="Import an iRacing .ibt telemetry file">
+      <input id="ibt-file" type="file" accept=".ibt">
+      <span class="button-like">Import .ibt&hellip;</span>
+    </label>
+    <span class="sub" id="session-status"></span>
+  </section>
+
+  <!-- SUMMARY ------------------------------------------------------------- -->
+  <section class="panel" id="panel-summary">
+    <h2>Race summary <span class="sub" data-role="summary-sub"></span></h2>
+    <div class="summary-grid" data-role="summary-grid"></div>
+    <table class="data stints" data-role="stints"></table>
+    <ul class="notes" data-role="summary-notes"></ul>
+  </section>
+
+  <!-- REPLAY -------------------------------------------------------------- -->
+  <section class="panel" id="panel-replay">
+    <h2>Replay <span class="sub" data-role="replay-sub">what the pitwall saw, did and said</span></h2>
+    <div class="replay-controls">
+      <button id="play" class="primary" aria-label="play">&#9654;</button>
+      <select id="play-speed" aria-label="playback speed">
+        <option value="1">1&times;</option>
+        <option value="4">4&times;</option>
+        <option value="16" selected>16&times;</option>
+        <option value="60">60&times;</option>
+      </select>
+      <span class="clock" data-role="clock">&mdash;</span>
+      <span class="sub" data-role="replay-hint">drag on the timeline to scrub; click an item to jump to it</span>
+    </div>
+    <div class="timeline-host" data-role="timeline"></div>
+
+    <div class="replay-grid">
+      <div class="replay-left">
+        <div class="flow-host" data-role="flow"></div>
+        <div class="flow-legend">
+          <span><i class="swatch agent-strategist"></i>strategist</span>
+          <span><i class="swatch agent-vehicle_engineer"></i>vehicle engineer</span>
+          <span><i class="swatch agent-spotter"></i>spotter</span>
+          <span><i class="swatch agent-coach"></i>coach</span>
+        </div>
+        <section class="sub-panel" id="panel-runs">
+          <h3>Agent runs up to the cursor <span class="sub" data-role="runs-summary">&mdash;</span></h3>
+          <div class="runs-body">
+            <div class="runs-list" data-role="runs-list"></div>
+            <div class="run-detail" data-role="run-detail" hidden></div>
+          </div>
+        </section>
+      </div>
+      <div class="replay-right">
+        <section class="sub-panel">
+          <h3>Car at the cursor <span class="sub" data-role="state-sub"></span></h3>
+          <div class="state-grid" data-role="state-grid"></div>
+        </section>
+        <section class="sub-panel">
+          <h3>Radio so far</h3>
+          <ol class="log" data-role="radio-log"></ol>
+        </section>
+        <section class="sub-panel">
+          <h3>Race events so far</h3>
+          <ol class="log" data-role="event-log"></ol>
+        </section>
+      </div>
+    </div>
+  </section>
+
+  <!-- LAP ANALYSIS -------------------------------------------------------- -->
+  <section class="panel" id="panel-laps">
+    <h2>Lap analysis <span class="sub" data-role="laps-sub"></span></h2>
+    <div class="lap-pick">
+      <label class="k" for="main-lap">lap</label>
+      <select id="main-lap" aria-label="lap under review"></select>
+      <label class="k" for="ref-lap">against</label>
+      <select id="ref-lap" aria-label="reference lap"></select>
+      <span class="legend"><i class="swatch main"></i>lap <span data-role="main-label"></span>
+        <i class="swatch ref"></i>reference <span data-role="ref-label"></span></span>
+    </div>
+    <div class="laps-grid">
+      <div class="lap-table-wrap"><table class="data lap-table" data-role="lap-table"></table></div>
+      <div class="trace-wrap"><canvas data-role="traces"></canvas></div>
+      <div class="map-wrap">
+        <canvas data-role="trackmap"></canvas>
+        <div class="sub">Dots: where the detectors flagged an off-track, incident or lock-up over the whole race.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- COACHING FINDINGS --------------------------------------------------- -->
+  <section class="panel" id="panel-findings">
+    <h2>Coaching findings <span class="sub" data-role="findings-sub">deterministic, from the telemetry (Layer 1)</span></h2>
+    <div class="chief" data-role="chief"></div>
+    <div class="findings-grid">
+      <div>
+        <h3>Corners <span class="sub">click one to highlight it on the traces and the map</span></h3>
+        <table class="data corners" data-role="corners"></table>
+      </div>
+      <div>
+        <h3>Sectors</h3>
+        <table class="data" data-role="sectors"></table>
+        <h3>Driver inputs</h3>
+        <table class="data" data-role="kpis"></table>
+        <ul class="notes" data-role="findings-notes"></ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- AGENT AUDIT --------------------------------------------------------- -->
+  <section class="panel" id="panel-audit">
+    <h2>Agent audit <span class="sub" data-role="audit-sub">every agent run in this session</span></h2>
+    <div class="audit-filters">
+      <select id="audit-agent" aria-label="agent"><option value="">all agents</option></select>
+      <select id="audit-outcome" aria-label="outcome">
+        <option value="">all outcomes</option>
+        <option value="radio">spoke</option>
+        <option value="refused">refused</option>
+        <option value="no_output">no output</option>
+        <option value="error">error</option>
+        <option value="unfinished">unfinished</option>
+      </select>
+      <select id="audit-sort" aria-label="sort">
+        <option value="time">by time</option>
+        <option value="latency">slowest first</option>
+        <option value="calls">most calls first</option>
+      </select>
+    </div>
+    <div class="audit-wrap"><table class="data audit" data-role="audit"></table></div>
+  </section>
+
+</main>
+
+<script type="module" src="../js/review/review-app.js"></script>
+</body>
+</html>

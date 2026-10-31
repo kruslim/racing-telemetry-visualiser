@@ -57,7 +57,10 @@ files that were already formatted and sorts imports in every edited file.
 - `frontend/` (frozen web pages, see Conventions) served by FastAPI at `/`: the live view (`index.html`, `css/`, `js/`), the
   post-race review at `/review/` (`review/index.html`, `js/review/`), `radio.html` and
   two self-test pages; `js/shared/` is used by both views. `docs/*.md` are hand-written
-  docs (nothing is published to GitHub Pages until a real session export exists).
+  docs. GitHub Pages serves `docs/`: `docs/review`, `docs/css`, `docs/js` are copies
+  made by `scripts/build_pages.py`, `docs/data/<name>/` is a session exported by
+  `scripts/export_session.py`, read by the review's static mode (`?static=`). See the
+  `publish-pages` skill.
 - `mcp_server/telemetry_coach.py` Layer 2 MCP server over the REST API.
 - `evals/` checks shared with the in-loop validator, fixtures, cases, runner, LLM judge,
   `run.py` (the live, paid eval), and the test-only generated data
@@ -83,8 +86,9 @@ files that were already formatted and sorts imports in every edited file.
 - RTV Desktop (`rtv.desktop`) is the primary UI: new UI features go in the desktop app
   only. The web pages (`/`, `/review/`, `/radio.html`) are frozen: they keep working and
   get bug fixes, no new features (the web review stays for the GitHub Pages export).
-  Web fixes are edited in `frontend/`; once a Pages copy exists in `docs/`, rebuild it
-  with `scripts/build_pages.py` in the same change.
+  Web fixes are edited in `frontend/`; rebuild the Pages copy in `docs/` with
+  `scripts/build_pages.py` in the same change (`tests/test_export_session.py` fails on a
+  stale copy).
 - View rules live in the JS modules and their Python ports in `rtv/desktop/model/`; both
   must pass the golden file `tests/fixtures/view_golden/` (`tests/test_view_golden.py`,
   `node frontend/js/run-golden-tests.mjs`). After an intended view change, rebuild it with
