@@ -159,13 +159,13 @@ async def test_spec_drift_names_what_changed(tmp_path, engine):
     assert agent_input.spec_drift(start, changed, later.system_prompt) == ["prompt", "model"]
 
 
-async def test_new_journal_says_schema_2_and_counts_inputs(tmp_path, engine):
+async def test_new_journal_says_schema_3_and_counts_inputs(tmp_path, engine):
     path, *_ = await _run_journalled(tmp_path, engine, STRATEGIST, lambda **_: ProviderResponse())
-    assert JOURNAL_SCHEMA_VERSION == 2
+    assert JOURNAL_SCHEMA_VERSION == 3
     summary = journal.summarize_run(path)
-    assert summary["schema_version"] == 2 and "schema_version" not in summary["meta"]
+    assert summary["schema_version"] == 3 and "schema_version" not in summary["meta"]
     stats = load_run_stats(path)
-    assert (stats["schema_version"], stats["runs_with_input"]) == (2, 1)
+    assert (stats["schema_version"], stats["runs_with_input"]) == (3, 1)
 
 
 def test_old_journal_reads_as_schema_1_without_inputs():

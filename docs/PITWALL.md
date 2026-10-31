@@ -128,7 +128,23 @@ and the desktop review read only the journal and never re-run the agents
 (`/sessions/{id}/pitwall-runs`, `/pitwall-log`, `/pitwall-log/state`, `/summary`).
 Schema version 2 (F1): each `run_start` holds the run's whole model input (`data.input`)
 and each `tool_call` its whole result (`data.result_full`); `rtv.pitwall.agent_input.
-model_input(record)` rebuilds the first model call. Version-1 journals read unchanged.
+model_input(record)` rebuilds the first model call. Schema version 3 (F3): `run_start`
+also holds `data.state_full` (the whole `RaceState` the run was given) and each `validate`
+record `data.output_full` (the model's structured answer before a refusal or truncation
+rewrote it). All four fields are journal-only (`activity.JOURNAL_ONLY_FIELDS`). Older
+journals read unchanged.
+
+**Real-journal evals** (`evals/real/`, F3). A schema-3 journal is an eval source:
+`scripts/build_real_evals.py --journal <run>.jsonl --out evals/real/<set>` cuts each agent
+run with an answer into a case (input, full state, context events, tool results, answers
+with their recorded verdicts, radio and air-time outcome). Offline,
+`evals.real.offline.score_case` re-scores the recorded answers with today's validator and
+policy, the role checks of `evals/pitwall_checks.py`, the corner map and the B1 validity
+rule; `tests/test_real_evals.py` compares the committed `spa_run` set with its
+`baseline.json` (rebuild with `--baseline spa_run`, preview with `--diff spa_run`). Live,
+`evals/run_pitwall.py --real spa_run` re-executes every input against today's prompt and
+model, with tools answering from the recording, reports `spec_drift` per case and scores
+the new answer with the same code; `--judge-provider gemini` adds an advisory judge score.
 
 **Vision live worker** (`rtv.vision.live_worker`, details in `docs/VISION.md`). With
 `RTV_VISION_MODE=live`, events in `RTV_VISION_LIVE_TRIGGERS` become moments; the worker
@@ -3142,3 +3158,33 @@ a fact of that unit family.
   fixing "seventy-two" being read as "two". The new refusals are a speed from an event
   payload (m/s) quoted with another unit, and derived counts ("three laps running" from a
   recurrence). Task A3 is the planned fix for the derived counts.
+
+## F3 — real-journal eval cases (`evals/real/spa_run`)
+
+The F1 journal held the input but not the answer or the full state, so a recorded run
+could be re-executed but not re-scored. F3 closes that and turns a Spa replay into cases.
+
+- **Journal schema 3**: `run_start.data.state_full` (`RaceState.to_api()` of the snapshot
+  the run was handed; the policy, the validity rule and the role checks read more than the
+  agent's slice) and `validate.data.output_full` (`AgentOutput.model_dump`, one per pass:
+  first answer, then the repair). Both journal-only. `JOURNAL_SCHEMA_VERSION = 3`.
+- **`evals/real/cases.py`**: `extract_cases(journal)` (schema-3 runs with at least one
+  answer), `write_case_set(cases, dir, source=)` (`cases.jsonl`, `prompts.json` keyed by
+  `prompt_sha`, `source.json`), `load_case_set(name_or_dir)`. `context_events` is the last
+  `run_start.context_events` race events before the run; `air.state` is the nearest
+  journal state snapshot at or before air time, slimmed to what `validity.check` reads.
+- **`evals/real/offline.py`**: `score_case`, `score_set`, `summary`, `write_baseline`,
+  `read_baseline`, `diff`. The fact set is rebuilt as the runtime builds it (slice, event
+  payload, then tool results in call order); `same_as_recorded` says whether today's
+  validator and policy agree with the verdict recorded live. Validity re-stamps the rule
+  (the pit entry comes from the recorded `invalid_if_lap_dist_past`, since the engine's
+  value is not on the message) and checks it at the recorded air time.
+- **`evals/real/live.py`**: `run_case(case, provider, model=, tool_config=, judges=)`,
+  `recorded_tools`, `judge_answer` (advisory `PitwallJudgeScore`: usefulness,
+  actionability, grounding, 1-5), `aggregate`. `evals/run_pitwall.py --real <set>
+  [--agent] [--limit] [--model] [--judge-provider gemini[,kimi]] [--out file.json]`;
+  `--dry-run` with `--real` prints the recorded calls and offline scores.
+- **Set**: `evals/real/spa_run/` from the F3 Kimi Spa replay (full journal in project files
+  `spa-kimi-run-F3/`). See its README for how to regenerate it.
+- **Deviation**: the PLAN name was `spa_run3`; the set is `spa_run`, since it is cut from a
+  fresh replay, not run 3 (which has no inputs).
