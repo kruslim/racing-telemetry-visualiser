@@ -384,6 +384,7 @@ class StrategyPanel(Panel):
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__("Strategy", parent)
+        self._rec: object = object()  # never equal to a real recommendation
         # recommendation card
         self.card = QFrame()
         self.card.setObjectName("card")
@@ -482,6 +483,9 @@ class StrategyPanel(Panel):
         self.body.addWidget(self.tyre_note)
 
     def set_recommendation(self, rec: dict | None) -> None:
+        if rec == self._rec:
+            return  # called every render; rebuilding the tag each tick makes it flicker
+        self._rec = rec
         clear_layout(self.card_tag_slot)
         if not rec:
             self.card_call.setText("NO CALL YET")
@@ -752,7 +756,10 @@ class TickerStrip(QFrame):
         self.total = 0
 
     def set_events(self, lines: list[dict], total: int) -> None:
-        self.lines = lines[: self.LIMIT]
+        lines = lines[: self.LIMIT]
+        if lines == self.lines and total == self.total and self.items.count():
+            return  # the live view renders at 10 Hz; rebuilding every tick blanks the strip
+        self.lines = lines
         self.total = total
         self.count.setText(f"RACE EVENTS {total}")
         clear_layout(self.items)
