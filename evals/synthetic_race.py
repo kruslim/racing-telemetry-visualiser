@@ -85,6 +85,11 @@ class ScenarioSpec:
     lap_length_m: float = 4000.0
     player_idx: int = 0
     lap_time_spread: float = 0.05  # per-car last-lap-time increment
+    #: ``(car_idx, laps_gained_per_lap)`` pairs: cars that run faster than the
+    #: player, so the field changes order, closes up and laps us (traffic and
+    #: blue-flag tests). Empty by default, which keeps the grid constant and the
+    #: ground-truth scenario byte-identical.
+    closing: tuple[tuple[int, float], ...] = ()
 
     #: Channels to omit from the catalog, for degradation tests.
     exclude: tuple[str, ...] = field(default=())
@@ -239,6 +244,7 @@ def scenario_frames(spec: ScenarioSpec | None = None) -> Iterator[Frame]:
     order = sorted(range(n_cars), key=lambda c: -spec.grid[c])
     position = {car: i + 1 for i, car in enumerate(order)}
     player_position = position[spec.player_idx]
+    gain = dict(spec.closing)
 
     for lap in range(1, spec.laps + 1):
         last_i = (
@@ -249,6 +255,14 @@ def scenario_frames(spec: ScenarioSpec | None = None) -> Iterator[Frame]:
         for i in range(last_i):
             pct = i / spec.ticks_per_lap
             progress = (lap - 1) + pct
+            if gain:
+                # A moving field: rank by race distance covered on this tick.
+                order = sorted(
+                    range(n_cars),
+                    key=lambda c, at=progress: -(at + spec.grid[c] + gain.get(c, 0.0) * at),
+                )
+                position = {car: i + 1 for i, car in enumerate(order)}
+                player_position = position[spec.player_idx]
 
             # --- scripted phases ---------------------------------------
             yellow = _in_span(lap, pct, spec.yellow_lap, spec.yellow_from_pct,
@@ -347,14 +361,18 @@ def scenario_frames(spec: ScenarioSpec | None = None) -> Iterator[Frame]:
             pit_arr = [False] * 64
             surf_arr = [-1] * 64
             for car in range(n_cars):
-                car_progress = max(0.0, progress + spec.grid[car])
+                rate = gain.get(car, 0.0)
+                car_progress = max(0.0, progress + spec.grid[car] + rate * progress)
                 car_lap = int(car_progress) + 1
                 pcts[car] = car_progress - int(car_progress)
                 laps_arr[car] = car_lap
                 pos_arr[car] = position[car]
-                last_arr[car] = (
-                    spec.lap_time + car * spec.lap_time_spread if car_lap > 1 else 0.0
+                car_lap_time = (
+                    spec.lap_time / (1.0 + rate)
+                    if rate
+                    else spec.lap_time + car * spec.lap_time_spread
                 )
+                last_arr[car] = car_lap_time if car_lap > 1 else 0.0
                 pit_arr[car] = in_pits if car == spec.player_idx else False
                 surf_arr[car] = 3
             values["CarIdxLapDistPct"] = pcts
