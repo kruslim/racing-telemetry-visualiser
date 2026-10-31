@@ -128,6 +128,7 @@ class VisionService:
         engine: Any | None = None,
         clock: SessionClock | None = None,
         popen: Callable[..., Any] | None = None,
+        budget: Any | None = None,
     ) -> None:
         self.settings = settings
         self.repo = repo
@@ -161,6 +162,8 @@ class VisionService:
                 max_calls=settings.vision_live_max_calls,
                 min_gap_s=settings.vision_live_min_gap_s,
                 facts_for=self._facts_for,
+                # The pitwall's session budget: vision calls count in it too.
+                budget=budget,
             )
             self.worker.start()
 

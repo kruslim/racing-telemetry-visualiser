@@ -163,3 +163,8 @@ table.corners .tag { color: var(--muted); font-family: var(--mono); font-size: 1
 .audit-wrap { max-height: 520px; overflow: auto; }
 table.audit td.said { font-family: "Segoe UI", system-ui, sans-serif; max-width: 420px; }
 table.audit td.agent { color: var(--agent); }
+
+/* Static mode (the Pages export): no server, so its controls are gone. */
+body.static [data-server-only] {
+  display: none !important;
+}

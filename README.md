@@ -2,8 +2,9 @@
 
 **A full-stack iRacing telemetry platform: real-time ingest → columnar storage → a tiered AI race engineer → a live multi-agent pitwall with a voice → a post-race review that replays what the agents did.**
 
-> The app serves real data only. The old GitHub Pages showcase ran on simulated data and
-> has been taken down; it will come back as an export of a real recorded session.
+> The app serves real data only. GitHub Pages (`docs/`) publishes the post-race review of
+> one real recorded session, a Spa GT3 race replayed with the Kimi agents on, as static
+> JSON (`scripts/export_session.py`, then `scripts/build_pages.py`).
 
 > **RTV Desktop is the primary UI.** The native app (`rtv.desktop`, see
 > [RTV Desktop](#rtv-desktop-the-primary-ui)) gets every new UI feature. The web pages

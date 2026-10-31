@@ -95,15 +95,22 @@ and the desktop review read only the journal and never re-run the agents
 **Vision live worker** (`rtv.vision.live_worker`, details in `docs/VISION.md`). With
 `RTV_VISION_MODE=live`, events in `RTV_VISION_LIVE_TRIGGERS` become moments; the worker
 grabs frames from the running capture or a synced recording, runs the grounded
-`VisionAnalyzer` and publishes kept notes as `visual_observation` events. The spotter and
-coach can wake on them. Spend is capped by `RTV_VISION_LIVE_MAX_CALLS` and
-`RTV_VISION_LIVE_MIN_GAP_S`.
+`VisionAnalyzer` and publishes kept notes as `visual_observation` events. They are review
+material by default: the journal, the timeline and both reviews show them, and the
+orchestrator's dispatch records them as `blocked: "vision_review_only"`. Only with
+`RTV_VISION_LIVE_RADIO=true` do they wake the spotter and coach. Spend is capped by
+`RTV_VISION_LIVE_MAX_CALLS` (an inner limit) and `RTV_VISION_LIVE_MIN_GAP_S`, and every
+vision call also counts against the session budget below.
 
 **Health and budget** (appendix stage 5). A frame that raises costs one frame; a
 supervised task that dies is restarted and counted (`status()["restarts"]`); a failed
 model call is retried once and then said out loud; `RTV_PITWALL_AGENT_FAILURE_LIMIT`
 consecutive failures open an agent's breaker; `RTV_PITWALL_MAX_CALLS_PER_SESSION` caps
-billable calls per session. `GET /api/v1/pitwall/health` is the one poll for all of it.
+billable calls per session, every layer included: the live VLM reports each call through
+`PitwallOrchestrator.record_call("vision")`, and a moment that would exceed the budget is
+skipped (`over_budget`, also written as a `skip` record in the vision journal).
+`status()["calls_by_layer"]` is `{"agents": n, "vision": m}`. `GET /api/v1/pitwall/health`
+is the one poll for all of it, the budget and its split included.
 Token usage per call is in `rtv.llm.USAGE` (`GET /api/v1/llm/usage`) and in the journal.
 
 **Prompt caching.** The stable role prompt is the first system block and carries
@@ -2931,3 +2938,25 @@ reason (`rtv.desktop.model.review.air_badge`, mirrored as `airBadge` in
 expired messages; the web review lists them struck, with the badge. Nothing else changed
 on the web.
 
+
+---
+
+## G4 — live visual notes off the radio, one call budget (2026-10-31)
+
+Plan task G4 of the project review (REVIEW.md P2-5). Live VLM notes are review material
+by default: `PitwallOrchestrator.dispatch` routes a `visual_observation` to no agent and
+traces it as `blocked: "vision_review_only"` unless `RTV_VISION_LIVE_RADIO=true`
+(`Settings.vision_live_radio`, orchestrator argument `vision_radio`). The event still goes
+on the bus, so the journal, `/ws/pitwall`, the timeline and both reviews are unchanged.
+
+Vision calls now count against `RTV_PITWALL_MAX_CALLS_PER_SESSION`. The orchestrator gained
+`record_call(layer, n=1)` (thread-safe) and `calls_by_layer`; `calls_used` sums the agents
+and every recorded layer, and `reset()` clears the layers with the agent baseline.
+`LiveVisionWorker` takes `budget=` (anything with `calls_remaining` and
+`record_call(layer)`; `services` passes the orchestrator through `VisionService(budget=)`),
+checks it when a moment is admitted and again before the call, and counts a skip as
+`over_budget` plus a `skip` record in the vision journal. `RTV_VISION_LIVE_MAX_CALLS`
+stays as the inner cap. `/pitwall/status` has `calls_by_layer`; `/pitwall/health`'s
+`agents` block now carries `calls_used`, `calls_by_layer`, `max_calls_per_session` and
+`budget_exhausted`. With the agent layer off there is no shared budget and the vision cap
+alone applies. `radio.py` is untouched (B1 owns it).
