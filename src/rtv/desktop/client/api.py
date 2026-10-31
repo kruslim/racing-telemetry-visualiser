@@ -92,6 +92,32 @@ class Api(QObject):
         payload = QByteArray(json.dumps(body if body is not None else {}).encode())
         return self._track(self._net.post(request, payload), path, ok, err, key)
 
+    def put(
+        self,
+        path: str,
+        body: Any = None,
+        params: dict | None = None,
+        ok: Ok | None = None,
+        err: Err | None = None,
+        key: str | None = None,
+    ) -> QNetworkReply:
+        request = QNetworkRequest(self.url(path, params))
+        request.setHeader(QNetworkRequest.KnownHeaders.ContentTypeHeader, "application/json")
+        payload = QByteArray(json.dumps(body if body is not None else {}).encode())
+        return self._track(self._net.put(request, payload), path, ok, err, key)
+
+    def get_bytes(
+        self,
+        path: str,
+        params: dict | None = None,
+        ok: Callable[[bytes], None] | None = None,
+        err: Err | None = None,
+        key: str | None = None,
+    ) -> QNetworkReply:
+        """GET a binary body (a JPEG frame); ``ok`` gets the raw bytes."""
+        request = QNetworkRequest(self.url(path, params))
+        return self._track(self._net.get(request), path, ok, err, key, raw=True)
+
     def upload(
         self,
         path: str,
@@ -118,7 +144,14 @@ class Api(QObject):
         return self._track(reply, path, ok, err, None)
 
     def _track(
-        self, reply: QNetworkReply, path: str, ok: Ok | None, err: Err | None, key: str | None
+        self,
+        reply: QNetworkReply,
+        path: str,
+        ok: Ok | None,
+        err: Err | None,
+        key: str | None,
+        *,
+        raw: bool = False,
     ) -> QNetworkReply:
         if key:
             previous = self._keyed.get(key)
@@ -137,6 +170,10 @@ class Api(QObject):
             if aborted:
                 return
             if 200 <= int(status) < 300:
+                if raw:
+                    if ok:
+                        ok(body)
+                    return
                 try:
                     data = json.loads(body) if body else None
                 except ValueError:

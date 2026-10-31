@@ -3,7 +3,8 @@
 Onboard video, synced to the telemetry, plus short VLM-written "visual notes" on the
 moments the telemetry already flagged. This page is the backend contract for the UI
 redesign: everything a review page needs to show a synced video and the notes is here.
-The live side (capture, the live VLM, the live view's Onboard panel) is under
+RTV Desktop shows the post-race side in the review's onboard video panel (`docs/DESKTOP.md`,
+§5.9 row). The live side (capture, the live VLM, the live view's Onboard panel) is under
 [Live](#live).
 
 The rule that shapes all of it: **telemetry picks the moment, the VLM describes it.** A

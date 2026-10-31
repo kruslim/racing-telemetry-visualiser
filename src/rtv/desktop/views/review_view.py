@@ -25,7 +25,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ..model import activity, review
+from ..model import activity, review, vision
 from ..model import view_model as vm
 from ..model.format import NA, clock, is_num, lap_time, thousands
 from ..theme import tokens as t
@@ -43,6 +43,7 @@ from ..widgets.review import (
     SessionBar,
     SummaryPanel,
 )
+from ..widgets.vision import OnboardPanel, VisionSpendDialog
 from .hub import Hub
 
 CHANNELS = [
@@ -54,6 +55,9 @@ CHANNELS = [
 ]
 PLAY_SPEEDS = [1, 4, 16, 60]
 POLL_JOB_MS = 700
+POLL_VISION_MS = 1500
+FRAME_WIDTH = 640
+VIDEO_FILTER = "Video (*.mp4 *.mkv *.mov *.webm *.avi *.m4v)"
 
 
 class ReviewView(QWidget):
@@ -80,6 +84,12 @@ class ReviewView(QWidget):
         self._delta = None
         self._job: str | None = None
         self._recording = False
+        self.videos: list[dict] = []
+        self.video: dict | None = None
+        self.vision_notes: list[dict] = []
+        self.vision_status: dict | None = None
+        self._vision_corner: str | None = None
+        self._analysis: str | None = None
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
@@ -180,6 +190,10 @@ class ReviewView(QWidget):
         self.replay_panel.body.addWidget(self.runs)
         cl.addWidget(self.replay_panel)
 
+        # onboard video and its visual notes (docs/VISION.md)
+        self.onboard = OnboardPanel()
+        cl.addWidget(self.onboard)
+
         # lap analysis
         self.lap_panel = Panel("Lap analysis")
         self.main_pick = QComboBox()
@@ -227,6 +241,13 @@ class ReviewView(QWidget):
         self._job_timer = QTimer(self)
         self._job_timer.setInterval(POLL_JOB_MS)
         self._job_timer.timeout.connect(self._poll_job)
+        self._preview_timer = QTimer(self)
+        self._preview_timer.setSingleShot(True)
+        self._preview_timer.setInterval(200)
+        self._preview_timer.timeout.connect(self._load_preview)
+        self._vision_timer = QTimer(self)
+        self._vision_timer.setInterval(POLL_VISION_MS)
+        self._vision_timer.timeout.connect(self._poll_analysis)
 
         # wiring
         hub.sessions_changed.connect(self._on_sessions)
@@ -241,6 +262,15 @@ class ReviewView(QWidget):
         self.lap_table.lap_picked.connect(self._lap_from_table)
         self.findings_panel.corner_picked.connect(self._corner)
         self.audit.filters_changed.connect(self._render_audit)
+        self.onboard.add_clicked.connect(self._add_video)
+        self.onboard.video_changed.connect(self._pick_video)
+        self.onboard.sync_requested.connect(self._sync_video)
+        self.onboard.preview_requested.connect(lambda _vt: self._preview_timer.start())
+        self.onboard.plan_clicked.connect(lambda: self._plan_vision(confirm=False))
+        self.onboard.analyse_clicked.connect(lambda: self._plan_vision(confirm=True))
+        self.onboard.cancel_clicked.connect(self._cancel_analysis)
+        self.onboard.note_picked.connect(self._note_picked)
+        self.onboard.filter_cleared.connect(lambda: self._filter_notes(None))
         self.api.get(
             "/coaching/agents",
             ok=lambda d: self.findings_panel.set_codes((d or {}).get("agents") or []),
@@ -286,6 +316,7 @@ class ReviewView(QWidget):
             f"/sessions/{session_id}/laps", ok=self._on_laps, err=lambda _s, d: self._error(d)
         )
         self._load_runs(run_id)
+        self._load_vision()
 
     def _load_runs(self, prefer: str | None = None) -> None:
         def ok(data):
@@ -386,6 +417,7 @@ class ReviewView(QWidget):
                 combo.setCurrentIndex(max(0, combo.findData(chosen)))
             combo.blockSignals(False)
         self.lap_table.set_laps(self.laps, self.main_lap, self.ref_lap)
+        self.onboard.set_videos(self.videos, self.video, self.laps)  # laps to sync on
         if self.run_id and self.records:
             meta = next((r for r in self.runs_meta if r.get("run_id") == self.run_id), {})
             self.bounds = review.bounds(meta, self.laps)
@@ -506,6 +538,7 @@ class ReviewView(QWidget):
         self.track_facts.setText(review.track_facts(data))
 
     def _corner(self, corner: dict) -> None:
+        self._filter_notes(corner.get("label") if corner else None)
         span = review.corner_span(corner)
         self.traces.set_highlight(span)
         if span and self.lap_length:
@@ -591,6 +624,17 @@ class ReviewView(QWidget):
                     ],
                 )
             )
+        if self.vision_notes:
+            rows.append(
+                (
+                    "camera",
+                    t.MUTED,
+                    [
+                        {**i, "color": t.severity_color(i["severity"])}
+                        for i in vision.timeline_items(self.vision_notes)
+                    ],
+                )
+            )
         rows.append(
             (
                 "radio",
@@ -655,6 +699,7 @@ class ReviewView(QWidget):
         self.runs.set_runs(activity.recent_runs(model, 6), None)
 
     def _load_cursor_state(self) -> None:
+        self._load_frame()
         if not (self.session_id and self.run_id and is_num(self.cursor)):
             self.car.set_state(None, self.cursor)
             return
@@ -776,3 +821,255 @@ class ReviewView(QWidget):
             self._load_runs(newest.get("run_id") if newest else None)
 
         self.api.get(f"/sessions/{self.session_id}/pitwall-runs", ok=ok)
+
+    # ---- onboard video and visual notes --------------------------------
+    def _load_vision(self) -> None:
+        sid = self.session_id
+        self._vision_timer.stop()
+        self._analysis = None
+        self.videos, self.video, self.vision_notes = [], None, []
+        self.onboard.set_running(False)
+        self.onboard.set_plan(None)
+        self.onboard.set_analysis(vision.analysis_text(None))
+        self._render_video()
+        self.api.get(
+            "/vision/status",
+            ok=self._on_vision_status,
+            err=lambda _s, _d: self._on_vision_status(None),
+            key="vision-status",
+        )
+        self.api.get(
+            f"/sessions/{sid}/videos",
+            ok=lambda d: self._on_videos((d or {}).get("videos") or []),
+            err=lambda _s, _d: self._on_videos([]),
+            key="vision-videos",
+        )
+        self.api.get(
+            f"/sessions/{sid}/vision/analyses",
+            ok=self._on_analyses,
+            err=lambda _s, _d: None,
+            key="vision-analyses",
+        )
+
+    def _on_vision_status(self, status: dict | None) -> None:
+        self.vision_status = status
+        self.onboard.set_blocker(vision.vision_blocker(status))
+
+    def _on_videos(self, videos: list[dict], prefer: str | None = None) -> None:
+        self.videos = videos
+        self.video = vision.pick_video(videos, prefer or (self.video or {}).get("video_id"))
+        self._render_video()
+        self._load_frame()
+
+    def _render_video(self) -> None:
+        self.onboard.set_videos(self.videos, self.video, self.laps)
+        self._render_notes()
+
+    def _on_analyses(self, data: dict | None) -> None:
+        data = data or {}
+        aid = data.get("default_analysis")
+        summary = next((a for a in data.get("analyses") or [] if a.get("analysis_id") == aid), None)
+        self.onboard.set_analysis(vision.analysis_text(summary))
+        if summary and summary.get("status") == "running":
+            self._analysis = aid
+            self.onboard.set_running(True)
+            self._vision_timer.start()
+        self._load_notes(aid)
+
+    def _load_notes(self, aid: str | None) -> None:
+        if not aid:
+            self.vision_notes = []
+            self._render_notes()
+            self._render_replay()
+            return
+
+        def ok(data):
+            self.vision_notes = (data or {}).get("items") or []
+            self._render_notes()
+            self._render_replay()
+
+        self.api.get(
+            f"/sessions/{self.session_id}/vision/notes",
+            {"analysis": aid},
+            ok=ok,
+            err=lambda _s, d: self._error(d),
+            key="vision-notes",
+        )
+
+    def _render_notes(self) -> None:
+        rows = vision.note_rows(self.vision_notes, corner=self._vision_corner)
+        self.onboard.set_notes(rows, self._vision_corner, len(self.vision_notes))
+
+    def _filter_notes(self, corner: str | None) -> None:
+        self._vision_corner = corner
+        self._render_notes()
+
+    def _note_picked(self, row: dict) -> None:
+        t_s = row.get("session_time")
+        if not is_num(t_s):
+            return
+        if self.bounds:
+            self.set_cursor(t_s)
+        else:  # no pitwall run: the cursor still drives the frame
+            self.cursor = t_s
+            self._load_frame()
+
+    def _load_frame(self) -> None:
+        video = self.video
+        if not vision.is_synced(video):
+            return
+        vt = vision.to_video(video, self.cursor)
+        if vt is None:
+            text = "No cursor yet." if not is_num(self.cursor) else "The video does not cover"
+            if is_num(self.cursor):
+                text += f" {clock(self.cursor)}: it covers {vision.sync_text(video)}."
+            self.onboard.set_frame(None, text)
+            return
+        caption = self.onboard.frame_caption(self.cursor, vt)
+        self.api.get_bytes(
+            f"/sessions/{self.session_id}/videos/{video['video_id']}/frame",
+            {"video_time": round(vt, 3), "width": FRAME_WIDTH},
+            ok=lambda jpeg: self.onboard.set_frame(jpeg, caption),
+            err=lambda _s, d: self.onboard.set_frame(None, f"No frame: {d}"),
+            key="vision-frame",
+        )
+
+    def _load_preview(self) -> None:
+        """While syncing: the frame at the video time being typed."""
+        video = self.video
+        if not video or vision.is_synced(video):
+            return
+        vt = self.onboard.sync_time.value()
+        self.api.get_bytes(
+            f"/sessions/{self.session_id}/videos/{video['video_id']}/frame",
+            {"video_time": round(vt, 3), "width": FRAME_WIDTH},
+            ok=lambda jpeg: self.onboard.set_frame(jpeg, f"video {clock(vt)}"),
+            err=lambda _s, d: self.onboard.set_frame(None, f"No frame: {d}"),
+            key="vision-frame",
+        )
+
+    def _pick_video(self, video_id: str) -> None:
+        self._on_videos(self.videos, video_id)
+
+    def _add_video(self) -> None:
+        if not self.session_id:
+            return
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Add an onboard video of this session",
+            os.path.expanduser("~/Videos"),
+            VIDEO_FILTER,
+        )
+        if not path:
+            return
+        name = os.path.basename(path)
+        sid = self.session_id
+
+        def added(video):
+            self.notice.show_message(f"Added {name}. Sync it to the telemetry next.", "info")
+            self.api.get(
+                f"/sessions/{sid}/videos",
+                ok=lambda d: self._on_videos(
+                    (d or {}).get("videos") or [], (video or {}).get("video_id")
+                ),
+                key="vision-videos",
+            )
+
+        def failed(_s, detail):
+            self._error(f"Could not add {name}: {detail}")
+
+        if self.embedded:
+            self.api.post(f"/sessions/{sid}/videos", {"path": path}, ok=added, err=failed)
+        else:
+            self.onboard.meta.setText(f"uploading {name}…")
+            self.api.upload(
+                f"/sessions/{sid}/videos/upload",
+                path,
+                {"filename": name},
+                ok=added,
+                err=failed,
+                progress=lambda sent, total: self.onboard.meta.setText(
+                    f"uploading {name}… {round(100 * sent / total) if total else 0}%"
+                ),
+            )
+
+    def _sync_video(self, lap: int, video_time: float) -> None:
+        video = self.video
+        if not video:
+            return
+
+        def ok(updated):
+            others = [v for v in self.videos if v.get("video_id") != video["video_id"]]
+            self._on_videos([*others, updated], video["video_id"])
+
+        self.api.put(
+            f"/sessions/{self.session_id}/videos/{video['video_id']}/sync",
+            {"lap_starts": [{"lap": lap, "video_time": video_time}]},
+            ok=ok,
+            err=lambda _s, d: self._error(f"Sync failed: {d}"),
+        )
+
+    def _plan_vision(self, *, confirm: bool) -> None:
+        video = self.video
+        if not vision.is_synced(video):
+            return
+        sid = self.session_id
+
+        def planned(plan):
+            text = vision.plan_text(plan)
+            self.onboard.set_plan(text)
+            if not confirm or not (plan or {}).get("count"):
+                return
+            if VisionSpendDialog(text, self).exec() != QDialog.DialogCode.Accepted:
+                return
+            self.api.post(
+                f"/sessions/{sid}/vision/analyses",
+                {"video_id": video["video_id"]},
+                ok=started,
+                err=lambda _s, d: self.onboard.set_blocker(f"Analysis not started: {d}"),
+            )
+
+        def started(data):
+            self._analysis = (data or {}).get("analysis_id")
+            self.onboard.set_running(True)
+            self.onboard.set_analysis(vision.analysis_text({"status": "running"}))
+            self._vision_timer.start()
+
+        self.api.post(
+            f"/sessions/{sid}/vision/plan",
+            {"video_id": video["video_id"]},
+            ok=planned,
+            err=lambda _s, d: self.onboard.set_plan(f"Plan failed: {d}"),
+        )
+
+    def _poll_analysis(self) -> None:
+        aid = self._analysis
+        if not aid:
+            self._vision_timer.stop()
+            return
+
+        def ok(summary):
+            summary = summary or {}
+            self.onboard.set_analysis(vision.analysis_text(summary))
+            self.vision_notes = summary.get("items") or []
+            self._render_notes()
+            if summary.get("status") == "running":
+                return
+            self._vision_timer.stop()
+            self.onboard.set_running(False)
+            self._load_notes(aid)  # the kept notes only, as the review shows them
+
+        self.api.get(
+            f"/sessions/{self.session_id}/vision/analyses/{aid}",
+            ok=ok,
+            err=lambda _s, _d: None,
+            key="vision-analysis",
+        )
+
+    def _cancel_analysis(self) -> None:
+        if self._analysis:
+            self.api.post(
+                f"/sessions/{self.session_id}/vision/analyses/{self._analysis}/cancel",
+                ok=lambda _d: None,
+                err=lambda _s, d: self._error(d),
+            )
