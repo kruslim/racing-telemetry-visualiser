@@ -12,7 +12,7 @@ from bisect import bisect_left
 from typing import Any
 
 from .activity import AGENTS
-from .format import is_num
+from .format import NA, is_num
 
 OWN_LANE = {"lap_completed", "flag_change"}
 
@@ -378,6 +378,54 @@ def corner_span(corner: dict | None) -> tuple[float, float] | None:
     a = corner["entry_m"] if is_num(corner.get("entry_m")) else d - 60
     b = corner["exit_m"] if is_num(corner.get("exit_m")) else d + 60
     return (min(a, b), max(a, b))
+
+
+def corner_title(corner: dict | None) -> str:
+    """``T1 La Source`` where the circuit's name is mapped, else just ``T1``."""
+    if not corner:
+        return NA
+    name = corner.get("name")
+    return f"{corner.get('label')} {name}" if name else str(corner.get("label"))
+
+
+def priority_title(item: dict, corners: list[dict] | None) -> str:
+    """A top-3 opportunity's corner, named from the findings' own corner list."""
+    by_label = {c.get("label"): c for c in corners or []}
+    return corner_title(by_label.get(item.get("label")) or {"label": item.get("label")})
+
+
+def track_names(track: dict | None) -> list[dict]:
+    """Named corners on the map, from ``/sessions/{id}/track``: ``{pct, name}``.
+
+    Only corners (not named straights), placed at the middle of their mapped run.
+    """
+    out = []
+    for c in (track or {}).get("corners") or []:
+        if c.get("kind") == "corner" and is_num(c.get("mid_pct")) and c.get("name"):
+            out.append({"pct": c["mid_pct"], "name": c["name"]})
+    return out
+
+
+def track_facts(track: dict | None) -> str:
+    """One line of layout facts from the session header, plus where names come from."""
+    if not track:
+        return ""
+    h = track.get("header") or {}
+    parts = [h.get("display_name") or h.get("iracing_track_name")]
+    if h.get("config_name"):
+        parts.append(h["config_name"])
+    if is_num(h.get("length_m")):
+        parts.append(f"{h['length_m'] / 1000:.2f} km")
+    if is_num(h.get("num_turns")):
+        parts.append(f"{h['num_turns']} turns")
+    if is_num(h.get("pit_speed_limit_kph")):
+        parts.append(f"pit {h['pit_speed_limit_kph']:.0f} km/h")
+    line = " · ".join(str(p) for p in parts if p)
+    if track.get("corners"):
+        line += " · corner names © OpenStreetMap contributors"
+    elif track.get("reference") is None:
+        line += " · no corner names for this venue"
+    return line
 
 
 def track_events(records: list[dict] | None) -> list[dict]:

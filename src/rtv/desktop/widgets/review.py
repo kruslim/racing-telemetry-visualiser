@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ..model import review
 from ..model.activity import AGENTS
 from ..model.format import (
     NA,
@@ -577,7 +578,8 @@ class FindingsPanel(Panel):
         for item in chief.get("top3") or []:
             self.top_lines.addWidget(
                 label(
-                    f"{item.get('label')} — {item.get('why')} — {num(item.get('gain'), 2)} s",
+                    f"{review.priority_title(item, f.get('corners'))} — {item.get('why')} — "
+                    f"{num(item.get('gain'), 2)} s",
                     size=13,
                 )
             )
@@ -595,7 +597,7 @@ class FindingsPanel(Panel):
                 for d in diags
             ]
             sector = c.get("sector")
-            self.corners.setItem(r, 0, _item(str(c.get("label")), t.INK))
+            self.corners.setItem(r, 0, _item(review.corner_title(c), t.INK, mono=not c.get("name")))
             self.corners.setItem(r, 1, _item(str(c.get("type") or ""), mono=False))
             self.corners.setItem(r, 2, _item(f"S{sector}" if sector is not None else NA))
             self.corners.setItem(

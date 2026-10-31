@@ -211,6 +211,31 @@ def test_drawings_paint_real_data(qapp):
     timeline.grab()
 
 
+def test_findings_and_track_map_show_the_circuits_corner_names(qapp):
+    import json
+    from pathlib import Path
+
+    from rtv.desktop.widgets.charts import TrackMap
+    from rtv.desktop.widgets.review import FindingsPanel
+
+    findings = spa.load("lap_findings.json")
+    named = dict(findings, corners=[dict(c) for c in findings["corners"]])
+    named["corners"][0]["name"] = "La Source"  # what /coaching/lap-findings now returns
+    panel = FindingsPanel()
+    panel.set_findings(named)
+    assert panel.corners.item(0, 0).text() == "T1 La Source"
+    assert panel.corners.item(1, 0).text() == "T2"  # unmapped stays a bare label
+    track = json.loads(
+        (Path(__file__).parent / "fixtures" / "spa_session_track.json").read_text("utf-8")
+    )
+    m = TrackMap()
+    m.resize(500, 400)
+    m.set_points(spa.load("trackmap.json")["points"])
+    m.set_names(review.track_names(track))
+    assert [n["name"] for n in m.names][:3] == ["La Source", "Eau Rouge", "Raidillon"]
+    m.grab()
+
+
 def test_quota_dialog_copy_and_ai_controls_off(qapp):
     from rtv.desktop.widgets.dialogs import QUOTA_TEXT, AiControls, QuotaDialog, agents_will_run
 
