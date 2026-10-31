@@ -1809,9 +1809,9 @@
      "tool_errors": 0,
      "validations": 2,
      "unsupported": [
-      "4.66",
-      "4.6610630306531675"
+      "4.66"
      ],
+     "reasons": [],
      "repaired": true,
      "outcome": "refused",
      "latency_ms": 58475.14,
@@ -1836,6 +1836,7 @@
      "tool_errors": 0,
      "validations": 1,
      "unsupported": [],
+     "reasons": [],
      "repaired": false,
      "outcome": "radio",
      "latency_ms": 44033.41,
@@ -1862,6 +1863,7 @@
      "tool_errors": 0,
      "validations": 1,
      "unsupported": [],
+     "reasons": [],
      "repaired": false,
      "outcome": "radio",
      "latency_ms": 27893.27,
@@ -1889,6 +1891,7 @@
      "tool_errors": 0,
      "validations": 1,
      "unsupported": [],
+     "reasons": [],
      "repaired": false,
      "outcome": "radio",
      "latency_ms": 46392.97,
@@ -1916,6 +1919,7 @@
      "tool_errors": 0,
      "validations": 1,
      "unsupported": [],
+     "reasons": [],
      "repaired": false,
      "outcome": "radio",
      "latency_ms": 28054.23,
@@ -1945,6 +1949,7 @@
      "tool_errors": 0,
      "validations": 1,
      "unsupported": [],
+     "reasons": [],
      "repaired": false,
      "outcome": "radio",
      "latency_ms": 12447.16,
@@ -1974,6 +1979,7 @@
      "tool_errors": 0,
      "validations": 1,
      "unsupported": [],
+     "reasons": [],
      "repaired": false,
      "outcome": "radio",
      "latency_ms": 19263.53,
@@ -2004,9 +2010,9 @@
      "tool_errors": 0,
      "validations": 2,
      "unsupported": [
-      "10",
       "10"
      ],
+     "reasons": [],
      "repaired": true,
      "outcome": "refused",
      "latency_ms": 29680.77,
@@ -2020,6 +2026,45 @@
      ],
      "spoken": "Standby - I can't back that call with data yet.",
      "grounded": false
+    }
+   ]
+  },
+  {
+   "name": "auditRows of a refused run with reasons",
+   "module": "review",
+   "fn": "auditRows",
+   "args": [
+    {
+     "$input": "refusal"
+    }
+   ],
+   "expect": [
+    {
+     "run_id": "coach-1",
+     "agent": "coach",
+     "event_key": "offtrack",
+     "t": 367.7,
+     "model": "kimi-k3",
+     "llm_calls": 0,
+     "llm_errors": 0,
+     "llm_ms": 0.0,
+     "tools": [],
+     "tool_errors": 0,
+     "validations": 2,
+     "unsupported": [
+      "4.66"
+     ],
+     "reasons": [
+      "27.74 km/h (no speed figure in the data matches)",
+      "4.66 (no figure in the data matches)"
+     ],
+     "repaired": true,
+     "outcome": "refused",
+     "latency_ms": 12000.5,
+     "message_id": null,
+     "context_from": [],
+     "spoken": null,
+     "grounded": null
     }
    ]
   },
@@ -5476,9 +5521,9 @@
      "tool_errors": 0,
      "validations": 2,
      "unsupported": [
-      "4.66",
-      "4.6610630306531675"
+      "4.66"
      ],
+     "reasons": [],
      "repaired": true,
      "outcome": "refused",
      "latency_ms": 58475.14,
@@ -5503,6 +5548,7 @@
      "tool_errors": 0,
      "validations": 1,
      "unsupported": [],
+     "reasons": [],
      "repaired": false,
      "outcome": "radio",
      "latency_ms": 44033.41,
@@ -5529,6 +5575,7 @@
      "tool_errors": 0,
      "validations": 1,
      "unsupported": [],
+     "reasons": [],
      "repaired": false,
      "outcome": "radio",
      "latency_ms": 27893.27,
@@ -5556,6 +5603,7 @@
      "tool_errors": 0,
      "validations": 1,
      "unsupported": [],
+     "reasons": [],
      "repaired": false,
      "outcome": "radio",
      "latency_ms": 46392.97,
@@ -5583,6 +5631,7 @@
      "tool_errors": 0,
      "validations": 1,
      "unsupported": [],
+     "reasons": [],
      "repaired": false,
      "outcome": "radio",
      "latency_ms": 28054.23,
@@ -5612,6 +5661,7 @@
      "tool_errors": 0,
      "validations": 1,
      "unsupported": [],
+     "reasons": [],
      "repaired": false,
      "outcome": "radio",
      "latency_ms": 12447.16,
@@ -5641,6 +5691,7 @@
      "tool_errors": 0,
      "validations": 1,
      "unsupported": [],
+     "reasons": [],
      "repaired": false,
      "outcome": "radio",
      "latency_ms": 19263.53,
@@ -5671,9 +5722,9 @@
      "tool_errors": 0,
      "validations": 2,
      "unsupported": [
-      "10",
       "10"
      ],
+     "reasons": [],
      "repaired": true,
      "outcome": "refused",
      "latency_ms": 29680.77,
@@ -5723,6 +5774,7 @@
      "tool_errors": 0,
      "validations": 1,
      "unsupported": [],
+     "reasons": [],
      "repaired": false,
      "outcome": "radio",
      "latency_ms": 44033.41,
@@ -5749,6 +5801,7 @@
      "tool_errors": 0,
      "validations": 1,
      "unsupported": [],
+     "reasons": [],
      "repaired": false,
      "outcome": "radio",
      "latency_ms": 28054.23,
@@ -5778,6 +5831,7 @@
      "tool_errors": 0,
      "validations": 1,
      "unsupported": [],
+     "reasons": [],
      "repaired": false,
      "outcome": "radio",
      "latency_ms": 19263.53,
@@ -5827,6 +5881,7 @@
      "tool_errors": 0,
      "validations": 1,
      "unsupported": [],
+     "reasons": [],
      "repaired": false,
      "outcome": "radio",
      "latency_ms": 46392.97,
@@ -5854,6 +5909,7 @@
      "tool_errors": 0,
      "validations": 1,
      "unsupported": [],
+     "reasons": [],
      "repaired": false,
      "outcome": "radio",
      "latency_ms": 44033.41,
@@ -5880,6 +5936,7 @@
      "tool_errors": 0,
      "validations": 1,
      "unsupported": [],
+     "reasons": [],
      "repaired": false,
      "outcome": "radio",
      "latency_ms": 27893.27,
@@ -5907,6 +5964,7 @@
      "tool_errors": 0,
      "validations": 1,
      "unsupported": [],
+     "reasons": [],
      "repaired": false,
      "outcome": "radio",
      "latency_ms": 28054.23,
@@ -5936,6 +5994,7 @@
      "tool_errors": 0,
      "validations": 1,
      "unsupported": [],
+     "reasons": [],
      "repaired": false,
      "outcome": "radio",
      "latency_ms": 12447.16,
@@ -5965,6 +6024,7 @@
      "tool_errors": 0,
      "validations": 1,
      "unsupported": [],
+     "reasons": [],
      "repaired": false,
      "outcome": "radio",
      "latency_ms": 19263.53,

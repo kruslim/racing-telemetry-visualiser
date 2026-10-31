@@ -111,9 +111,19 @@ _TEMP_KEYS = frozenset(
         "tyre_temp",
         "tyre_temp_trend",
         "tyre_axle_imbalance",
+        "temp_change_since_stint_start",
+        "temp_change_vs_previous_lap",
     }
 )
-_PRESSURE_KPA_KEYS = frozenset({"pressures", "pressure_trend", "tyre_pressure"})
+_PRESSURE_KPA_KEYS = frozenset(
+    {
+        "pressures",
+        "pressure_trend",
+        "tyre_pressure",
+        "pressure_change_since_stint_start",
+        "pressure_change_vs_previous_lap",
+    }
+)
 _PRESSURE_BAR_KEYS = frozenset({"oil_pressure", "fuel_pressure"})
 _PERCENT_KEYS = frozenset({"slip", "mean_slip", "worst_slip", "brake"})
 _SEGMENT_RE = re.compile(r"\[[^\]]*\]")

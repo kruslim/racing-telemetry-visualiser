@@ -8,7 +8,7 @@
  * Tested under node by review-model.test.js.
  */
 
-import { AGENTS } from '../shared/activity-model.js';
+import { AGENTS, roundFigures } from '../shared/activity-model.js';
 
 /** Race events that already have a lane of their own (laps, flags) or are noise there. */
 const OWN_LANE = new Set(['lap_completed', 'flag_change']);
@@ -247,6 +247,7 @@ export function auditRows(records) {
         toolErrors: 0,
         validations: 0,
         unsupported: [],
+        reasons: [],
         repaired: false,
         outcome: null,
         latencyMs: null,
@@ -271,7 +272,16 @@ export function auditRows(records) {
         break;
       case 'validate':
         row.validations += 1;
-        if (!data.ok) row.unsupported.push(...(data.unsupported || []));
+        if (!data.ok) {
+          for (const u of data.unsupported || []) {
+            const shown = roundFigures(u);
+            if (!row.unsupported.includes(shown)) row.unsupported.push(shown);
+          }
+          for (const r of data.unsupported_detail || []) {
+            const shown = roundFigures(r);
+            if (!row.reasons.includes(shown)) row.reasons.push(shown);
+          }
+        }
         if (data.repaired) row.repaired = true;
         break;
       case 'run_end':

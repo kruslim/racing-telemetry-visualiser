@@ -9,9 +9,31 @@ event_key, data}``. Kinds this module does not know are ignored by ``apply``.
 
 from __future__ import annotations
 
+import re
 from collections import OrderedDict
 from dataclasses import dataclass, field
 from typing import Any
+
+from .format import to_fixed
+
+_LONG_DECIMAL_RE = re.compile(r"(?<![\w.:])(-?\d+)\.(\d+)(?![\d.])")
+
+
+def round_figures(text: Any, digits: int = 2) -> str:
+    """Port of ``roundFigures``: every long decimal in ``text`` rounded for reading."""
+    if not isinstance(text, str):
+        return "" if text is None else str(text)
+
+    def _sub(m: re.Match[str]) -> str:
+        if len(m.group(2)) <= digits:
+            return m.group(0)
+        fixed = to_fixed(float(m.group(0)), digits)
+        # String(Number(x.toFixed(d))): trailing zeros and a bare point go, "-0" is "0".
+        out = fixed.rstrip("0").rstrip(".") if "." in fixed else fixed
+        return "0" if out in ("-0", "") else out
+
+    return _LONG_DECIMAL_RE.sub(_sub, text)
+
 
 AGENTS = ("strategist", "vehicle_engineer", "spotter", "coach")
 
@@ -269,7 +291,9 @@ def apply(model: Model, record: dict | None) -> Model:  # noqa: C901 - one switc
             run.validations.append(
                 {
                     "ok": bool(data.get("ok")),
-                    "unsupported": data.get("unsupported") or [],
+                    "unsupported": [round_figures(u) for u in data.get("unsupported") or []],
+                    # Why each figure failed, long decimals rounded for reading (task A3).
+                    "reasons": [round_figures(r) for r in data.get("unsupported_detail") or []],
                     "repaired": bool(data.get("repaired")),
                     "word_count": data.get("word_count"),
                 }

@@ -11,7 +11,7 @@ import math
 from bisect import bisect_left
 from typing import Any
 
-from .activity import AGENTS
+from .activity import AGENTS, round_figures
 from .format import NA, integer, is_num
 
 OWN_LANE = {"lap_completed", "flag_change"}
@@ -308,6 +308,7 @@ def audit_rows(records: list[dict] | None) -> list[dict]:
                 "tool_errors": 0,
                 "validations": 0,
                 "unsupported": [],
+                "reasons": [],
                 "repaired": False,
                 "outcome": None,
                 "latency_ms": None,
@@ -332,7 +333,14 @@ def audit_rows(records: list[dict] | None) -> list[dict]:
         elif kind == "validate":
             row["validations"] += 1
             if not data.get("ok"):
-                row["unsupported"].extend(data.get("unsupported") or [])
+                for u in data.get("unsupported") or []:
+                    shown = round_figures(u)
+                    if shown not in row["unsupported"]:
+                        row["unsupported"].append(shown)
+                for r in data.get("unsupported_detail") or []:
+                    shown = round_figures(r)
+                    if shown not in row["reasons"]:
+                        row["reasons"].append(shown)
             if data.get("repaired"):
                 row["repaired"] = True
         elif kind == "run_end":

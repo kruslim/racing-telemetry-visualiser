@@ -88,6 +88,26 @@ def _air_journal(journal: list[dict]) -> list[dict]:
     return out
 
 
+def _refusal_records() -> list[dict]:
+    """One coach run the validator refused twice, as the journal records it (A3)."""
+    base = {"agent": "coach", "run_id": "coach-1", "event_key": "offtrack", "tick": 201300}
+    detail = "27.74091339111328 km/h (no speed figure in the data matches)"
+    return [
+        {**base, "seq": 1, "wall_ms": 1000, "session_time": 367.7, "kind": "run_start",
+         "data": {"model": "kimi-k3"}},
+        {**base, "seq": 2, "wall_ms": 1100, "session_time": 367.7, "kind": "validate",
+         "data": {"ok": False, "unsupported": ["4.66", "4.6610630306531675"],
+                  "unsupported_detail": [detail, "4.6610630306531675 (no figure in the data "
+                                                 "matches)"],
+                  "word_count": 17, "repaired": False}},
+        {**base, "seq": 3, "wall_ms": 1200, "session_time": 367.7, "kind": "validate",
+         "data": {"ok": False, "unsupported": ["4.66"], "unsupported_detail": [detail],
+                  "word_count": 15, "repaired": True}},
+        {**base, "seq": 4, "wall_ms": 1300, "session_time": 367.7, "kind": "run_end",
+         "data": {"outcome": "refused", "latency_ms": 12000.5}},
+    ]
+
+
 def _inputs() -> dict:
     running = spa.load("racestate_running.json")
     journal = []
@@ -172,6 +192,7 @@ def _inputs() -> dict:
         "radio": spa.load("agents-on/pitwall-radio.json")["messages"],
         "events": spa.load("racestate_events_end.json")["events"],
         "activity": spa.load("agents-on/pitwall-activity.json")["records"],
+        "refusal": _refusal_records(),
         "laps": spa.load("laps.json")["laps"],
         "corners": spa.load("lap_findings.json")["corners"],
         "track_points": spa.load("trackmap.json")["points"][::TRACK_POINT_STRIDE],
@@ -378,6 +399,17 @@ def _cases(inputs: dict) -> dict[str, list[dict]]:
         )
     )
     act.append(case("activity", "edgesFor nothing", "edgesFor", None))
+    # Task A3: the validator's figures and reasons are shown rounded.
+    for name, text in [
+        ("a raw float", "withheld 4.66, 4.6610630306531675"),
+        ("a reason", "27.74091339111328 km/h (no speed figure in the data matches)"),
+        ("a lap time stays", "1:32.418 and 0.9674"),
+        ("short decimals stay", "2.5 laps, 0.97 and 12"),
+        ("a tiny negative", "-0.0001 s"),
+        ("nothing", None),
+    ]:
+        act.append(case("activity", f"roundFigures of {name}", "roundFigures", text))
+    act.append(case("activity", "reduce a refused run with reasons", "reduce", _ref("refusal")))
 
     rev = [
         case("review", "defaultLaps of the Spa laps", "defaultLaps", _ref("laps")),
@@ -388,6 +420,7 @@ def _cases(inputs: dict) -> dict[str, list[dict]]:
         case("review", "bounds of nothing", "bounds", None, []),
         case("review", "laneItems of the journal", "laneItems", _ref("journal"), _ref("laps")),
         case("review", "auditRows of the journal", "auditRows", _ref("journal")),
+        case("review", "auditRows of a refused run with reasons", "auditRows", _ref("refusal")),
         case("review", "radioUpTo 400 s", "radioUpTo", _ref("journal"), 400.0, 5),
         case("review", "radioUpTo everything", "radioUpTo", _ref("journal"), None),
         case("review", "eventsUpTo 300 s", "eventsUpTo", _ref("journal"), 300.0),

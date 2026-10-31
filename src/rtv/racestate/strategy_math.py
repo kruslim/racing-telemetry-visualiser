@@ -19,6 +19,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+from rtv.racestate.derived import axle_split, lap_time_deltas
 from rtv.racestate.models import CarState, RaceState
 
 #: Seconds lost relative to staying out, for a green-flag stop. A real number for
@@ -403,6 +404,9 @@ def fuel_projection(state: RaceState) -> dict[str, Any]:
         "current_lap": state.player.lap,
         "stop_plan": stop_plan(state).to_tool(),
     }
+    # Task A3: "lap 17 of 18" needs the race distance next to the lap counter.
+    if state.session.laps_total:
+        out["race_total_laps"] = state.session.laps_total
     if not state.capabilities.fuel:
         out["unavailable"] = "This session's catalog has no fuel channels."
     elif not fuel.per_lap:
@@ -419,6 +423,19 @@ def tyre_trend(state: RaceState) -> dict[str, Any]:
         "pressure_trend_per_lap": dict(tyres.pressure_trend),
         "stint_laps": tyres.stint_laps,
         "laps_on_tyres": state.player.laps_on_tyres,
+        # Task A3: the changes agents kept computing in their heads, ready to copy.
+        "since_stint_start": {
+            "temp_change_c": dict(tyres.temp_change_since_stint_start),
+            "pressure_change_kpa": dict(tyres.pressure_change_since_stint_start),
+        },
+        "vs_previous_lap": {
+            "temp_change_c": dict(tyres.temp_change_vs_previous_lap),
+            "pressure_change_kpa": dict(tyres.pressure_change_vs_previous_lap),
+        },
+        "axles": {
+            "temps": axle_split(tyres.temps, "c"),
+            "pressures": axle_split(tyres.pressures, "kpa"),
+        },
     }
     if not state.capabilities.tyres:
         out["unavailable"] = "This session's catalog has no tyre channels."
@@ -494,9 +511,17 @@ def stint_history(state: RaceState, events: list[Any]) -> dict[str, Any]:
                 "fuel_at_start_l": None,
             }
     stints.append(current)
-    return {
+    out: dict[str, Any] = {
         "current_stint": state.player.stint,
         "stint_start_lap": state.player.stint_start_lap,
         "laps_on_tyres": state.player.laps_on_tyres,
         "stints": stints,
     }
+    # Task A3: the lap-time comparisons agents kept computing, for the current stint.
+    deltas = lap_time_deltas(current["laps"], state.player.best_lap_time)
+    if deltas:
+        out["current_stint_laps"] = deltas
+    total = state.session.laps_total
+    if total:
+        out["race_total_laps"] = total
+    return out

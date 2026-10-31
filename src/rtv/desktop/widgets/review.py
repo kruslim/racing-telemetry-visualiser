@@ -763,5 +763,9 @@ class AuditPanel(Panel):
                 (row.get("spoken") or "", t.SOFT),
             ]
             for c, (text, color) in enumerate(values):
-                self.table.setItem(r, c, _item(text, color, mono=c not in (3, 10)))
+                item = _item(text, color, mono=c not in (3, 10))
+                if (text, color) == (validator, vcolor) and row.get("reasons"):
+                    # The validator's reasons, rounded, on hover (task A3).
+                    item.setToolTip("\n".join(row["reasons"]))
+                self.table.setItem(r, c, item)
         fit_height(self.table, 40)

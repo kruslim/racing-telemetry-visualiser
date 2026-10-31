@@ -300,6 +300,8 @@ class LiveView(QWidget):
                 "  validator: "
                 + ("ok" if v["ok"] else "withheld " + ", ".join(map(str, v["unsupported"])))
             )
+            for reason in v.get("reasons") or []:
+                lines.append(f"    {reason}")
         aired = next((m for m in self.hub.messages if m.get("message_id") == run.message_id), None)
         if aired:
             lines.append(f"Aired: {aired.get('spoken_text')}")
