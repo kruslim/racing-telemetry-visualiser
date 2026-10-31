@@ -374,6 +374,11 @@ replay (played at the replay's speed and re-seeked when it drifts more than 0.4 
 Start/Stop capture button, the live VLM's call count against the cap, and its notes,
 newest first. It polls `GET /vision/live` once a second.
 
+The desktop app's live pitwall has the same panel (`rtv.desktop.widgets.live_onboard`, view
+logic in `rtv.desktop.model.live_onboard`), above the radio. It shows frames rather than
+a player: the capture's newest frame, or the server-grabbed frame of the recording at the
+replay's session time (see `docs/DESKTOP.md`).
+
 ## Not built yet
 
 - A test of window capture on a real iRacing PC (the capture is tested here on an
