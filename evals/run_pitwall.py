@@ -11,9 +11,14 @@ event, a coaching cue against the corner the pattern is actually at.
     python evals/run_pitwall.py --dry-run           # cases + ground truth, no key
     python evals/run_pitwall.py --agent spotter
     python evals/run_pitwall.py --model kimi-k3
+    python evals/run_pitwall.py --real spa_run      # re-execute the real Spa runs
+    python evals/run_pitwall.py --real spa_run --judge-provider gemini --out live.json
 
 Needs the LLM key (KIMI_CODE_API_KEY by default) unless --dry-run. It does *not* need iRacing or a
-populated store: the golden sets are generated from the scripted race.
+populated store: the golden sets are generated from the scripted race, and ``--real`` cases
+(``evals/real/<set>/``) carry the recorded state and tool results. ``--real`` re-executes
+each recorded input against today's prompt and model, scores it with the same checks as the
+offline replay (``tests/test_real_evals.py``) and prints ``spec_drift`` per case.
 """
 
 from __future__ import annotations
@@ -136,7 +141,79 @@ async def _run_agent(agent: str, cases: list, args) -> list[dict]:
     return rows
 
 
+async def _run_real(args) -> int:
+    from evals.real.cases import load_case_set
+    from evals.real.live import aggregate as live_aggregate
+    from evals.real.live import run_case
+
+    cases = load_case_set(args.real)
+    if args.agent:
+        cases = [c for c in cases if c["agent"] == args.agent]
+    if args.limit:
+        cases = cases[: args.limit]
+    if args.dry_run:
+        from evals.real.offline import score_case
+
+        print(f"{len(cases)} recorded cases from {args.real} (no model called)\n")
+        for case in cases:
+            row = score_case(case)
+            print(f"# {row['case_id']}  score={row['checks']['score']:.2f}")
+            print(f'  recorded: "{(case["answers"][-1]["output"] or {}).get("spoken_text")}"')
+        return 0
+    from rtv import llm
+    from rtv.pitwall.provider import KimiProvider
+
+    if not llm.is_configured():
+        print(f"{llm.key_env_var()} not set. Use --dry-run to inspect the cases offline.")
+        return 1
+    judges = []
+    for name in [p.strip() for p in args.judge_provider.split(",") if p.strip()]:
+        from evals.judge_provider import judge_backend
+
+        judges.append(judge_backend(name, args.judge_model or None))
+    provider = KimiProvider()
+    tool_config = {"pit_lane_loss_s": args.pit_loss, "standings_window": 3}
+    rows = []
+    for case in cases:
+        row = await run_case(
+            case, provider, model=args.model, tool_config=tool_config, judges=judges
+        )
+        rows.append(row)
+        drift = ",".join(row["spec_drift"]) or "none"
+        print(f"\n# {row['case_id']}  ({row['model']}, drift: {drift})")
+        print(f'  recorded: "{row["recorded_spoken"]}"  score={row["recorded_score"]:.2f}')
+        if row.get("new") is None:
+            print(f"  ! {row.get('error')}")
+            continue
+        print(f'  new:      "{row["new_spoken"]}"  score={row["new_score"]:.2f}')
+        for issue in row["new"]["check_issues"] + row["new"]["corners"]:
+            print(f"   ! {issue}")
+        for j in row.get("judges") or []:
+            if j is None:
+                print("  judge: no valid score")
+                continue
+            print(
+                f"  judge {j['judge']}: usefulness={j['usefulness']} "
+                f"actionability={j['actionability']} grounding={j['grounding']}"
+            )
+        if row["unrecorded_tool_calls"]:
+            print(f"  unrecorded tool calls: {row['unrecorded_tool_calls']}")
+    summary = live_aggregate(rows)
+    print("\n=== SUMMARY ===")
+    for key, value in summary.items():
+        print(f"  {key}: {value}")
+    if args.out:
+        Path(args.out).write_text(
+            json.dumps({"summary": summary, "rows": rows}, indent=1, default=str) + "\n",
+            encoding="utf-8",
+        )
+        print(f"\nWrote {args.out}")
+    return 0
+
+
 async def _run(args) -> int:
+    if args.real:
+        return await _run_real(args)
     if args.agent:
         if args.agent not in SPECS:
             print(f"Unknown agent {args.agent!r}. Known: {', '.join(sorted(SPECS))}")
@@ -177,6 +254,18 @@ def main() -> int:
         "--agent", default="", help=f"One of: {', '.join(sorted(SPECS))}. Default: all."
     )
     p.add_argument("--model", default="", help="Override the agent's model.")
+    p.add_argument(
+        "--real", default="",
+        help="Re-execute a recorded case set from evals/real/ (e.g. spa_run) instead of the "
+        "generated golden sets.",
+    )
+    p.add_argument("--limit", type=int, default=0, help="--real: only the first N cases.")
+    p.add_argument(
+        "--judge-provider", default="",
+        help="--real: advisory LLM judge(s), e.g. gemini or gemini,kimi. Default: none.",
+    )
+    p.add_argument("--judge-model", default="", help="--real: judge model override.")
+    p.add_argument("--out", default="", help="--real: write the rows and summary as JSON.")
     p.add_argument(
         "--pit-loss", type=float, default=DEFAULT_PIT_LANE_LOSS_S,
         help="Pit-lane time loss in seconds used by the projection.",
