@@ -24,7 +24,7 @@ service) and `src/rtv/api/routes_vision.py`. Tests: `tests/test_vision.py`,
    - `offset_s`: the session time at the video's first frame;
    - `lap_starts`: line crossings you can see in the video, `[{lap, video_time}]`. Each
      one is anchored to that lap's `start_session_time` from `/sessions/{id}/laps` (RTV
-     lap numbers, as the review shows them; they run one ahead of iRacing's `Lap`);
+     lap numbers, as the review shows them; they match iRacing's `Lap`);
    - `anchors`: raw `[{video_time, session_time}]` pairs.
 
    Two or more anchors are fitted by least squares, which absorbs a capture clock that
