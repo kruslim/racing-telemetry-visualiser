@@ -87,3 +87,31 @@ def ai():
 def make_model():
     """Factory building a ScriptedModel from a list of scripted AIMessage responses."""
     return ScriptedModel
+
+
+@pytest.fixture(scope="session")
+def qapp():
+    """One offscreen ``QApplication`` for the desktop tests, torn down in order.
+
+    PySide6 segfaults at interpreter exit when Qt objects outlive the application
+    (seen on CI after every test had passed), so every top-level widget and pending
+    deletion is flushed before the session ends.
+    """
+    import gc
+    import os
+
+    pytest.importorskip("PySide6")
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from rtv.desktop.theme.qss import stylesheet
+
+    app = QApplication.instance() or QApplication([])
+    app.setStyleSheet(stylesheet())
+    yield app
+    for widget in QApplication.topLevelWidgets():
+        widget.close()
+        widget.deleteLater()
+    app.processEvents()
+    gc.collect()
+    app.processEvents()

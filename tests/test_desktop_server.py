@@ -16,7 +16,7 @@ pytest.importorskip("PySide6")
 pytest.importorskip("duckdb")
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtWidgets import QApplication, QLabel  # noqa: E402
+from PySide6.QtWidgets import QLabel  # noqa: E402
 
 
 def _wait(app, predicate, timeout: float = 15.0) -> bool:
@@ -63,13 +63,13 @@ def test_args_parse():
     assert args.server == "http://127.0.0.1:8000" and args.mute
 
 
-def test_embedded_server_and_window_on_an_empty_store(tmp_path, monkeypatch):
+def test_embedded_server_and_window_on_an_empty_store(qapp, tmp_path, monkeypatch):
     monkeypatch.setenv("RTV_DATA_DIR", str(tmp_path / "data"))
     monkeypatch.delenv("RTV_PITWALL_AGENTS", raising=False)
     from rtv.config import get_settings
 
     get_settings.cache_clear()
-    app = QApplication.instance() or QApplication([])
+    app = qapp
     from rtv.desktop.client.api import Api
     from rtv.desktop.server import EmbeddedServer
     from rtv.desktop.views.hub import Hub
@@ -97,5 +97,8 @@ def test_embedded_server_and_window_on_an_empty_store(tmp_path, monkeypatch):
     finally:
         hub.stop()
         window.close()
+        window.deleteLater()
+        hub.deleteLater()
+        app.processEvents()
         server.stop()
         get_settings.cache_clear()

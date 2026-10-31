@@ -4,6 +4,8 @@ Qt runs on the offscreen platform. Every panel is fed real responses from
 ``docs/ui-redesign/spa-example-payloads.zip`` and grabbed (painted) once, and the
 brief's states are checked by their copy: ``n/a`` not zero, the no-field tower,
 agents off, the quota prompt, a yellow flag band.
+
+The ``qapp`` fixture (``tests/conftest.py``) owns the application and its teardown.
 """
 
 from __future__ import annotations
@@ -16,20 +18,11 @@ pytest.importorskip("PySide6")
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtCore import Qt  # noqa: E402
-from PySide6.QtWidgets import QApplication, QLabel  # noqa: E402
+from PySide6.QtWidgets import QLabel  # noqa: E402
 
 from rtv.desktop.model import activity, review  # noqa: E402
 from rtv.desktop.model import view_model as vm  # noqa: E402
 from tests import spa_payloads as spa  # noqa: E402
-
-
-@pytest.fixture(scope="module")
-def qapp():
-    app = QApplication.instance() or QApplication([])
-    from rtv.desktop.theme.qss import stylesheet
-
-    app.setStyleSheet(stylesheet())
-    return app
 
 
 def texts(widget) -> list[str]:
