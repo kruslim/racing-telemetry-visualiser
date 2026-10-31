@@ -6,10 +6,16 @@ code — not by a single model driving itself:
     fan-out specialists (one per priority corner, in parallel)
         -> synthesise into one prioritised session plan
             -> adversarially verify every claim against the findings
+                -> deterministically fact-check the prose (no LLM)
 
 The findings are the same for every specialist, so they sit in a cached system block
 (prompt caching). Numbers always come from the findings — the prompts forbid inventing
-figures, and the verify step (plus the separate eval harness) checks that they didn't.
+figures, and the verify step (plus the separate eval harness) checks that they didn't. The
+model verifier can be talked round (on the Spa run it accepted a T7 brake point moved the wrong
+way), so after it, :mod:`rtv.coaching.agent.prose` checks every distance, speed, gear, time and
+brake direction in the plan and the specialist advice against the findings in code. What it
+rejects is added to the verdict as an unsupported claim and listed in ``fact_issues``, so a
+consumer shows the plan with its wrong figures marked rather than as clean.
 
 Requires the ``ai`` extra (``pip install -e ".[ai]"``) and the LLM key in the env
 (KIMI_CODE_API_KEY by default; see ``rtv.llm``).
@@ -22,6 +28,7 @@ import json
 
 from pydantic import BaseModel, Field
 
+from rtv.coaching.agent.prose import check_prose, result_prose
 from rtv.pitwall.provider import LLMProvider, structured_call
 
 COACH_SYSTEM = """\
@@ -82,6 +89,8 @@ class CoachResult(BaseModel):
     plan: SessionPlan | None = None
     advices: list[CornerAdvice] = Field(default_factory=list)
     verdict: VerdictReport | None = None
+    #: Figures in the prose that the deterministic check could not ground (empty = all grounded).
+    fact_issues: list[str] = Field(default_factory=list)
     model: str = ""
     message: str = ""
 
@@ -124,9 +133,21 @@ class CoachOrchestrator:
         # 3) adversarially verify the plan against the findings
         verdict = await self._verify(plan, findings_block)
 
-        return CoachResult(
+        # 4) check the prose figures in code: the verifier is a model and can agree with a
+        #    wrong figure, the findings can't
+        result = CoachResult(
             clean=False, plan=plan, advices=advices, verdict=verdict, model=self._model
         )
+        report = check_prose(result_prose(result.model_dump()), findings)
+        result.fact_issues = report.issues
+        if report.issues:
+            result.verdict = verdict or VerdictReport(claims=[])
+            result.verdict.claims += [
+                Claim(text=issue.split(": ", 1)[-1], corner=corner, supported=False,
+                      reason=f"Deterministic check against the findings ({issue.split(':')[0]}).")
+                for issue, corner in zip(report.issues, report.corners, strict=True)
+            ]
+        return result
 
     # ---- individual agents ------------------------------------------------
     async def _specialist(self, priority: dict, corner: dict, findings_block: str) -> CornerAdvice:

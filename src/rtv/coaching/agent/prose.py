@@ -172,14 +172,16 @@ class ProseReport:
     claims: int = 0
     supported: int = 0
     issues: list[str] = field(default_factory=list)
+    corners: list[str] = field(default_factory=list)  # the corner each issue is about
 
     def ok(self) -> None:
         self.claims += 1
         self.supported += 1
 
-    def bad(self, message: str) -> None:
+    def bad(self, message: str, corner: str) -> None:
         self.claims += 1
         self.issues.append(message)
+        self.corners.append(corner)
 
 
 def _merge(facts: list[CornerFacts]) -> CornerFacts:
@@ -216,7 +218,8 @@ def _check_brake_clause(clause: str, f: CornerFacts, where: str, rep: ProseRepor
     if f.brake_gap is None:
         rep.bad(
             f"{where}: says the brake point should be or was {direction} at {f.label}, but the "
-            f"findings have no brake-point difference there."
+            f"findings have no brake-point difference there.",
+            f.label,
         )
         return
     was = "later" if f.brake_gap > 0 else "earlier"
@@ -229,7 +232,8 @@ def _check_brake_clause(clause: str, f: CornerFacts, where: str, rep: ProseRepor
     rep.bad(
         f"{where}: {verb} {direction} at {f.label}, but the finding is brake point "
         f"{abs(f.brake_gap):.0f} m {'late' if f.brake_gap > 0 else 'early'} "
-        f"(main {f.brake_main:.0f} m{ref})."
+        f"(main {f.brake_main:.0f} m{ref}).",
+        f.label,
     )
 
 
@@ -244,7 +248,7 @@ def _check_sentence(
     labels = _labels(sentence)
     for label in labels:
         if label not in facts:
-            rep.bad(f"{where}: mentions corner {label}, which is not in the findings.")
+            rep.bad(f"{where}: mentions corner {label}, which is not in the findings.", label)
     scope = [facts[lb] for lb in labels if lb in facts]
     if labels and not scope:
         return  # only a hallucinated corner: already flagged, nothing true to check against
@@ -274,7 +278,7 @@ def _check_sentence(
             rep.ok()
         else:
             quoted = m.group(0).strip()
-            rep.bad(f"{where}: {quoted} at {f.label} matches no distance in the findings.")
+            rep.bad(f"{where}: {quoted} at {f.label} matches no distance in the findings.", f.label)
 
     for regex, truths, tol, noun in (
         (_KMH_RE, f.speeds, PROSE_SPEED_TOL, "speed"),
@@ -286,7 +290,8 @@ def _check_sentence(
                 rep.ok()
             else:
                 quoted = m.group(0).strip()
-                rep.bad(f"{where}: {quoted} at {f.label} matches no {noun} in the findings.")
+                msg = f"{where}: {quoted} at {f.label} matches no {noun} in the findings."
+                rep.bad(msg, f.label)
 
     for m in _GEAR_PROSE_RE.finditer(sentence):
         raw = m.group("a") or m.group("b") or m.group("c")
@@ -294,7 +299,8 @@ def _check_sentence(
         if gear in f.gears:
             rep.ok()
         else:
-            rep.bad(f"{where}: gear {gear} at {f.label} is not a gear the findings name there.")
+            msg = f"{where}: gear {gear} at {f.label} is not a gear the findings name there."
+            rep.bad(msg, f.label)
 
 
 def check_prose(texts: list[tuple[str, str | None, str]], findings: dict[str, Any]) -> ProseReport:
