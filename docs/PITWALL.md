@@ -1,4 +1,149 @@
-# RTV v2 — Pitwall build state
+# RTV v2 — Pitwall
+
+The live pitwall: a deterministic race-state engine, four event-driven agents on one
+prioritised radio feed, a race journal and a live VLM worker. This file has two parts.
+**Current architecture** below is the one page to read before changing anything. The
+**[Appendix: stage history](#appendix-stage-history)** holds the per-stage build notes,
+measurements and "Deviations" sections, unchanged, for the reasoning behind a choice.
+
+> **How to update this file.** A PR that changes the pitwall updates the
+> current-architecture subsection for its area (and the interface list if it adds or
+> changes one) so this page stays true, then adds its own notes, measurements and
+> deviations as a new section at the end of the appendix. Do not append another stage
+> log above the appendix, and do not rewrite older appendix sections: they record what
+> was true when they were written, and the page above wins where they differ.
+
+## Current architecture
+
+```
+frames (live poller 60 Hz | ReplayDriver)
+  -> RaceStateEngine.on_frame           racestate/engine.py   no LLM, ever
+       detectors -> RaceEvent -> engine.bus (EventBus)
+  -> PitwallOrchestrator.dispatch       pitwall/orchestrator.py
+       trigger match, cooldown, inbox, inflight cap, budget
+  -> AgentRuntime.invoke                pitwall/framework.py
+       prefetch tools, model + scoped tools, validator, repair or refusal
+  -> RadioFeed                          pitwall/radio.py      priority, supersede, airtime
+  -> /ws/pitwall, TTS, live view, desktop app
+engine.bus + activity + radio -> SessionRecorder journal (data/sessions/<id>/runs/*.jsonl)
+engine.bus -> LiveVisionWorker -> visual_observation events back onto engine.bus
+```
+
+**Engine** (`src/rtv/racestate/`, appendix stage 1 and phase 1). `engine.on_frame(frame,
+catalog)` has the live poller's callback signature, and the replay driver calls the same
+method, so the engine cannot tell a replay from live telemetry. It keeps one `RaceState`
+(session, flags, player, fuel, tyres, car health, standings, conditions, capabilities).
+A number with no channel behind it stays `None` and a capability flag says why. A
+replayed `.ibt` has no `CarIdx*` channels, so it has no standings and no traffic events.
+`engine.health()`, `mark_stale()` / `mark_live()` cover a feed that stops.
+
+**Detectors and events** (`detectors.py`, `models.py`). Pure functions over a frame
+window. The engine latches them into `RaceEvent {event_type, tick, session_time, lap,
+severity, payload, state_version}`, with no wall-clock field, so a replay gives the same
+event log twice. Types cover flags, laps and bests, lock-ups / wheelspin / off-tracks /
+incidents, pit entry and exit, stints, pit window and fuel margin, rivals, blue flags,
+recurring issues, tyre bands, car health, traffic, weather and `visual_observation`
+(published by the vision seam only; the engine never reads it).
+
+**Event bus** (`bus.py`). Thread-safe producer with bounded drop-oldest subscriptions
+(sync `drain()` and asyncio `next_events()`), sync callbacks on the producer thread, and
+`history(limit)` for late joiners. `ActivityLog` (`pitwall/activity.py`) is the same bus
+carrying agent activity records.
+
+**Orchestrator** (`pitwall/orchestrator.py`). Subscribes to the bus and routes each event
+to the agents whose `Trigger`s match. Per agent: one worker and a one-slot latest-wins
+inbox (a queued critical event is never displaced by a lesser one) and a cooldown. Global:
+`RTV_PITWALL_MAX_INFLIGHT` model calls at once. `RTV_PITWALL_AGENTS` is the kill switch,
+`suspend()` / `resume()` follow the connection, and the race director seam
+(`rtv.director`, `NoopDirector` today) injects scripted events onto the same bus.
+
+**Agents** (`pitwall/agents/`). Four declarative `AgentSpec`s: strategist (fuel, stops,
+rivals), vehicle engineer (tyres, car health, recurring issues), spotter (traffic, blue
+flags, hazards) and coach (repeated mistakes, pace). A spec is a role prompt, an output
+model, scoped tools, triggers, a state slice, a radio subject, an optional policy and a
+prefetch list; adding an agent is one module plus one `AGENT_REGISTRY` entry. Agents never
+call each other; each run is shown the recent radio. Model per agent: the spec names a
+tier (strategist `reasoning`, the rest `fast`) and `framework.agent_model()` resolves it
+from `RTV_PITWALL_<NAME>_MODEL`, else `RTV_LLM_KIMI_MODEL_REASONING` / `_FAST` (all
+`kimi-k3` today). All calls go through `KimiProvider` with a forced respond tool.
+
+**Validator** (`pitwall/validator.py`). Every number in an answer must be in the
+`FactSet` built from what the run was shown: state slice, triggering event, prefetch and
+tool results. Spoken text is tolerant (±0.05 or 2 %, rounding, clock notation, a fraction
+as a percentage); structured payload fields are exact. Also the 25-word limit and the
+spec's deterministic `policy`. On failure: one repair turn naming the figures, then a
+grounded refusal at `info` priority with the blocked text kept in `detail_text`.
+
+**Radio** (`pitwall/radio.py`). One channel, ordered by `(priority, sequence)`. A newer
+non-critical message with the same `(agent, subject)` supersedes a queued one; a critical
+message is never superseded or dropped. Airtime is about 0.4 s per word, and
+`pump(session_time)` is the deterministic, clock-injected twin of `run()`. A call
+triggered by a visual observation always airs at `info`. Voice: browser TTS by default,
+optional server engine via `RTV_PITWALL_TTS` (`pitwall/tts.py`).
+
+**Journal** (`rtv.store.journal.SessionRecorder`). One JSON-lines file per run of a
+session (live or replay) holding lifecycle, race events, aired radio, every activity
+record and state snapshots every `RTV_JOURNAL_STATE_INTERVAL_S`. The post-race review
+and the desktop review read only the journal and never re-run the agents
+(`/sessions/{id}/pitwall-runs`, `/pitwall-log`, `/pitwall-log/state`, `/summary`).
+
+**Vision live worker** (`rtv.vision.live_worker`, details in `docs/VISION.md`). With
+`RTV_VISION_MODE=live`, events in `RTV_VISION_LIVE_TRIGGERS` become moments; the worker
+grabs frames from the running capture or a synced recording, runs the grounded
+`VisionAnalyzer` and publishes kept notes as `visual_observation` events. The spotter and
+coach can wake on them. Spend is capped by `RTV_VISION_LIVE_MAX_CALLS` and
+`RTV_VISION_LIVE_MIN_GAP_S`.
+
+**Health and budget** (appendix stage 5). A frame that raises costs one frame; a
+supervised task that dies is restarted and counted (`status()["restarts"]`); a failed
+model call is retried once and then said out loud; `RTV_PITWALL_AGENT_FAILURE_LIMIT`
+consecutive failures open an agent's breaker; `RTV_PITWALL_MAX_CALLS_PER_SESSION` caps
+billable calls per session. `GET /api/v1/pitwall/health` is the one poll for all of it.
+Token usage per call is in `rtv.llm.USAGE` (`GET /api/v1/llm/usage`) and in the journal.
+
+**Prompt caching.** The stable role prompt is the first system block and carries
+`cache_control`; the state slice and the prefetched tool results go in the user turn and
+are not cached. That is fine at today's volume (tens of runs per race) and is left as it
+is on purpose.
+
+### Interfaces later stages consume
+
+```python
+services.engine / .replay / .pitwall / .activity / .recorder   # None when disabled
+engine.on_frame(frame, catalog); engine.snapshot() -> RaceState; engine.health()
+engine.bus.subscribe(...) / .subscribe_callback(fn) / .history(limit)
+orch.handle_event(event, state)       # route + run inline (tests, evals)
+orch.feed.subscribe(...) / .subscribe_callback(fn) / .pump(session_time)
+orch.status(); orch.healthy(); orch.suspend(reason) / .resume(); orch.director
+build_agents(models=None, enabled=None, only=None, settings=None) -> list[AgentSpec]
+agent_model(spec, settings=None, override="") -> str
+AgentRuntime(spec, provider, ...).invoke(event, state, events=...) -> RadioMessage | None
+FactSet, validate_output(...)         # pitwall/validator.py
+rtv.director: DirectorEngine, NoopDirector, ScenarioScript, injected_event, is_injected
+rtv.vision.live.publish_note(engine, session_id, note)
+```
+
+The HTTP and WebSocket surface: `/api/v1/racestate` (and `/events`), `/api/v1/replay/*`,
+`/api/v1/pitwall/{status,health,radio,activity,tts,enabled,reset,driver-message}`,
+`WS /ws/pitwall` (state, event, radio and activity frames), the journal endpoints above
+and `/vision/live`. FastAPI's `/docs` lists them all.
+
+### Pending stages
+
+Prompts in `prompts/` (done ones in `prompts/done/`), revised by plan task D0:
+
+| Stage | Prompt | Goal |
+|---|---|---|
+| 07 | `07-session-lifecycle-autonomy.md` | The pitwall arms and disarms itself with the session; no operator needed |
+| 08 | `08-race-plan-projection.md` | A persistent `RacePlan` the agents revise, plus a deterministic projection layer |
+| 09 | `09-race-control-debrief.md` | Two new agents: race control during the race, a debrief after it |
+| 10 | `10-director-scheduler.md` | Implement the race director behind the stage-5 seam |
+
+---
+
+# Appendix: stage history
+
+## Pitwall build state
 
 Shared state between the staged headless builds. Each stage appends: what it
 built, the public interfaces the next stage consumes, and any deviations from
@@ -2706,3 +2851,23 @@ recorded session). It reads only recorded data and never re-runs the agents.
 - URL state: `?session=&run=&main=&ref=&t=` (`lap=` is accepted as `main=`).
 - Pure grouping in `review-model.js`, tested by `node frontend/js/run-review-tests.mjs`
   (run by `tests/test_review_frontend.py`).
+
+---
+
+## H0 — current-architecture page and per-agent models (2026-10-31)
+
+Plan task H0 of the project review. This file gained the current-architecture page at
+the top; everything that was here before moved, unchanged, under this appendix.
+
+`AgentSpec.model` is no longer hard-coded: it defaults to `""` and the new
+`AgentSpec.tier` (`"fast"` or `"reasoning"`) says which `rtv.llm` default applies.
+`rtv.pitwall.framework.agent_model(spec, settings, override)` resolves it (override, the
+spec's own model, `RTV_PITWALL_<NAME>_MODEL`, the tier default) and is used by
+`build_agents` (new `settings=` argument), by `AgentRuntime` when handed a bare spec, and
+by `evals/run_pitwall.py`. `rtv.services` no longer spells out the four agents.
+`FAST_MODEL` / `REASONING_MODEL` are gone from `rtv.pitwall.agents`.
+
+Deviation: the plan named the settings `RTV_PITWALL_MODEL_<AGENT>`, but
+`RTV_PITWALL_<AGENT>_MODEL` already existed (wired in `services.build_pitwall` only), so
+those names stay and existing `.env` files keep working. Behaviour with nothing set is
+unchanged: every agent runs on `kimi-k3`.

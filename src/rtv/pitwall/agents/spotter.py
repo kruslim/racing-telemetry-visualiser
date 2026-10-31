@@ -156,7 +156,7 @@ SPOTTER = AgentSpec(
     output_model=SpotterCall,
     tools=(T.GET_STANDINGS_AROUND_PLAYER, T.GET_RECENT_DETECTOR_EVENTS),
     triggers=SPOTTER_TRIGGERS,
-    model="kimi-k3",
+    tier="fast",
     # Short answers, and latency is the whole point: a small budget and two tool
     # rounds, not four. A spotter call that lands after the corner is worthless.
     max_tokens=700,

@@ -32,7 +32,7 @@ sys.path.insert(0, str(ROOT))
 from evals.pitwall_cases import build_agent_cases, build_all_cases  # noqa: E402
 from evals.pitwall_checks import aggregate, check_for_agent, expected_calls  # noqa: E402
 from rtv.pitwall.agents import AGENT_REGISTRY  # noqa: E402
-from rtv.pitwall.framework import AgentRuntime  # noqa: E402
+from rtv.pitwall.framework import AgentRuntime, agent_model  # noqa: E402
 from rtv.racestate.strategy_math import DEFAULT_PIT_LANE_LOSS_S  # noqa: E402
 
 SPECS = {spec.name: spec for spec in AGENT_REGISTRY}
@@ -70,12 +70,10 @@ def _kwargs_for(agent: str, case, pit_loss: float) -> dict:
 
 
 async def _run_agent(agent: str, cases: list, args) -> list[dict]:
-    from rtv import llm
     from rtv.pitwall.provider import KimiProvider
 
     spec = SPECS[agent]
-    tier = "reasoning" if agent == "strategist" else "fast"
-    spec = replace(spec, model=llm.model(tier, args.model))
+    spec = replace(spec, model=agent_model(spec, override=args.model))
     runtime = AgentRuntime(
         spec,
         KimiProvider(),

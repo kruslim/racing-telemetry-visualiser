@@ -18,8 +18,10 @@ spotter              what is around us right now           traffic, blue, hazard
 coach                how the car is being driven           repeated mistakes, pace
 ===================  ====================================  ===================
 
-Model selection is per agent and overridable per deployment, so the cheap,
-high-frequency agents sit on Haiku while strategy sits on a reasoning model.
+Model selection is per agent and overridable per deployment: each spec names a
+tier (the strategist ``"reasoning"``, the other three ``"fast"``), and
+:func:`build_agents` resolves it through ``RTV_PITWALL_<NAME>_MODEL`` and then the
+``rtv.llm`` default for that tier (see :func:`rtv.pitwall.framework.agent_model`).
 """
 
 from __future__ import annotations
@@ -27,12 +29,13 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import replace
 
+from rtv.config import Settings
 from rtv.logging import get_logger
 from rtv.pitwall.agents.coach import COACH
 from rtv.pitwall.agents.spotter import SPOTTER
 from rtv.pitwall.agents.strategist import STRATEGIST
 from rtv.pitwall.agents.vehicle_engineer import VEHICLE_ENGINEER
-from rtv.pitwall.framework import AgentSpec
+from rtv.pitwall.framework import AgentSpec, agent_model
 
 log = get_logger("pitwall.agents")
 
@@ -44,23 +47,18 @@ AGENT_REGISTRY: tuple[AgentSpec, ...] = (
     COACH,
 )
 
-#: Default tiers. High-frequency, low-stakes agents belong on the fast model;
-#: strategy is worth the reasoning model because it runs a handful of times a race.
-#: kimi-k3 is one tier today, so both are the same id; the deployment's
-#: RTV_LLM_KIMI_MODEL_* settings are applied in rtv.services.build_pitwall.
-FAST_MODEL = "kimi-k3"
-REASONING_MODEL = "kimi-k3"
-
-
 def build_agents(
     *,
     models: Mapping[str, str] | None = None,
     enabled: Mapping[str, bool] | None = None,
     only: Sequence[str] | None = None,
+    settings: Settings | None = None,
 ) -> list[AgentSpec]:
     """Materialise the registry with per-deployment model and enable overrides.
 
-    ``models`` maps agent name -> model id (empty string means "keep the default").
+    ``models`` maps agent name -> model id and wins over settings (an empty string
+    means "use settings"). Otherwise each agent gets ``RTV_PITWALL_<NAME>_MODEL``,
+    falling back to the ``rtv.llm`` default for its tier.
     """
     models = models or {}
     enabled = enabled or {}
@@ -68,7 +66,7 @@ def build_agents(
     for spec in AGENT_REGISTRY:
         if only is not None and spec.name not in only:
             continue
-        model = models.get(spec.name) or spec.model
+        model = agent_model(spec, settings, models.get(spec.name, ""))
         out.append(
             replace(spec, model=model, enabled=bool(enabled.get(spec.name, spec.enabled)))
         )
@@ -78,8 +76,6 @@ def build_agents(
 __all__ = [
     "AGENT_REGISTRY",
     "COACH",
-    "FAST_MODEL",
-    "REASONING_MODEL",
     "SPOTTER",
     "STRATEGIST",
     "VEHICLE_ENGINEER",

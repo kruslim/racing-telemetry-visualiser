@@ -27,6 +27,7 @@ from evals.synthetic_race import (
     scenario_session_info,
 )
 
+from rtv.config import Settings, get_settings
 from rtv.pitwall.agents import AGENT_REGISTRY, build_agents
 from rtv.pitwall.agents.coach import COACH, CoachCall
 from rtv.pitwall.agents.spotter import SPOTTER, SpotterCall
@@ -133,6 +134,53 @@ def test_build_agents_can_mount_a_subset_and_retier_the_models():
     )
     assert [a.name for a in agents] == ["spotter", "coach"]
     assert agents[0].model == "claude-test-1"
+
+
+def test_agent_models_fall_back_to_the_llm_tier_defaults_when_unset():
+    settings = Settings(
+        _env_file=None, llm_kimi_model_reasoning="kimi-big", llm_kimi_model_fast="kimi-small"
+    )
+    models = {a.name: a.model for a in build_agents(settings=settings)}
+    assert models == {
+        "strategist": "kimi-big",
+        "vehicle_engineer": "kimi-small",
+        "spotter": "kimi-small",
+        "coach": "kimi-small",
+    }
+
+
+def test_default_settings_keep_every_agent_on_kimi_k3(monkeypatch):
+    for name in ("LLM_KIMI_MODEL_REASONING", "LLM_KIMI_MODEL_FAST", "PITWALL_STRATEGIST_MODEL",
+                 "PITWALL_VEHICLE_ENGINEER_MODEL", "PITWALL_SPOTTER_MODEL", "PITWALL_COACH_MODEL"):
+        monkeypatch.delenv(f"RTV_{name}", raising=False)
+    models = {a.model for a in build_agents(settings=Settings(_env_file=None))}
+    assert models == {"kimi-k3"}
+
+
+def test_a_per_agent_setting_overrides_only_that_agent():
+    settings = Settings(
+        _env_file=None,
+        llm_kimi_model_fast="kimi-small",
+        pitwall_coach_model="kimi-coach",
+        pitwall_strategist_model="kimi-strategy",
+    )
+    models = {a.name: a.model for a in build_agents(settings=settings)}
+    assert models["coach"] == "kimi-coach"
+    assert models["strategist"] == "kimi-strategy"
+    assert models["spotter"] == "kimi-small"
+    # An explicit mapping still wins over settings.
+    agents = build_agents(models={"coach": "kimi-explicit"}, settings=settings)
+    assert {a.name: a.model for a in agents}["coach"] == "kimi-explicit"
+
+
+def test_a_runtime_built_from_a_bare_spec_resolves_its_model(monkeypatch):
+    monkeypatch.setenv("RTV_PITWALL_SPOTTER_MODEL", "kimi-spotter")
+    get_settings.cache_clear()
+    try:
+        assert SPOTTER.model == ""
+        assert AgentRuntime(SPOTTER, provider=None).spec.model == "kimi-spotter"
+    finally:
+        get_settings.cache_clear()
 
 
 # --------------------------------------------------------------------------
