@@ -39,6 +39,7 @@ from typing import Any
 
 from rtv.director.engine import DirectorEngine, NoopDirector
 from rtv.logging import get_logger
+from rtv.pitwall import validity
 from rtv.pitwall.activity import ActivityLog, safe_trace
 from rtv.pitwall.framework import (
     AgentRuntime,
@@ -46,6 +47,7 @@ from rtv.pitwall.framework import (
     EventRef,
     RadioMessage,
     RadioPriority,
+    agent_max_age,
 )
 from rtv.pitwall.radio import RadioFeed
 from rtv.pitwall.tts import RadioTTS
@@ -93,6 +95,10 @@ class PitwallOrchestrator:
     ) -> None:
         self.engine = engine
         self.feed = feed or RadioFeed()
+        if self.feed.state_source is None:
+            # The air-time check (rtv.pitwall.validity) judges a call against the
+            # race as it is when the channel reaches it, not when the run began.
+            self.feed.state_source = engine.snapshot
         #: The activity trace (see :mod:`rtv.pitwall.activity`). Optional and
         #: passive: with ``None`` nothing is recorded and nothing else changes.
         self.activity: ActivityLog | None = None
@@ -126,6 +132,10 @@ class PitwallOrchestrator:
             for spec in agents
         }
         self._agent_enabled = {spec.name: spec.enabled for spec in agents}
+        #: Seconds each agent's call may wait before it airs tagged late.
+        self.max_age_s: dict[str, float | None] = {
+            spec.name: agent_max_age(spec) for spec in agents
+        }
         if activity is not None:
             self.attach_activity(activity)
         self._sem: asyncio.Semaphore | None = None
@@ -433,6 +443,15 @@ class PitwallOrchestrator:
                     event, state, events=events, radio_history=history
                 )
         self._record_outcome(name, message is not None)
+        if message is not None:
+            validity.stamp(
+                message,
+                runtime.spec,
+                state,
+                event,
+                max_age_s=self.max_age_s.get(name),
+                pit_entry_pct=getattr(self.engine, "pit_entry_pct", None),
+            )
         return message
 
     # ---- degradation notices --------------------------------------------

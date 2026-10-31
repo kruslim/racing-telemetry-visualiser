@@ -98,6 +98,10 @@ class EventRef(BaseModel):
         )
 
 
+#: What a call aired after its ``max_age_s`` starts with, on the radio and in TTS.
+LATE_PREFIX = "Late call: "
+
+
 class RadioMessage(BaseModel):
     """One thing the pitwall says, plus everything needed to justify it."""
 
@@ -128,6 +132,36 @@ class RadioMessage(BaseModel):
     #: Set when a backend TTS provider is configured; ``None`` means "use the
     #: browser's Web Speech API". See :mod:`rtv.pitwall.tts`.
     audio_url: str | None = None
+    #: ---- air-time validity, stamped by deterministic code when the run starts
+    #: (:func:`rtv.pitwall.validity.stamp`) and checked by the radio when the
+    #: message reaches the front of the channel. ``None`` = no such rule.
+    #: The :class:`RaceState` version the agent's snapshot came from.
+    state_version: int | None = None
+    #: Session time of that snapshot: the age of the call is measured from here.
+    computed_at_session_time: float | None = None
+    #: Older than this when it airs and still valid: aired, tagged late.
+    max_age_s: float | None = None
+    #: Dropped once the player's lap counter is past this lap.
+    valid_until_lap: int | None = None
+    #: Dropped once the session clock is past this.
+    expires_at_session_time: float | None = None
+    #: Dropped once the player is past this lap fraction on :attr:`valid_until_lap`
+    #: (the pit entry, for a box call) without being in the pit lane.
+    invalid_if_lap_dist_past: float | None = None
+    #: Dropped once the player is in the pit lane (a box call that has happened).
+    invalid_if_on_pit_road: bool = False
+    #: The car the call is about; dropped once it has left the running order.
+    subject_car_idx: int | None = None
+    #: ---- what the radio decided at air time
+    #: Session time the channel reached the message (aired or dropped).
+    air_session_time: float | None = None
+    #: Aired after :attr:`max_age_s`; the spoken text starts with ``LATE_PREFIX``.
+    late: bool = False
+    #: Seconds between :attr:`computed_at_session_time` and the air time.
+    late_by_s: float | None = None
+    #: Never aired because it had stopped being true; :attr:`expired_reason` says why.
+    expired: bool = False
+    expired_reason: str | None = None
 
     @computed_field  # type: ignore[prop-decorator]
     @property
@@ -145,12 +179,17 @@ class RadioMessage(BaseModel):
         event and words are enough: two messages that agree on all three are the
         same call, and should share one clip.
         """
+        spoken = self.spoken_text
+        if self.late and spoken.startswith(LATE_PREFIX):
+            # Tagging a call late at air time must not change its id: the audio
+            # URL and the journal's radio_queued record were keyed before it.
+            spoken = spoken[len(LATE_PREFIX) :]
         raw = "|".join(
             (
                 self.agent,
                 self.event_ref.key,
                 str(self.event_ref.tick),
-                self.spoken_text,
+                spoken,
             )
         )
         return hashlib.sha1(raw.encode("utf-8")).hexdigest()[:16]
@@ -245,6 +284,22 @@ def agent_model(spec: AgentSpec, settings: Any = None, override: str = "") -> st
     return llm.model(spec.tier, per_agent, s)
 
 
+def agent_max_age(spec: AgentSpec, settings: Any = None) -> float | None:
+    """Seconds an agent's call may wait before it airs late; ``None`` = never late.
+
+    ``RTV_PITWALL_<NAME>_MAX_AGE_S`` wins over the spec's default; zero or a
+    negative value there turns the late tag off for that agent.
+    """
+    from rtv.config import get_settings
+
+    s = settings or get_settings()
+    value = getattr(s, f"pitwall_{spec.name}_max_age_s", None)
+    if value is None:
+        return spec.max_age_s
+    value = float(value)
+    return value if value > 0 else None
+
+
 @dataclass(frozen=True)
 class AgentSpec:
     """One agent, entirely declarative."""
@@ -285,6 +340,15 @@ class AgentSpec:
     #: Ceiling on tool-use round trips before the runtime demands an answer.
     max_tool_iterations: int = 4
     enabled: bool = True
+    #: Seconds a call may wait for the channel before it airs tagged late.
+    #: ``None`` = never late. ``RTV_PITWALL_<NAME>_MAX_AGE_S`` overrides it
+    #: (:func:`agent_max_age`).
+    max_age_s: float | None = None
+    #: Deterministic air-time rules for a message: ``(message, state, event,
+    #: pit_entry_pct) -> {field: value}`` over :class:`RadioMessage`'s validity
+    #: fields (``valid_until_lap``, ``invalid_if_lap_dist_past``, ...). Read
+    #: from the message's structured ``data``, never from the spoken words.
+    validity: Callable[..., dict[str, Any]] | None = None
 
     def tool(self, name: str) -> ToolSpec | None:
         return next((t for t in self.tools if t.name == name), None)
@@ -305,6 +369,7 @@ class AgentSpec:
                 for t in self.triggers
             ],
             "max_tokens": self.max_tokens,
+            "max_age_s": self.max_age_s,
             "prefetch": [name for name, _ in self.prefetch],
             "output_contract": self.output_model.__name__,
         }

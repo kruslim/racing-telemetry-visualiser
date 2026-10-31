@@ -174,6 +174,9 @@ class RaceStateEngine:
 
             # strategy triggers
             self._rival_pit_state: dict[int, bool] = {}
+            # Lap fractions at which any car was seen entering pit road this
+            # session: where the pit entry is (see :attr:`pit_entry_pct`).
+            self._pit_entry_pcts: list[float] = []
 
             # vehicle-engineer / spotter triggers
             self._recurrence = det.CornerRecurrence(self.config)
@@ -790,6 +793,7 @@ class RaceStateEngine:
             self._rival_pit_state[car.idx] = car.on_pit_road
             if was is not False or car.on_pit_road is not True:
                 continue  # not a green->pit edge (or the first sighting)
+            self._note_pit_entry(car.lap_dist_pct)
             if (
                 player_pos is not None
                 and car.position is not None
@@ -981,6 +985,27 @@ class RaceStateEngine:
         self._last_fire[name] = now
         events.append(self._event(event_type, severity, payload))
 
+    def _note_pit_entry(self, pct: float | None) -> None:
+        if pct is not None and 0.0 <= pct <= 1.0:
+            self._pit_entry_pcts.append(float(pct))
+            del self._pit_entry_pcts[:-32]
+
+    @property
+    def pit_entry_pct(self) -> float | None:
+        """Where pit road starts, as a lap fraction, once a car has been seen entering it.
+
+        Measured, not configured: the median lap fraction at which any car's
+        ``OnPitRoad`` went true this session. ``None`` before the first entry
+        (an ``.ibt`` has the player's own stops only). The radio uses it to drop
+        a box call once the car has passed the entry (:mod:`rtv.pitwall.validity`).
+        """
+        with self._lock:
+            values = sorted(self._pit_entry_pcts)
+        if not values:
+            return None
+        mid = len(values) // 2
+        return values[mid] if len(values) % 2 else (values[mid - 1] + values[mid]) / 2
+
     def _pit_transitions(self, events: list[RaceEvent]) -> None:
         transition = det.detect_pit_transition(self._window)
         if transition is None:
@@ -988,6 +1013,7 @@ class RaceStateEngine:
         p = self._state.player
         if transition == "entry":
             self._lap_had_pit = True
+            self._note_pit_entry(p.lap_dist_pct)
             events.append(
                 self._event(
                     EventType.PIT_ENTRY,

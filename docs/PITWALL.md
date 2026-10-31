@@ -76,8 +76,13 @@ grounded refusal at `info` priority with the blocked text kept in `detail_text`.
 
 **Radio** (`pitwall/radio.py`). One channel, ordered by `(priority, sequence)`. A newer
 non-critical message with the same `(agent, subject)` supersedes a queued one; a critical
-message is never superseded or dropped. Airtime is about 0.4 s per word, and
-`pump(session_time)` is the deterministic, clock-injected twin of `run()`. A call
+message is never superseded. Airtime is about 0.4 s per word, and
+`pump(session_time)` is the deterministic, clock-injected twin of `run()`. Every agent
+message is checked again when it reaches the front (`pitwall/validity.py`, appendix B1):
+older than its agent's `max_age_s` but still true, it airs tagged late ("Late call:
+...", `radio_late`); no longer true (its stop lap gone, the car past the pit entry or
+in the pit lane, the car it was about gone, an expiry passed), it is dropped, critical or
+not, and handed to consumers marked `expired` (`radio_expired`). A call
 triggered by a visual observation always airs at `info`. Voice: browser TTS by default,
 optional server engine via `RTV_PITWALL_TTS` (`pitwall/tts.py`).
 
@@ -117,6 +122,11 @@ orch.feed.subscribe(...) / .subscribe_callback(fn) / .pump(session_time)
 orch.status(); orch.healthy(); orch.suspend(reason) / .resume(); orch.director
 build_agents(models=None, enabled=None, only=None, settings=None) -> list[AgentSpec]
 agent_model(spec, settings=None, override="") -> str
+agent_max_age(spec, settings=None) -> float | None    # RTV_PITWALL_<NAME>_MAX_AGE_S
+validity.stamp(message, spec, state, event, max_age_s=, pit_entry_pct=)
+validity.check(message, state, now) -> (verdict, reason, age_s)
+feed.take(now) / feed.expire(message, reason); RadioFeed(state_source=engine.snapshot)
+engine.pit_entry_pct -> float | None                  # learned from OnPitRoad edges
 AgentRuntime(spec, provider, ...).invoke(event, state, events=...) -> RadioMessage | None
 FactSet, validate_output(...)         # pitwall/validator.py
 rtv.director: DirectorEngine, NoopDirector, ScenarioScript, injected_event, is_injected
@@ -2871,3 +2881,53 @@ Deviation: the plan named the settings `RTV_PITWALL_MODEL_<AGENT>`, but
 `RTV_PITWALL_<AGENT>_MODEL` already existed (wired in `services.build_pitwall` only), so
 those names stay and existing `.env` files keep working. Behaviour with nothing set is
 unchanged: every agent runs on `kimi-k3`.
+
+---
+
+## B1 — late and expired radio calls (2026-10-31)
+
+Plan task B1 (REVIEW P1-2, decision Q3). A Kimi run takes 15-60 s and the radio used to
+air whatever reached the front. Now:
+
+- **Stamped at the run.** `orchestrator._run_agent` calls `validity.stamp` with the
+  snapshot the run started from: `state_version`, `computed_at_session_time`, the
+  agent's `max_age_s`, and whatever the spec's new `validity` hook returns from the
+  structured answer. The strategist's hook (`strategist_validity`) gives a box call
+  (`box_now`, `pit_under_yellow`, `box_next_lap`, `plan_stop` with `target_lap`)
+  `valid_until_lap`, `invalid_if_on_pit_road` and, when the session has shown where the
+  pit entry is, `invalid_if_lap_dist_past`. The spotter's names `subject_car_idx` from the
+  event's `car_idx`. The engineer and coach have only an age limit.
+- **Checked at air time.** `RadioFeed.take(now)` (used by `pump`, `flush` and `run`) reads
+  the race state from `state_source` (the orchestrator wires `engine.snapshot`) and calls
+  `validity.check`. Ages are on the session clock, so a 2x replay doubles them.
+- **Defaults**: spotter 3 s, vehicle engineer 20 s, coach 30 s, strategist 30 s (for the
+  late tag; its calls are dropped only when their lap has gone). Override with
+  `RTV_PITWALL_<AGENT>_MAX_AGE_S`; 0 turns the late tag off.
+- **Pit entry**: `engine.pit_entry_pct` is the median lap fraction at which any car's
+  `OnPitRoad` went true this session (player or field). An `.ibt` has no field, so before
+  the player's first stop a box call is dropped only once the lap is over or the car is in
+  the pit lane. Deriving the entry from the OSM pit lane is left for later.
+
+Journal records and fields added (F1 and the review read these):
+
+- `radio_late` (activity kind): `message_id`, `agent`, `priority`, `subject`,
+  `late_by_s`, `max_age_s`, `computed_at_session_time`; `session_time` is the air time.
+- `radio_expired` (activity kind): the same ids plus `reason`, `age_s`,
+  `computed_at_session_time`, `spoken_text`; `session_time` is when it was dropped.
+- `radio_aired` gains `late: true` and `late_by_s` for a late call (absent otherwise).
+- The `radio` record (the message itself) gains `state_version`,
+  `computed_at_session_time`, `max_age_s`, `valid_until_lap`, `expires_at_session_time`,
+  `invalid_if_lap_dist_past`, `invalid_if_on_pit_road`, `subject_car_idx`,
+  `air_session_time`, `late`, `late_by_s`, `expired`, `expired_reason`. A dropped call is
+  journalled as a `radio` record with `expired: true`, `speak: false` and no
+  `radio_aired`.
+- `RadioMessage.message_id` ignores the "Late call: " prefix, so the id a call was
+  queued, journalled and given an audio URL under does not change when it airs late.
+- `feed.stats()` gains `late` and `expired`.
+
+UI: the desktop radio list and review show "late +Ns" and strike a dropped call with its
+reason (`rtv.desktop.model.review.air_badge`, mirrored as `airBadge` in
+`review-model.js`, both checked by the view golden file). The web live pages skip
+expired messages; the web review lists them struck, with the badge. Nothing else changed
+on the web.
+

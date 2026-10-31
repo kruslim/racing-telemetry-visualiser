@@ -214,6 +214,7 @@ VEHICLE_ENGINEER = AgentSpec(
         ("get_recent_detector_events", {"limit": 10}),
     ),
     max_tool_iterations=3,
+    max_age_s=20.0,
 )
 
 

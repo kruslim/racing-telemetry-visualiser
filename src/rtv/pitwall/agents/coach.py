@@ -190,6 +190,7 @@ COACH = AgentSpec(
         ("get_corner_detail", {}),
     ),
     max_tool_iterations=3,
+    max_age_s=30.0,
 )
 
 

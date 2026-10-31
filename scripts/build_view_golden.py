@@ -41,6 +41,53 @@ STATE_EVERY_S = 30.0
 TRACK_POINT_STRIDE = 5
 
 
+# Task B1: the same slice as the radio would now record it. The strategist's real
+# "box this lap" (computed 229.7 s, aired 317.8 s) airs tagged late, and the coach's
+# real hairpin cue is dropped at its air time as no longer true. Test data only.
+LATE_ID = "fd8c4e03a6c93cb1"
+EXPIRED_ID = "386c95aadfe737d5"
+EXPIRED_REASON = "lap 3 has passed (now lap 4)"
+
+
+def _air_journal(journal: list[dict]) -> list[dict]:
+    out = []
+    aired = {
+        (r.get("data") or {}).get("message_id"): r["session_time"]
+        for r in journal
+        if r["kind"] == "radio_aired"
+    }
+    for rec in journal:
+        rec = copy.deepcopy(rec)
+        data = rec.get("data") or {}
+        mid = data.get("message_id")
+        if rec["kind"] == "radio_aired" and mid == EXPIRED_ID:
+            out.append({**rec, "kind": "radio_expired", "data": {
+                **data, "reason": EXPIRED_REASON, "age_s": round(rec["session_time"] - 367.7, 1),
+            }})
+            continue
+        if rec["kind"] == "radio_aired" and mid == LATE_ID:
+            out.append({**rec, "kind": "radio_late", "data": {**data, "late_by_s": 88.1,
+                                                                "max_age_s": 30.0}})
+            rec["data"] = {**data, "late": True, "late_by_s": 88.1}
+        if rec["kind"] == "radio" and mid == LATE_ID:
+            data.update(
+                late=True,
+                late_by_s=round(aired[mid] - data["session_time"], 1),
+                max_age_s=30.0,
+                air_session_time=aired[mid],
+                spoken_text="Late call: " + data["spoken_text"],
+            )
+        if rec["kind"] == "radio" and mid == EXPIRED_ID:
+            data.update(
+                expired=True,
+                expired_reason=EXPIRED_REASON,
+                speak=False,
+                air_session_time=aired[mid],
+            )
+        out.append(rec)
+    return out
+
+
 def _inputs() -> dict:
     running = spa.load("racestate_running.json")
     journal = []
@@ -129,6 +176,7 @@ def _inputs() -> dict:
         "corners": spa.load("lap_findings.json")["corners"],
         "track_points": spa.load("trackmap.json")["points"][::TRACK_POINT_STRIDE],
         "journal": journal,
+        "journal_air": _air_journal(journal),
         "replay_running": spa.load("replay_status_running.json"),
     }
 
@@ -343,6 +391,23 @@ def _cases(inputs: dict) -> dict[str, list[dict]]:
         case("review", "radioUpTo 400 s", "radioUpTo", _ref("journal"), 400.0, 5),
         case("review", "radioUpTo everything", "radioUpTo", _ref("journal"), None),
         case("review", "eventsUpTo 300 s", "eventsUpTo", _ref("journal"), 300.0),
+        case("review", "laneItems with late and dropped calls", "laneItems",
+             _ref("journal_air"), _ref("laps")),
+        case("review", "radioUpTo with late and dropped calls", "radioUpTo",
+             _ref("journal_air"), None),
+        case("review", "radioUpTo 420 s, before the dropped call's air time", "radioUpTo",
+             _ref("journal_air"), 420.0),
+        case("review", "airBadge of a late call", "airBadge",
+             {"late": True, "late_by_s": 88.1}),
+        case("review", "airBadge rounds a half up", "airBadge",
+             {"late": True, "late_by_s": 2.5}),
+        case("review", "airBadge of a late call without its age", "airBadge", {"late": True}),
+        case("review", "airBadge of a dropped call", "airBadge",
+             {"expired": True, "expired_reason": EXPIRED_REASON}),
+        case("review", "airBadge of a dropped call without a reason", "airBadge",
+             {"expired": True}),
+        case("review", "airBadge of an ordinary call", "airBadge", {"late": False}),
+        case("review", "airBadge of nothing", "airBadge", None),
         case("review", "toMetres", "toMetres", [0, 0.25, 0.5, 1], 6930.0),
         case("review", "toMetres without a length", "toMetres", [0, 0.5], 0),
         case("review", "cornerSpan without bounds", "cornerSpan", {"distance": 400.0}),

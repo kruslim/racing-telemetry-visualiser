@@ -1024,6 +1024,8 @@
       "t0": 139.95000000149363,
       "label": "vehicle_engineer: Standby - I can't back that call with data yet.",
       "cls": "agent-vehicle_engineer refused",
+      "late": false,
+      "expired": false,
       "record": {
        "seq": 143,
        "wall_ms": 1793407296524,
@@ -1083,6 +1085,8 @@
       "t0": 317.7500000015298,
       "label": "strategist: Box this lap, fuel only, 13.2 litres. We're 3 laps short on fuel, stop is mandatory. Rejoin position unknown - no standings data.",
       "cls": "agent-strategist",
+      "late": false,
+      "expired": false,
       "record": {
        "seq": 344,
        "wall_ms": 1793407385424,
@@ -1140,6 +1144,8 @@
       "t0": 423.50000000143365,
       "label": "coach: Brake earlier into the hairpin — you went in 14 metres late and locked up, that's what put you off.",
       "cls": "agent-coach",
+      "late": false,
+      "expired": false,
       "record": {
        "seq": 479,
        "wall_ms": 1793407438300,
@@ -1192,6 +1198,8 @@
       "t0": 465.2166666680624,
       "label": "vehicle_engineer: Pressures are building four kPa per lap across all four tyres - RF is worst. Temps are fine. We'll adjust cold pressures at the stop.",
       "cls": "agent-vehicle_engineer",
+      "late": false,
+      "expired": false,
       "record": {
        "seq": 526,
        "wall_ms": 1793407459159,
@@ -1251,6 +1259,8 @@
       "t0": 525.7166666680074,
       "label": "spotter: Yellow, yellow. No gaps, location unknown. Expect slow traffic ahead, be ready to lift.",
       "cls": "agent-spotter",
+      "late": false,
+      "expired": false,
       "record": {
        "seq": 614,
        "wall_ms": 1793407489407,
@@ -1302,6 +1312,8 @@
       "t0": 556.916666667979,
       "label": "strategist: Box this lap under the yellow, fuel only, 14.8 litres. Stop is mandatory, we're 3 laps short. Rejoin unknown, no standings data.",
       "cls": "agent-strategist",
+      "late": false,
+      "expired": false,
       "record": {
        "seq": 650,
        "wall_ms": 1793407505010,
@@ -1359,6 +1371,8 @@
       "t0": 570.933333334633,
       "label": "strategist: Box this lap under the yellow, fuel only, 16.7 litres. Stop is mandatory, we're 3.9 laps short. Rejoin unknown, no standings data.",
       "cls": "agent-strategist",
+      "late": false,
+      "expired": false,
       "record": {
        "seq": 727,
        "wall_ms": 1793407531278,
@@ -1416,6 +1430,8 @@
       "t0": 570.933333334633,
       "label": "spotter: Standby - I can't back that call with data yet.",
       "cls": "agent-spotter refused",
+      "late": false,
+      "expired": false,
       "record": {
        "seq": 754,
        "wall_ms": 1793407541700,
@@ -2792,6 +2808,2354 @@
      }
     }
    ]
+  },
+  {
+   "name": "laneItems with late and dropped calls",
+   "module": "review",
+   "fn": "laneItems",
+   "args": [
+    {
+     "$input": "journal_air"
+    },
+    {
+     "$input": "laps"
+    }
+   ],
+   "expect": {
+    "laps": [
+     {
+      "t0": 22.683333334823445,
+      "t1": 81.71666666815342,
+      "label": "lap 0 (invalid)",
+      "cls": "lap-other",
+      "record": {
+       "kind": "lap",
+       "data": {
+        "lap": 0,
+        "start_tick": 180599,
+        "end_tick": 184140,
+        "start_session_time": 22.683333334823445,
+        "lap_time": 59.03333333332998,
+        "is_valid": false,
+        "is_out_lap": false,
+        "is_in_lap": false
+       }
+      }
+     },
+     {
+      "t0": 81.71666666815342,
+      "t1": 230.9297709162003,
+      "label": "lap 1",
+      "cls": "lap-clean",
+      "record": {
+       "kind": "lap",
+       "data": {
+        "lap": 1,
+        "start_tick": 184140,
+        "end_tick": 192892,
+        "start_session_time": 81.71666666815342,
+        "lap_time": 149.21310424804688,
+        "is_valid": true,
+        "is_out_lap": false,
+        "is_in_lap": false
+       }
+      }
+     },
+     {
+      "t0": 227.5833333348967,
+      "t1": 371.54883321282637,
+      "label": "lap 2",
+      "cls": "lap-clean",
+      "record": {
+       "kind": "lap",
+       "data": {
+        "lap": 2,
+        "start_tick": 192892,
+        "end_tick": 201530,
+        "start_session_time": 227.5833333348967,
+        "lap_time": 143.9654998779297,
+        "is_valid": true,
+        "is_out_lap": false,
+        "is_in_lap": false
+       }
+      }
+     },
+     {
+      "t0": 371.5500000014809,
+      "t1": 513.3041046157387,
+      "label": "lap 3",
+      "cls": "lap-clean",
+      "record": {
+       "kind": "lap",
+       "data": {
+        "lap": 3,
+        "start_tick": 201530,
+        "end_tick": 210035,
+        "start_session_time": 371.5500000014809,
+        "lap_time": 141.7541046142578,
+        "is_valid": true,
+        "is_out_lap": false,
+        "is_in_lap": false
+       }
+      }
+     },
+     {
+      "t0": 513.300000001352,
+      "t1": 655.5319946302583,
+      "label": "lap 4",
+      "cls": "lap-clean",
+      "record": {
+       "kind": "lap",
+       "data": {
+        "lap": 4,
+        "start_tick": 210035,
+        "end_tick": 218569,
+        "start_session_time": 513.300000001352,
+        "lap_time": 142.23199462890625,
+        "is_valid": true,
+        "is_out_lap": false,
+        "is_in_lap": false
+       }
+      }
+     },
+     {
+      "t0": 655.533333334556,
+      "t1": 797.4160390230326,
+      "label": "lap 5",
+      "cls": "lap-clean",
+      "record": {
+       "kind": "lap",
+       "data": {
+        "lap": 5,
+        "start_tick": 218569,
+        "end_tick": 227082,
+        "start_session_time": 655.533333334556,
+        "lap_time": 141.88270568847656,
+        "is_valid": true,
+        "is_out_lap": false,
+        "is_in_lap": false
+       }
+      }
+     },
+     {
+      "t0": 797.4166666677603,
+      "t1": 938.0345713308462,
+      "label": "lap 6",
+      "cls": "lap-clean",
+      "record": {
+       "kind": "lap",
+       "data": {
+        "lap": 6,
+        "start_tick": 227082,
+        "end_tick": 235519,
+        "start_session_time": 797.4166666677603,
+        "lap_time": 140.61790466308594,
+        "is_valid": true,
+        "is_out_lap": false,
+        "is_in_lap": false
+       }
+      }
+     },
+     {
+      "t0": 938.0333333342991,
+      "t1": 1078.9931264251195,
+      "label": "lap 7",
+      "cls": "lap-clean",
+      "record": {
+       "kind": "lap",
+       "data": {
+        "lap": 7,
+        "start_tick": 235519,
+        "end_tick": 243977,
+        "start_session_time": 938.0333333342991,
+        "lap_time": 140.9597930908203,
+        "is_valid": true,
+        "is_out_lap": false,
+        "is_in_lap": false
+       }
+      }
+     },
+     {
+      "t0": 1079.0000000008376,
+      "t1": 1222.4364929207595,
+      "label": "lap 8",
+      "cls": "lap-clean",
+      "record": {
+       "kind": "lap",
+       "data": {
+        "lap": 8,
+        "start_tick": 243977,
+        "end_tick": 252583,
+        "start_session_time": 1079.0000000008376,
+        "lap_time": 143.43649291992188,
+        "is_valid": true,
+        "is_out_lap": false,
+        "is_in_lap": false
+       }
+      }
+     },
+     {
+      "t0": 1222.4333333340405,
+      "t1": 1363.4323262539624,
+      "label": "lap 9",
+      "cls": "lap-clean",
+      "record": {
+       "kind": "lap",
+       "data": {
+        "lap": 9,
+        "start_tick": 252583,
+        "end_tick": 261043,
+        "start_session_time": 1222.4333333340405,
+        "lap_time": 140.99899291992188,
+        "is_valid": true,
+        "is_out_lap": false,
+        "is_in_lap": false
+       }
+      }
+     },
+     {
+      "t0": 1363.4333333339123,
+      "t1": 1504.2317342128185,
+      "label": "lap 10",
+      "cls": "lap-clean",
+      "record": {
+       "kind": "lap",
+       "data": {
+        "lap": 10,
+        "start_tick": 261043,
+        "end_tick": 269491,
+        "start_session_time": 1363.4333333339123,
+        "lap_time": 140.79840087890625,
+        "is_valid": true,
+        "is_out_lap": false,
+        "is_in_lap": false
+       }
+      }
+     },
+     {
+      "t0": 1504.2333333337842,
+      "t1": 1645.263530477339,
+      "label": "lap 11",
+      "cls": "lap-clean",
+      "record": {
+       "kind": "lap",
+       "data": {
+        "lap": 11,
+        "start_tick": 269491,
+        "end_tick": 277952,
+        "start_session_time": 1504.2333333337842,
+        "lap_time": 141.0301971435547,
+        "is_valid": true,
+        "is_out_lap": false,
+        "is_in_lap": false
+       }
+      }
+     },
+     {
+      "t0": 1645.2500000003226,
+      "t1": 1791.5084991458305,
+      "label": "lap 12 (in)",
+      "cls": "lap-other",
+      "record": {
+       "kind": "lap",
+       "data": {
+        "lap": 12,
+        "start_tick": 277952,
+        "end_tick": 286728,
+        "start_session_time": 1645.2500000003226,
+        "lap_time": 146.2584991455078,
+        "is_valid": true,
+        "is_out_lap": false,
+        "is_in_lap": true
+       }
+      }
+     },
+     {
+      "t0": 1791.5166666668563,
+      "t1": 1955.5144694012313,
+      "label": "lap 13 (out)",
+      "cls": "lap-other",
+      "record": {
+       "kind": "lap",
+       "data": {
+        "lap": 13,
+        "start_tick": 286728,
+        "end_tick": 296568,
+        "start_session_time": 1791.5166666668563,
+        "lap_time": 163.997802734375,
+        "is_valid": true,
+        "is_out_lap": true,
+        "is_in_lap": false
+       }
+      }
+     },
+     {
+      "t0": 1955.5166666667071,
+      "t1": 2096.422565714559,
+      "label": "lap 14",
+      "cls": "lap-clean",
+      "record": {
+       "kind": "lap",
+       "data": {
+        "lap": 14,
+        "start_tick": 296568,
+        "end_tick": 305022,
+        "start_session_time": 1955.5166666667071,
+        "lap_time": 140.90589904785156,
+        "is_valid": true,
+        "is_out_lap": false,
+        "is_in_lap": false
+       }
+      }
+     },
+     {
+      "t0": 2096.4166666672395,
+      "t1": 2237.4059702561067,
+      "label": "lap 15",
+      "cls": "lap-clean",
+      "record": {
+       "kind": "lap",
+       "data": {
+        "lap": 15,
+        "start_tick": 305022,
+        "end_tick": 313481,
+        "start_session_time": 2096.4166666672395,
+        "lap_time": 140.9893035888672,
+        "is_valid": true,
+        "is_out_lap": false,
+        "is_in_lap": false
+       }
+      }
+     },
+     {
+      "t0": 2237.400000002368,
+      "t1": 2380.407797243579,
+      "label": "lap 16",
+      "cls": "lap-clean",
+      "record": {
+       "kind": "lap",
+       "data": {
+        "lap": 16,
+        "start_tick": 313481,
+        "end_tick": 322062,
+        "start_session_time": 2237.400000002368,
+        "lap_time": 143.00779724121094,
+        "is_valid": true,
+        "is_out_lap": false,
+        "is_in_lap": false
+       }
+      }
+     },
+     {
+      "t0": 2380.4166666708556,
+      "t1": 2521.138468428668,
+      "label": "lap 17",
+      "cls": "lap-clean",
+      "record": {
+       "kind": "lap",
+       "data": {
+        "lap": 17,
+        "start_tick": 322062,
+        "end_tick": 330505,
+        "start_session_time": 2380.4166666708556,
+        "lap_time": 140.7218017578125,
+        "is_valid": true,
+        "is_out_lap": false,
+        "is_in_lap": false
+       }
+      }
+     },
+     {
+      "t0": 2521.133333339314,
+      "t1": 2554.2166666730686,
+      "label": "lap 18 (invalid)",
+      "cls": "lap-other",
+      "record": {
+       "kind": "lap",
+       "data": {
+        "lap": 18,
+        "start_tick": 330505,
+        "end_tick": 332490,
+        "start_session_time": 2521.133333339314,
+        "lap_time": 33.08333333375458,
+        "is_valid": false,
+        "is_out_lap": false,
+        "is_in_lap": false
+       }
+      }
+     }
+    ],
+    "flags": [
+     {
+      "t0": 59.33333333482136,
+      "t1": 500.81666666803,
+      "label": "green flag",
+      "cls": "flag-green",
+      "record": {
+       "seq": 48,
+       "wall_ms": 1793407256212,
+       "session_time": 59.33333333482136,
+       "tick": 182797,
+       "kind": "race_event",
+       "agent": null,
+       "run_id": null,
+       "event_key": "flag_change:green",
+       "data": {
+        "event_type": "flag_change",
+        "tick": 182797,
+        "session_time": 59.33333333482136,
+        "lap": 0,
+        "severity": "info",
+        "payload": {
+         "from": "unknown",
+         "to": "green",
+         "active": [
+          "one_lap_to_green",
+          "green_held",
+          "servicible",
+          "start_ready"
+         ]
+        },
+        "state_version": 2199,
+        "key": "flag_change:green"
+       }
+      }
+     },
+     {
+      "t0": 500.81666666803,
+      "t1": 510.73333333468764,
+      "label": "yellow flag",
+      "cls": "flag-yellow",
+      "record": {
+       "seq": 562,
+       "wall_ms": 1793407476954,
+       "session_time": 500.81666666803,
+       "tick": 209286,
+       "kind": "race_event",
+       "agent": null,
+       "run_id": null,
+       "event_key": "flag_change:yellow",
+       "data": {
+        "event_type": "flag_change",
+        "tick": 209286,
+        "session_time": 500.81666666803,
+        "lap": 3,
+        "severity": "critical",
+        "payload": {
+         "from": "green",
+         "to": "yellow",
+         "active": [
+          "yellow_waving",
+          "servicible",
+          "start_hidden"
+         ]
+        },
+        "state_version": 28688,
+        "key": "flag_change:yellow"
+       }
+      }
+     },
+     {
+      "t0": 510.73333333468764,
+      "t1": 570.933333334633,
+      "label": "green flag",
+      "cls": "flag-green",
+      "record": {
+       "seq": 581,
+       "wall_ms": 1793407481912,
+       "session_time": 510.73333333468764,
+       "tick": 209881,
+       "kind": "race_event",
+       "agent": null,
+       "run_id": null,
+       "event_key": "flag_change:green",
+       "data": {
+        "event_type": "flag_change",
+        "tick": 209881,
+        "session_time": 510.73333333468764,
+        "lap": 3,
+        "severity": "info",
+        "payload": {
+         "from": "yellow",
+         "to": "green",
+         "active": [
+          "servicible",
+          "start_hidden"
+         ]
+        },
+        "state_version": 29283,
+        "key": "flag_change:green"
+       }
+      }
+     },
+     {
+      "t0": 570.933333334633,
+      "t1": 573.6166666679638,
+      "label": "yellow flag",
+      "cls": "flag-yellow",
+      "record": {
+       "seq": 665,
+       "wall_ms": 1793407512012,
+       "session_time": 570.933333334633,
+       "tick": 213493,
+       "kind": "race_event",
+       "agent": null,
+       "run_id": null,
+       "event_key": "flag_change:yellow",
+       "data": {
+        "event_type": "flag_change",
+        "tick": 213493,
+        "session_time": 570.933333334633,
+        "lap": 4,
+        "severity": "critical",
+        "payload": {
+         "from": "green",
+         "to": "yellow",
+         "active": [
+          "yellow_waving",
+          "servicible",
+          "start_hidden"
+         ]
+        },
+        "state_version": 32895,
+        "key": "flag_change:yellow"
+       }
+      }
+     },
+     {
+      "t0": 573.6166666679638,
+      "t1": 570.933333334633,
+      "label": "green flag",
+      "cls": "flag-green",
+      "record": {
+       "seq": 674,
+       "wall_ms": 1793407513354,
+       "session_time": 573.6166666679638,
+       "tick": 213654,
+       "kind": "race_event",
+       "agent": null,
+       "run_id": null,
+       "event_key": "flag_change:green",
+       "data": {
+        "event_type": "flag_change",
+        "tick": 213654,
+        "session_time": 573.6166666679638,
+        "lap": 4,
+        "severity": "info",
+        "payload": {
+         "from": "yellow",
+         "to": "green",
+         "active": [
+          "servicible",
+          "start_hidden"
+         ]
+        },
+        "state_version": 33056,
+        "key": "flag_change:green"
+       }
+      }
+     }
+    ],
+    "events": [
+     {
+      "t0": 22.683333334823445,
+      "label": "car_health_warning · lap 0",
+      "cls": "sev-critical",
+      "record": {
+       "seq": 2,
+       "wall_ms": 1793407238042,
+       "session_time": 22.683333334823445,
+       "tick": 180599,
+       "kind": "race_event",
+       "agent": null,
+       "run_id": null,
+       "event_key": "car_health_warning",
+       "data": {
+        "event_type": "car_health_warning",
+        "tick": 180599,
+        "session_time": 22.683333334823445,
+        "lap": 0,
+        "severity": "critical",
+        "payload": {
+         "measure": "engine_warning",
+         "warnings": [
+          "oil_pressure_warning",
+          "engine_stalled"
+         ],
+         "oil_temp_c": 77.0,
+         "water_temp_c": 77.0,
+         "critical": true
+        },
+        "state_version": 1,
+        "key": "car_health_warning"
+       }
+      }
+     },
+     {
+      "t0": 47.90000000148868,
+      "label": "wheelspin · lap 0",
+      "cls": "sev-info",
+      "record": {
+       "seq": 31,
+       "wall_ms": 1793407250496,
+       "session_time": 47.90000000148868,
+       "tick": 182111,
+       "kind": "race_event",
+       "agent": null,
+       "run_id": null,
+       "event_key": "wheelspin",
+       "data": {
+        "event_type": "wheelspin",
+        "tick": 182111,
+        "session_time": 47.90000000148868,
+        "lap": 0,
+        "severity": "info",
+        "payload": {
+         "speed": 3.126,
+         "throttle": 1.0,
+         "wheel_speed": 3.623,
+         "corner": "RR",
+         "wheel": "RR",
+         "lap_dist_pct": 0.8676908612251282,
+         "slip": 0.1592,
+         "axle": "rear"
+        },
+        "state_version": 1513,
+        "key": "wheelspin"
+       }
+      }
+     },
+     {
+      "t0": 227.5833333348967,
+      "label": "personal_best · lap 2",
+      "cls": "sev-info",
+      "record": {
+       "seq": 233,
+       "wall_ms": 1793407340767,
+       "session_time": 227.5833333348967,
+       "tick": 192892,
+       "kind": "race_event",
+       "agent": null,
+       "run_id": null,
+       "event_key": "personal_best",
+       "data": {
+        "event_type": "personal_best",
+        "tick": 192892,
+        "session_time": 227.5833333348967,
+        "lap": 2,
+        "severity": "info",
+        "payload": {
+         "lap": 1,
+         "lap_time": 145.867
+        },
+        "state_version": 12294,
+        "key": "personal_best"
+       }
+      }
+     },
+     {
+      "t0": 227.5833333348967,
+      "label": "session_fastest_lap · lap 2",
+      "cls": "sev-info",
+      "record": {
+       "seq": 234,
+       "wall_ms": 1793407340767,
+       "session_time": 227.5833333348967,
+       "tick": 192892,
+       "kind": "race_event",
+       "agent": null,
+       "run_id": null,
+       "event_key": "session_fastest_lap",
+       "data": {
+        "event_type": "session_fastest_lap",
+        "tick": 192892,
+        "session_time": 227.5833333348967,
+        "lap": 2,
+        "severity": "info",
+        "payload": {
+         "lap": 1,
+         "lap_time": 145.867
+        },
+        "state_version": 12294,
+        "key": "session_fastest_lap"
+       }
+      }
+     },
+     {
+      "t0": 229.68333333489838,
+      "label": "pit_window_open · lap 2",
+      "cls": "sev-advisory",
+      "record": {
+       "seq": 241,
+       "wall_ms": 1793407341388,
+       "session_time": 229.68333333489838,
+       "tick": 193018,
+       "kind": "race_event",
+       "agent": null,
+       "run_id": null,
+       "event_key": "pit_window_open",
+       "data": {
+        "event_type": "pit_window_open",
+        "tick": 193018,
+        "session_time": 229.68333333489838,
+        "lap": 2,
+        "severity": "advisory",
+        "payload": {
+         "lap": 2,
+         "earliest_lap": 2,
+         "latest_lap": 14,
+         "laps_remaining": 12.918,
+         "per_lap": 3.6882
+        },
+        "state_version": 12420,
+        "key": "pit_window_open"
+       }
+      }
+     },
+     {
+      "t0": 229.68333333489838,
+      "label": "fuel_margin_low · lap 2",
+      "cls": "sev-advisory",
+      "record": {
+       "seq": 242,
+       "wall_ms": 1793407341388,
+       "session_time": 229.68333333489838,
+       "tick": 193018,
+       "kind": "race_event",
+       "agent": null,
+       "run_id": null,
+       "event_key": "fuel_margin_low",
+       "data": {
+        "event_type": "fuel_margin_low",
+        "tick": 193018,
+        "session_time": 229.68333333489838,
+        "lap": 2,
+        "severity": "advisory",
+        "payload": {
+         "lap": 2,
+         "margin_laps": -3.082,
+         "margin_l": -11.365,
+         "threshold_laps": 1.0,
+         "per_lap": 3.6882
+        },
+        "state_version": 12420,
+        "key": "fuel_margin_low"
+       }
+      }
+     },
+     {
+      "t0": 367.71666666815105,
+      "label": "offtrack · lap 2",
+      "cls": "sev-advisory",
+      "record": {
+       "seq": 394,
+       "wall_ms": 1793407410404,
+       "session_time": 367.71666666815105,
+       "tick": 201300,
+       "kind": "race_event",
+       "agent": null,
+       "run_id": null,
+       "event_key": "offtrack",
+       "data": {
+        "event_type": "offtrack",
+        "tick": 201300,
+        "session_time": 367.71666666815105,
+        "lap": 2,
+        "severity": "advisory",
+        "payload": {
+         "surface": "off_track",
+         "from": "on_track",
+         "lap_dist_pct": 0.9794633984565735,
+         "speed": 27.74091339111328
+        },
+        "state_version": 20702,
+        "key": "offtrack"
+       }
+      }
+     },
+     {
+      "t0": 371.5500000014809,
+      "label": "personal_best · lap 3",
+      "cls": "sev-info",
+      "record": {
+       "seq": 403,
+       "wall_ms": 1793407412735,
+       "session_time": 371.5500000014809,
+       "tick": 201530,
+       "kind": "race_event",
+       "agent": null,
+       "run_id": null,
+       "event_key": "personal_best",
+       "data": {
+        "event_type": "personal_best",
+        "tick": 201530,
+        "session_time": 371.5500000014809,
+        "lap": 3,
+        "severity": "info",
+        "payload": {
+         "lap": 2,
+         "lap_time": 143.967
+        },
+        "state_version": 20932,
+        "key": "personal_best"
+       }
+      }
+     },
+     {
+      "t0": 371.5500000014809,
+      "label": "session_fastest_lap · lap 3",
+      "cls": "sev-info",
+      "record": {
+       "seq": 404,
+       "wall_ms": 1793407412735,
+       "session_time": 371.5500000014809,
+       "tick": 201530,
+       "kind": "race_event",
+       "agent": null,
+       "run_id": null,
+       "event_key": "session_fastest_lap",
+       "data": {
+        "event_type": "session_fastest_lap",
+        "tick": 201530,
+        "session_time": 371.5500000014809,
+        "lap": 3,
+        "severity": "info",
+        "payload": {
+         "lap": 2,
+         "lap_time": 143.967
+        },
+        "state_version": 20932,
+        "key": "session_fastest_lap"
+       }
+      }
+     },
+     {
+      "t0": 371.5500000014809,
+      "label": "tyre_out_of_band · lap 3",
+      "cls": "sev-advisory",
+      "record": {
+       "seq": 405,
+       "wall_ms": 1793407412735,
+       "session_time": 371.5500000014809,
+       "tick": 201530,
+       "kind": "race_event",
+       "agent": null,
+       "run_id": null,
+       "event_key": "tyre_out_of_band",
+       "data": {
+        "event_type": "tyre_out_of_band",
+        "tick": 201530,
+        "session_time": 371.5500000014809,
+        "lap": 3,
+        "severity": "advisory",
+        "payload": {
+         "measure": "tyre_pressure_trend",
+         "corner": "RF",
+         "value": 4.184,
+         "threshold": 2.0,
+         "excess": 2.184,
+         "unit": "kPa/lap",
+         "temps_c": {
+          "LF": 55.096466064453125,
+          "RF": 55.5421142578125,
+          "LR": 54.917694091796875,
+          "RR": 55.076263427734375
+         },
+         "pressures": {
+          "LF": 175.65097045898438,
+          "RF": 176.78440856933594,
+          "LR": 174.87442016601562,
+          "RR": 175.71543884277344
+         },
+         "temp_trend_c_per_lap": {
+          "LF": 0.0,
+          "RF": 0.0,
+          "LR": 0.0,
+          "RR": 0.0
+         },
+         "pressure_trend_per_lap": {
+          "LF": 4.0663,
+          "RF": 4.184,
+          "LR": 3.9214,
+          "RR": 3.9583
+         },
+         "stint_laps": 3
+        },
+        "state_version": 20932,
+        "key": "tyre_out_of_band"
+       }
+      }
+     },
+     {
+      "t0": 513.300000001352,
+      "label": "personal_best · lap 4",
+      "cls": "sev-info",
+      "record": {
+       "seq": 587,
+       "wall_ms": 1793407483550,
+       "session_time": 513.300000001352,
+       "tick": 210035,
+       "kind": "race_event",
+       "agent": null,
+       "run_id": null,
+       "event_key": "personal_best",
+       "data": {
+        "event_type": "personal_best",
+        "tick": 210035,
+        "session_time": 513.300000001352,
+        "lap": 4,
+        "severity": "info",
+        "payload": {
+         "lap": 3,
+         "lap_time": 141.75
+        },
+        "state_version": 29437,
+        "key": "personal_best"
+       }
+      }
+     },
+     {
+      "t0": 513.300000001352,
+      "label": "session_fastest_lap · lap 4",
+      "cls": "sev-info",
+      "record": {
+       "seq": 588,
+       "wall_ms": 1793407483550,
+       "session_time": 513.300000001352,
+       "tick": 210035,
+       "kind": "race_event",
+       "agent": null,
+       "run_id": null,
+       "event_key": "session_fastest_lap",
+       "data": {
+        "event_type": "session_fastest_lap",
+        "tick": 210035,
+        "session_time": 513.300000001352,
+        "lap": 4,
+        "severity": "info",
+        "payload": {
+         "lap": 3,
+         "lap_time": 141.75
+        },
+        "state_version": 29437,
+        "key": "session_fastest_lap"
+       }
+      }
+     }
+    ],
+    "radio": [
+     {
+      "t0": 139.95000000149363,
+      "label": "vehicle_engineer: Standby - I can't back that call with data yet.",
+      "cls": "agent-vehicle_engineer refused",
+      "late": false,
+      "expired": false,
+      "record": {
+       "seq": 143,
+       "wall_ms": 1793407296524,
+       "session_time": 22.683333334823445,
+       "tick": 187634,
+       "kind": "radio",
+       "agent": "vehicle_engineer",
+       "run_id": null,
+       "event_key": "car_health_warning",
+       "data": {
+        "agent": "vehicle_engineer",
+        "priority": "info",
+        "spoken_text": "Standby - I can't back that call with data yet.",
+        "detail_text": "Withheld: the agent cited figures that are not traceable to the race state or to a tool result (4.6610630306531675). Original text: Engine's stalled - oil pressure is zero because the motor isn't running. Temps are fine at 77. Fire it up now, we're one lap to green.",
+        "data": {
+         "finding": "car_health",
+         "corner": null,
+         "affected": [
+          "oil_pressure",
+          "engine"
+         ],
+         "trend": "unknown",
+         "driver_action": "Restart the engine now - oil pressure will only return once it is running.",
+         "setup_note": null,
+         "confidence": "high",
+         "rationale": "The sim's own warning bits report oil_pressure_warning and engine_stalled, with oil pressure at 4.6610630306531675e-06 while the car sits at 300 rpm in get_in_car. Temps are normal (oil 77.0, water 77.0 against limits 130.0 and 105.0), so this is a stalled engine, not an overheating one."
+        },
+        "event_ref": {
+         "event_type": "car_health_warning",
+         "key": "car_health_warning",
+         "tick": 180599,
+         "session_time": 22.683333334823445,
+         "lap": 0,
+         "state_version": 1
+        },
+        "session_time": 22.683333334823445,
+        "timestamp": 1793407296.5229704,
+        "subject": "car_health",
+        "seq": 1,
+        "grounded": false,
+        "refused": true,
+        "ungrounded": [
+         "4.6610630306531675"
+        ],
+        "tools_used": [
+         "get_car_health",
+         "get_recent_detector_events"
+        ],
+        "model": "kimi-k3",
+        "speak": true,
+        "audio_url": null,
+        "message_id": "46b4373ed7ff0038"
+       }
+      }
+     },
+     {
+      "t0": 317.7500000015298,
+      "label": "strategist (late +88s): Late call: Box this lap, fuel only, 13.2 litres. We're 3 laps short on fuel, stop is mandatory. Rejoin position unknown - no standings data.",
+      "cls": "agent-strategist late",
+      "late": true,
+      "expired": false,
+      "record": {
+       "seq": 344,
+       "wall_ms": 1793407385424,
+       "session_time": 229.68333333489838,
+       "tick": 198302,
+       "kind": "radio",
+       "agent": "strategist",
+       "run_id": null,
+       "event_key": "fuel_margin_low",
+       "data": {
+        "agent": "strategist",
+        "priority": "advisory",
+        "spoken_text": "Late call: Box this lap, fuel only, 13.2 litres. We're 3 laps short on fuel, stop is mandatory. Rejoin position unknown - no standings data.",
+        "detail_text": "Fuel margin is -11.365L (-3.082 laps) against 16 laps to finish; current level 47.646L vs 59.011L needed. Pit window is open (laps 2-14), so a stop is mandatory. simulate_pit_outcome for a lap-2 stop is grounded on fuel: add 13.21L (target 60.86L = 16.0 laps at 3.688L/lap plus 0.5 lap reserve), which covers to the flag. Rejoin position is null - standings gaps are unavailable (gap_basis null, player not in standings array), so no track-position call can be made. Consumption is from 1 sample only, so the 13.21L figure may move; taking the stop now banks the mandatory fuel and leaves the window to lap 14 for any further adjustment.",
+        "data": {
+         "recommendation": "box_now",
+         "target_lap": 2,
+         "fuel_to_add_l": 13.21,
+         "rejoin_position": null,
+         "confidence": "medium",
+         "rationale": "We are 11.365L (-3.082 laps) short of the finish, so a stop is mandatory inside the open window (laps 2-14); a lap-2 stop needs 13.21L and covers to the flag per the grounded simulation. Rejoin position is unknown because standings gaps are unavailable.",
+         "risks": [
+          "Rejoin position unknown - standings gaps unavailable, so track-position cost of the stop cannot be quoted.",
+          "Fuel consumption is from 1 sample only; the 13.21L add may need revision as more laps are logged.",
+          "Pit-lane loss of 25.0s is a tool assumption, not measured."
+         ]
+        },
+        "event_ref": {
+         "event_type": "fuel_margin_low",
+         "key": "fuel_margin_low",
+         "tick": 193018,
+         "session_time": 229.68333333489838,
+         "lap": 2,
+         "state_version": 12420
+        },
+        "session_time": 229.68333333489838,
+        "timestamp": 1793407385.4238584,
+        "subject": "pit_stop",
+        "seq": 2,
+        "grounded": true,
+        "refused": false,
+        "ungrounded": [],
+        "tools_used": [
+         "get_fuel_projection",
+         "simulate_pit_outcome"
+        ],
+        "model": "kimi-k3",
+        "speak": true,
+        "audio_url": null,
+        "message_id": "fd8c4e03a6c93cb1",
+        "late": true,
+        "late_by_s": 88.1,
+        "max_age_s": 30.0,
+        "air_session_time": 317.7500000015298
+       }
+      }
+     },
+     {
+      "t0": 423.50000000143365,
+      "label": "coach (not aired: lap 3 has passed (now lap 4)): Brake earlier into the hairpin — you went in 14 metres late and locked up, that's what put you off.",
+      "cls": "agent-coach expired",
+      "late": false,
+      "expired": true,
+      "record": {
+       "seq": 479,
+       "wall_ms": 1793407438300,
+       "session_time": 367.71666666815105,
+       "tick": 204647,
+       "kind": "radio",
+       "agent": "coach",
+       "run_id": null,
+       "event_key": "offtrack",
+       "data": {
+        "agent": "coach",
+        "priority": "advisory",
+        "spoken_text": "Brake earlier into the hairpin — you went in 14 metres late and locked up, that's what put you off.",
+        "detail_text": "Single offtrack at the T8 hairpin (lap-dist 0.979), not a recurring pattern — count is 1. Telemetry vs reference lap: brake point 14 m late, lock-up scrubbing 7 km/h at entry, minimum speed 59.45 km/h vs 66.04 reference, full throttle 60 m later than reference. Total corner delta 0.2539 s, with throttle application the largest single loss (0.1346 s). The late brake point with the lock-up is the likely cause of the off-track excursion at 27.7 km/h. Coaching the brake point as the root cause; throttle pickup will follow once entry is sorted.",
+        "data": {
+         "theme": "braking",
+         "corner": "T8",
+         "cue": "Brake 14 metres earlier into the hairpin and release the brake cleanly — you locked up and scrubbed 7 km/h at entry.",
+         "from_telemetry": true,
+         "confidence": "high",
+         "rationale": "Corner telemetry shows brake point 14 m late with a lock-up scrubbing 7 km/h at entry into T8, minimum speed 59.45 km/h vs 66.04 reference, and a 0.2539 s corner delta. The single offtrack (count 1) at 27.7 km/h is consistent with the late, locked entry."
+        },
+        "event_ref": {
+         "event_type": "offtrack",
+         "key": "offtrack",
+         "tick": 201300,
+         "session_time": 367.71666666815105,
+         "lap": 2,
+         "state_version": 20702
+        },
+        "session_time": 367.71666666815105,
+        "timestamp": 1793407438.299569,
+        "subject": "coaching",
+        "seq": 3,
+        "grounded": true,
+        "refused": false,
+        "ungrounded": [],
+        "tools_used": [
+         "get_recent_detector_events",
+         "get_corner_detail"
+        ],
+        "model": "kimi-k3",
+        "speak": false,
+        "audio_url": null,
+        "message_id": "386c95aadfe737d5",
+        "expired": true,
+        "expired_reason": "lap 3 has passed (now lap 4)",
+        "air_session_time": 423.50000000143365
+       }
+      }
+     },
+     {
+      "t0": 465.2166666680624,
+      "label": "vehicle_engineer: Pressures are building four kPa per lap across all four tyres - RF is worst. Temps are fine. We'll adjust cold pressures at the stop.",
+      "cls": "agent-vehicle_engineer",
+      "late": false,
+      "expired": false,
+      "record": {
+       "seq": 526,
+       "wall_ms": 1793407459159,
+       "session_time": 371.5500000014809,
+       "tick": 207150,
+       "kind": "radio",
+       "agent": "vehicle_engineer",
+       "run_id": null,
+       "event_key": "tyre_out_of_band",
+       "data": {
+        "agent": "vehicle_engineer",
+        "priority": "advisory",
+        "spoken_text": "Pressures are building four kPa per lap across all four tyres - RF is worst. Temps are fine. We'll adjust cold pressures at the stop.",
+        "detail_text": "RF pressure trend flagged at 4.184 kPa/lap against a 2.0 kPa/lap threshold - more than double the limit. All four corners are climbing at similar rates (LF 4.0663, RF 4.184, LR 3.9214, RR 3.9583 kPa/lap), so this is a set-wide pressure buildup, not a corner-specific issue. Current pressures after 2 laps on tyres: LF 175.7, RF 176.8, LR 174.9, RR 175.7 kPa. Starting pressure was 165 kPa all round per setup. Tyre temps are stable - temp trend is 0.0 C/lap on all four corners, current temps 54.9-55.5 C. This is pure pressure growth from heat soak, not a temperature problem. If this rate continues, pressures will keep climbing roughly 4 kPa per lap. At the next stop, dropping starting pressures by 2-3 kPa would bring the hot running pressure into a better window.",
+        "data": {
+         "finding": "tyre_pressures",
+         "corner": null,
+         "affected": [
+          "RF",
+          "LF",
+          "LR",
+          "RR"
+         ],
+         "trend": "worsening",
+         "driver_action": "No immediate action needed - pressures are climbing but not yet critical. Be aware grip balance may shift as pressures build.",
+         "setup_note": "Current starting pressures are 165 kPa all round. With ~4 kPa/lap buildup, consider dropping cold pressures 2-3 kPa at the next stop to keep hot pressures in window.",
+         "confidence": "high",
+         "rationale": "RF pressure trend at 4.184 kPa/lap exceeds the 2.0 kPa/lap threshold by 2.184. All four tyres show similar ~4 kPa/lap growth from a 165 kPa start, with temps flat at 0.0 C/lap trend - this is pressure buildup, not overheating."
+        },
+        "event_ref": {
+         "event_type": "tyre_out_of_band",
+         "key": "tyre_out_of_band",
+         "tick": 201530,
+         "session_time": 371.5500000014809,
+         "lap": 3,
+         "state_version": 20932
+        },
+        "session_time": 371.5500000014809,
+        "timestamp": 1793407459.158266,
+        "subject": "tyres",
+        "seq": 4,
+        "grounded": true,
+        "refused": false,
+        "ungrounded": [],
+        "tools_used": [
+         "get_tyre_trend",
+         "get_setup_snapshot"
+        ],
+        "model": "kimi-k3",
+        "speak": true,
+        "audio_url": null,
+        "message_id": "11e83fdbc2e0e577"
+       }
+      }
+     },
+     {
+      "t0": 525.7166666680074,
+      "label": "spotter: Yellow, yellow. No gaps, location unknown. Expect slow traffic ahead, be ready to lift.",
+      "cls": "agent-spotter",
+      "late": false,
+      "expired": false,
+      "record": {
+       "seq": 614,
+       "wall_ms": 1793407489407,
+       "session_time": 500.81666666803,
+       "tick": 210780,
+       "kind": "radio",
+       "agent": "spotter",
+       "run_id": null,
+       "event_key": "flag_change:yellow",
+       "data": {
+        "agent": "spotter",
+        "priority": "critical",
+        "spoken_text": "Yellow, yellow. No gaps, location unknown. Expect slow traffic ahead, be ready to lift.",
+        "detail_text": "Flag changed green to yellow at session time 500.8s, lap 3; active flags yellow_waving, servicible, start_hidden. Standings tool reports gap_basis null and the player not present in the standings array, so no gaps and no car positions are available. No incident or offtrack event accompanies this yellow in the detector feed; the only recent off was our own at session time 367.7s, lap 2. Hazard location unknown.",
+        "data": {
+         "threat": "hazard",
+         "side": "unknown",
+         "car_idx": null,
+         "action": "none",
+         "confidence": "low"
+        },
+        "event_ref": {
+         "event_type": "flag_change",
+         "key": "flag_change:yellow",
+         "tick": 209286,
+         "session_time": 500.81666666803,
+         "lap": 3,
+         "state_version": 28688
+        },
+        "session_time": 500.81666666803,
+        "timestamp": 1793407489.4070654,
+        "subject": "traffic:hazard",
+        "seq": 5,
+        "grounded": true,
+        "refused": false,
+        "ungrounded": [],
+        "tools_used": [
+         "get_standings_around_player",
+         "get_recent_detector_events"
+        ],
+        "model": "kimi-k3",
+        "speak": true,
+        "audio_url": null,
+        "message_id": "0ae796b2c8f8348c"
+       }
+      }
+     },
+     {
+      "t0": 556.916666667979,
+      "label": "strategist: Box this lap under the yellow, fuel only, 14.8 litres. Stop is mandatory, we're 3 laps short. Rejoin unknown, no standings data.",
+      "cls": "agent-strategist",
+      "late": false,
+      "expired": false,
+      "record": {
+       "seq": 650,
+       "wall_ms": 1793407505010,
+       "session_time": 500.81666666803,
+       "tick": 212652,
+       "kind": "radio",
+       "agent": "strategist",
+       "run_id": null,
+       "event_key": "flag_change:yellow",
+       "data": {
+        "agent": "strategist",
+        "priority": "critical",
+        "spoken_text": "Box this lap under the yellow, fuel only, 14.8 litres. Stop is mandatory, we're 3 laps short. Rejoin unknown, no standings data.",
+        "detail_text": "Yellow flag at lap 3. Fuel margin is -12.9 L (-3.4 laps) against 14 laps to finish, so a stop is mandatory and the pit window is open (laps 3-13). Stopping under yellow cuts the pit-lane loss from 25.0s to 11.25s. Add 14.798 L to reach the flag with 0.5 laps reserve (target 54.99 L at 3.793 L/lap). Rejoin position cannot be projected - standings gap basis is unavailable, so track position cost is unknown but discounted under the caution. Tyre pressures are building ~4 kPa/lap; vehicle engineering will adjust cold pressures at this stop.",
+        "data": {
+         "recommendation": "pit_under_yellow",
+         "target_lap": 3,
+         "fuel_to_add_l": 14.798,
+         "rejoin_position": null,
+         "confidence": "medium",
+         "rationale": "We are 12.9 L (3.4 laps) short of the finish with 14 laps to run, so the stop is mandatory; the yellow discounts pit loss to 11.25s. Rejoin position is unknown because standings gaps are unavailable.",
+         "risks": [
+          "Rejoin position unknown - no standings data, so cars may pass in the pits we cannot account for",
+          "Fuel consumption based on only 2 samples (std 0.1477 L); the 0.5-lap reserve could shrink if consumption rises",
+          "If the yellow ends before we reach pit entry, the stop reverts to full 25.0s loss"
+         ]
+        },
+        "event_ref": {
+         "event_type": "flag_change",
+         "key": "flag_change:yellow",
+         "tick": 209286,
+         "session_time": 500.81666666803,
+         "lap": 3,
+         "state_version": 28688
+        },
+        "session_time": 500.81666666803,
+        "timestamp": 1793407505.0097091,
+        "subject": "pit_stop",
+        "seq": 6,
+        "grounded": true,
+        "refused": false,
+        "ungrounded": [],
+        "tools_used": [
+         "simulate_pit_outcome",
+         "get_fuel_projection"
+        ],
+        "model": "kimi-k3",
+        "speak": true,
+        "audio_url": null,
+        "message_id": "13dfdf18da914f37"
+       }
+      }
+     },
+     {
+      "t0": 570.933333334633,
+      "label": "strategist: Box this lap under the yellow, fuel only, 16.7 litres. Stop is mandatory, we're 3.9 laps short. Rejoin unknown, no standings data.",
+      "cls": "agent-strategist",
+      "late": false,
+      "expired": false,
+      "record": {
+       "seq": 727,
+       "wall_ms": 1793407531278,
+       "session_time": 570.933333334633,
+       "tick": 215804,
+       "kind": "radio",
+       "agent": "strategist",
+       "run_id": null,
+       "event_key": "flag_change:yellow",
+       "data": {
+        "agent": "strategist",
+        "priority": "critical",
+        "spoken_text": "Box this lap under the yellow, fuel only, 16.7 litres. Stop is mandatory, we're 3.9 laps short. Rejoin unknown, no standings data.",
+        "detail_text": "Mandatory fuel stop: we are 14.8 L short of the finish (need 53.1 L for 14 laps, have 38.3 L). The yellow cuts effective pit loss from 25.0s to 11.25s (x0.45 discount), making this the cheapest possible moment. simulate_pit_outcome prices 16.711 L to add (target 54.99 L = 14 laps at 3.793 L/lap plus 0.5 lap reserve), which covers to the flag. Rejoin position is unknown: standings gap basis is unavailable, so no rejoin was projected. Tyre temps are flat but pressures are rising ~4 kPa/lap; vehicle engineering will adjust cold pressures at this stop.",
+        "data": {
+         "recommendation": "pit_under_yellow",
+         "target_lap": 4,
+         "fuel_to_add_l": 16.711,
+         "rejoin_position": null,
+         "confidence": "medium",
+         "rationale": "Fuel margin is -14.814 L (-3.9 laps), so a stop is mandatory; under yellow the pit loss drops from 25.0s to 11.25s, and 16.711 L covers the remaining 14 laps with reserve.",
+         "risks": [
+          "Rejoin position unknown - no standings gap basis, so we cannot say where we come out.",
+          "Fuel consumption learned from only 2 samples (std 0.148 L/lap); the 0.5-lap reserve covers modest variation but a big consumption spike would leave us short.",
+          "If the yellow ends before we reach pit entry, the stop reverts to full 25.0s loss."
+         ]
+        },
+        "event_ref": {
+         "event_type": "flag_change",
+         "key": "flag_change:yellow",
+         "tick": 213493,
+         "session_time": 570.933333334633,
+         "lap": 4,
+         "state_version": 32895
+        },
+        "session_time": 570.933333334633,
+        "timestamp": 1793407531.277778,
+        "subject": "pit_stop",
+        "seq": 7,
+        "grounded": true,
+        "refused": false,
+        "ungrounded": [],
+        "tools_used": [
+         "get_fuel_projection",
+         "simulate_pit_outcome"
+        ],
+        "model": "kimi-k3",
+        "speak": true,
+        "audio_url": null,
+        "message_id": "a1d5fc09a0fc72d6"
+       }
+      }
+     },
+     {
+      "t0": 570.933333334633,
+      "label": "spotter: Standby - I can't back that call with data yet.",
+      "cls": "agent-spotter refused",
+      "late": false,
+      "expired": false,
+      "record": {
+       "seq": 754,
+       "wall_ms": 1793407541700,
+       "session_time": 570.933333334633,
+       "tick": 217055,
+       "kind": "radio",
+       "agent": "spotter",
+       "run_id": null,
+       "event_key": "flag_change:yellow",
+       "data": {
+        "agent": "spotter",
+        "priority": "info",
+        "spoken_text": "Standby - I can't back that call with data yet.",
+        "detail_text": "Withheld: the agent cited figures that are not traceable to the race state or to a tool result (10). Original text: Yellow, yellow. No gaps, location unknown. Be ready to lift.",
+        "data": {
+         "threat": "hazard",
+         "side": "unknown",
+         "car_idx": null,
+         "action": "lift",
+         "confidence": "low"
+        },
+        "event_ref": {
+         "event_type": "flag_change",
+         "key": "flag_change:yellow",
+         "tick": 213493,
+         "session_time": 570.933333334633,
+         "lap": 4,
+         "state_version": 32895
+        },
+        "session_time": 570.933333334633,
+        "timestamp": 1793407541.6987994,
+        "subject": "traffic:hazard",
+        "seq": 8,
+        "grounded": false,
+        "refused": true,
+        "ungrounded": [
+         "10"
+        ],
+        "tools_used": [
+         "get_recent_detector_events",
+         "get_standings_around_player"
+        ],
+        "model": "kimi-k3",
+        "speak": true,
+        "audio_url": null,
+        "message_id": "a3de5cb0a803154c"
+       }
+      }
+     }
+    ],
+    "strategist": [
+     {
+      "t0": 229.68333333489838,
+      "t1": 317.7480006526871,
+      "label": "strategist woken by fuel_margin_low → radio",
+      "cls": "agent-strategist",
+      "record": {
+       "seq": 246,
+       "wall_ms": 1793407341390,
+       "session_time": 229.68333333489838,
+       "tick": 193018,
+       "kind": "run_start",
+       "agent": "strategist",
+       "run_id": "strategist-1",
+       "event_key": "fuel_margin_low",
+       "data": {
+        "trigger": "fuel_margin_low",
+        "severity": "advisory",
+        "model": "kimi-k3",
+        "context_radio": [
+         {
+          "message_id": "46b4373ed7ff0038",
+          "agent": "vehicle_engineer"
+         }
+        ],
+        "context_events": 9,
+        "activity_seq": 27
+       }
+      }
+     },
+     {
+      "t0": 500.81666666803,
+      "t1": 556.9146681411898,
+      "label": "strategist woken by flag_change:yellow → radio",
+      "cls": "agent-strategist",
+      "record": {
+       "seq": 564,
+       "wall_ms": 1793407476955,
+       "session_time": 500.81666666803,
+       "tick": 209286,
+       "kind": "run_start",
+       "agent": "strategist",
+       "run_id": "strategist-2",
+       "event_key": "flag_change:yellow",
+       "data": {
+        "trigger": "flag_change",
+        "severity": "critical",
+        "model": "kimi-k3",
+        "context_radio": [
+         {
+          "message_id": "46b4373ed7ff0038",
+          "agent": "vehicle_engineer"
+         },
+         {
+          "message_id": "fd8c4e03a6c93cb1",
+          "agent": "strategist"
+         },
+         {
+          "message_id": "386c95aadfe737d5",
+          "agent": "coach"
+         },
+         {
+          "message_id": "11e83fdbc2e0e577",
+          "agent": "vehicle_engineer"
+         }
+        ],
+        "context_events": 15,
+        "activity_seq": 68
+       }
+      }
+     },
+     {
+      "t0": 570.933333334633,
+      "t1": 573.6166666679638,
+      "label": "strategist woken by flag_change:yellow → radio",
+      "cls": "agent-strategist",
+      "record": {
+       "seq": 667,
+       "wall_ms": 1793407512014,
+       "session_time": 570.933333334633,
+       "tick": 213493,
+       "kind": "run_start",
+       "agent": "strategist",
+       "run_id": "strategist-3",
+       "event_key": "flag_change:yellow",
+       "data": {
+        "trigger": "flag_change",
+        "severity": "critical",
+        "model": "kimi-k3",
+        "context_radio": [
+         {
+          "message_id": "fd8c4e03a6c93cb1",
+          "agent": "strategist"
+         },
+         {
+          "message_id": "386c95aadfe737d5",
+          "agent": "coach"
+         },
+         {
+          "message_id": "11e83fdbc2e0e577",
+          "agent": "vehicle_engineer"
+         },
+         {
+          "message_id": "0ae796b2c8f8348c",
+          "agent": "spotter"
+         },
+         {
+          "message_id": "13dfdf18da914f37",
+          "agent": "strategist"
+         }
+        ],
+        "context_events": 20,
+        "activity_seq": 95
+       }
+      }
+     }
+    ],
+    "vehicle_engineer": [
+     {
+      "t0": 22.683333334823445,
+      "t1": 139.95000000149363,
+      "label": "vehicle_engineer woken by car_health_warning → refused",
+      "cls": "agent-vehicle_engineer run-quiet",
+      "record": {
+       "seq": 5,
+       "wall_ms": 1793407238047,
+       "session_time": 22.683333334823445,
+       "tick": 180599,
+       "kind": "run_start",
+       "agent": "vehicle_engineer",
+       "run_id": "vehicle_engineer-1",
+       "event_key": "car_health_warning",
+       "data": {
+        "trigger": "car_health_warning",
+        "severity": "critical",
+        "model": "kimi-k3",
+        "context_radio": [],
+        "context_events": 1,
+        "activity_seq": 2
+       }
+      }
+     },
+     {
+      "t0": 371.5500000014809,
+      "t1": 465.2166666680624,
+      "label": "vehicle_engineer woken by tyre_out_of_band → radio",
+      "cls": "agent-vehicle_engineer",
+      "record": {
+       "seq": 411,
+       "wall_ms": 1793407412765,
+       "session_time": 371.5500000014809,
+       "tick": 201530,
+       "kind": "run_start",
+       "agent": "vehicle_engineer",
+       "run_id": "vehicle_engineer-2",
+       "event_key": "tyre_out_of_band",
+       "data": {
+        "trigger": "tyre_out_of_band",
+        "severity": "advisory",
+        "model": "kimi-k3",
+        "context_radio": [
+         {
+          "message_id": "46b4373ed7ff0038",
+          "agent": "vehicle_engineer"
+         },
+         {
+          "message_id": "fd8c4e03a6c93cb1",
+          "agent": "strategist"
+         }
+        ],
+        "context_events": 14,
+        "activity_seq": 45
+       }
+      }
+     }
+    ],
+    "spotter": [
+     {
+      "t0": 500.81666666803,
+      "t1": 525.7166666680074,
+      "label": "spotter woken by flag_change:yellow → radio",
+      "cls": "agent-spotter",
+      "record": {
+       "seq": 566,
+       "wall_ms": 1793407476960,
+       "session_time": 500.81666666803,
+       "tick": 209286,
+       "kind": "run_start",
+       "agent": "spotter",
+       "run_id": "spotter-1",
+       "event_key": "flag_change:yellow",
+       "data": {
+        "trigger": "flag_change",
+        "severity": "critical",
+        "model": "kimi-k3",
+        "context_radio": [
+         {
+          "message_id": "46b4373ed7ff0038",
+          "agent": "vehicle_engineer"
+         },
+         {
+          "message_id": "fd8c4e03a6c93cb1",
+          "agent": "strategist"
+         },
+         {
+          "message_id": "386c95aadfe737d5",
+          "agent": "coach"
+         },
+         {
+          "message_id": "11e83fdbc2e0e577",
+          "agent": "vehicle_engineer"
+         }
+        ],
+        "context_events": 15,
+        "activity_seq": 70
+       }
+      }
+     },
+     {
+      "t0": 570.933333334633,
+      "t1": 573.6166666679638,
+      "label": "spotter woken by flag_change:yellow → refused",
+      "cls": "agent-spotter run-quiet",
+      "record": {
+       "seq": 669,
+       "wall_ms": 1793407512018,
+       "session_time": 570.933333334633,
+       "tick": 213493,
+       "kind": "run_start",
+       "agent": "spotter",
+       "run_id": "spotter-2",
+       "event_key": "flag_change:yellow",
+       "data": {
+        "trigger": "flag_change",
+        "severity": "critical",
+        "model": "kimi-k3",
+        "context_radio": [
+         {
+          "message_id": "fd8c4e03a6c93cb1",
+          "agent": "strategist"
+         },
+         {
+          "message_id": "386c95aadfe737d5",
+          "agent": "coach"
+         },
+         {
+          "message_id": "11e83fdbc2e0e577",
+          "agent": "vehicle_engineer"
+         },
+         {
+          "message_id": "0ae796b2c8f8348c",
+          "agent": "spotter"
+         },
+         {
+          "message_id": "13dfdf18da914f37",
+          "agent": "strategist"
+         }
+        ],
+        "context_events": 20,
+        "activity_seq": 97
+       }
+      }
+     }
+    ],
+    "coach": [
+     {
+      "t0": 367.71666666815105,
+      "t1": 423.5060000014336,
+      "label": "coach woken by offtrack → radio",
+      "cls": "agent-coach",
+      "record": {
+       "seq": 396,
+       "wall_ms": 1793407410406,
+       "session_time": 367.71666666815105,
+       "tick": 201300,
+       "kind": "run_start",
+       "agent": "coach",
+       "run_id": "coach-1",
+       "event_key": "offtrack",
+       "data": {
+        "trigger": "offtrack",
+        "severity": "advisory",
+        "model": "kimi-k3",
+        "context_radio": [
+         {
+          "message_id": "46b4373ed7ff0038",
+          "agent": "vehicle_engineer"
+         },
+         {
+          "message_id": "fd8c4e03a6c93cb1",
+          "agent": "strategist"
+         }
+        ],
+        "context_events": 10,
+        "activity_seq": 39
+       }
+      }
+     }
+    ]
+   }
+  },
+  {
+   "name": "radioUpTo with late and dropped calls",
+   "module": "review",
+   "fn": "radioUpTo",
+   "args": [
+    {
+     "$input": "journal_air"
+    },
+    null
+   ],
+   "expect": [
+    {
+     "seq": 727,
+     "wall_ms": 1793407531278,
+     "session_time": 570.933333334633,
+     "tick": 215804,
+     "kind": "radio",
+     "agent": "strategist",
+     "run_id": null,
+     "event_key": "flag_change:yellow",
+     "data": {
+      "agent": "strategist",
+      "priority": "critical",
+      "spoken_text": "Box this lap under the yellow, fuel only, 16.7 litres. Stop is mandatory, we're 3.9 laps short. Rejoin unknown, no standings data.",
+      "detail_text": "Mandatory fuel stop: we are 14.8 L short of the finish (need 53.1 L for 14 laps, have 38.3 L). The yellow cuts effective pit loss from 25.0s to 11.25s (x0.45 discount), making this the cheapest possible moment. simulate_pit_outcome prices 16.711 L to add (target 54.99 L = 14 laps at 3.793 L/lap plus 0.5 lap reserve), which covers to the flag. Rejoin position is unknown: standings gap basis is unavailable, so no rejoin was projected. Tyre temps are flat but pressures are rising ~4 kPa/lap; vehicle engineering will adjust cold pressures at this stop.",
+      "data": {
+       "recommendation": "pit_under_yellow",
+       "target_lap": 4,
+       "fuel_to_add_l": 16.711,
+       "rejoin_position": null,
+       "confidence": "medium",
+       "rationale": "Fuel margin is -14.814 L (-3.9 laps), so a stop is mandatory; under yellow the pit loss drops from 25.0s to 11.25s, and 16.711 L covers the remaining 14 laps with reserve.",
+       "risks": [
+        "Rejoin position unknown - no standings gap basis, so we cannot say where we come out.",
+        "Fuel consumption learned from only 2 samples (std 0.148 L/lap); the 0.5-lap reserve covers modest variation but a big consumption spike would leave us short.",
+        "If the yellow ends before we reach pit entry, the stop reverts to full 25.0s loss."
+       ]
+      },
+      "event_ref": {
+       "event_type": "flag_change",
+       "key": "flag_change:yellow",
+       "tick": 213493,
+       "session_time": 570.933333334633,
+       "lap": 4,
+       "state_version": 32895
+      },
+      "session_time": 570.933333334633,
+      "timestamp": 1793407531.277778,
+      "subject": "pit_stop",
+      "seq": 7,
+      "grounded": true,
+      "refused": false,
+      "ungrounded": [],
+      "tools_used": [
+       "get_fuel_projection",
+       "simulate_pit_outcome"
+      ],
+      "model": "kimi-k3",
+      "speak": true,
+      "audio_url": null,
+      "message_id": "a1d5fc09a0fc72d6"
+     }
+    },
+    {
+     "seq": 754,
+     "wall_ms": 1793407541700,
+     "session_time": 570.933333334633,
+     "tick": 217055,
+     "kind": "radio",
+     "agent": "spotter",
+     "run_id": null,
+     "event_key": "flag_change:yellow",
+     "data": {
+      "agent": "spotter",
+      "priority": "info",
+      "spoken_text": "Standby - I can't back that call with data yet.",
+      "detail_text": "Withheld: the agent cited figures that are not traceable to the race state or to a tool result (10). Original text: Yellow, yellow. No gaps, location unknown. Be ready to lift.",
+      "data": {
+       "threat": "hazard",
+       "side": "unknown",
+       "car_idx": null,
+       "action": "lift",
+       "confidence": "low"
+      },
+      "event_ref": {
+       "event_type": "flag_change",
+       "key": "flag_change:yellow",
+       "tick": 213493,
+       "session_time": 570.933333334633,
+       "lap": 4,
+       "state_version": 32895
+      },
+      "session_time": 570.933333334633,
+      "timestamp": 1793407541.6987994,
+      "subject": "traffic:hazard",
+      "seq": 8,
+      "grounded": false,
+      "refused": true,
+      "ungrounded": [
+       "10"
+      ],
+      "tools_used": [
+       "get_recent_detector_events",
+       "get_standings_around_player"
+      ],
+      "model": "kimi-k3",
+      "speak": true,
+      "audio_url": null,
+      "message_id": "a3de5cb0a803154c"
+     }
+    },
+    {
+     "seq": 650,
+     "wall_ms": 1793407505010,
+     "session_time": 500.81666666803,
+     "tick": 212652,
+     "kind": "radio",
+     "agent": "strategist",
+     "run_id": null,
+     "event_key": "flag_change:yellow",
+     "data": {
+      "agent": "strategist",
+      "priority": "critical",
+      "spoken_text": "Box this lap under the yellow, fuel only, 14.8 litres. Stop is mandatory, we're 3 laps short. Rejoin unknown, no standings data.",
+      "detail_text": "Yellow flag at lap 3. Fuel margin is -12.9 L (-3.4 laps) against 14 laps to finish, so a stop is mandatory and the pit window is open (laps 3-13). Stopping under yellow cuts the pit-lane loss from 25.0s to 11.25s. Add 14.798 L to reach the flag with 0.5 laps reserve (target 54.99 L at 3.793 L/lap). Rejoin position cannot be projected - standings gap basis is unavailable, so track position cost is unknown but discounted under the caution. Tyre pressures are building ~4 kPa/lap; vehicle engineering will adjust cold pressures at this stop.",
+      "data": {
+       "recommendation": "pit_under_yellow",
+       "target_lap": 3,
+       "fuel_to_add_l": 14.798,
+       "rejoin_position": null,
+       "confidence": "medium",
+       "rationale": "We are 12.9 L (3.4 laps) short of the finish with 14 laps to run, so the stop is mandatory; the yellow discounts pit loss to 11.25s. Rejoin position is unknown because standings gaps are unavailable.",
+       "risks": [
+        "Rejoin position unknown - no standings data, so cars may pass in the pits we cannot account for",
+        "Fuel consumption based on only 2 samples (std 0.1477 L); the 0.5-lap reserve could shrink if consumption rises",
+        "If the yellow ends before we reach pit entry, the stop reverts to full 25.0s loss"
+       ]
+      },
+      "event_ref": {
+       "event_type": "flag_change",
+       "key": "flag_change:yellow",
+       "tick": 209286,
+       "session_time": 500.81666666803,
+       "lap": 3,
+       "state_version": 28688
+      },
+      "session_time": 500.81666666803,
+      "timestamp": 1793407505.0097091,
+      "subject": "pit_stop",
+      "seq": 6,
+      "grounded": true,
+      "refused": false,
+      "ungrounded": [],
+      "tools_used": [
+       "simulate_pit_outcome",
+       "get_fuel_projection"
+      ],
+      "model": "kimi-k3",
+      "speak": true,
+      "audio_url": null,
+      "message_id": "13dfdf18da914f37"
+     }
+    },
+    {
+     "seq": 614,
+     "wall_ms": 1793407489407,
+     "session_time": 500.81666666803,
+     "tick": 210780,
+     "kind": "radio",
+     "agent": "spotter",
+     "run_id": null,
+     "event_key": "flag_change:yellow",
+     "data": {
+      "agent": "spotter",
+      "priority": "critical",
+      "spoken_text": "Yellow, yellow. No gaps, location unknown. Expect slow traffic ahead, be ready to lift.",
+      "detail_text": "Flag changed green to yellow at session time 500.8s, lap 3; active flags yellow_waving, servicible, start_hidden. Standings tool reports gap_basis null and the player not present in the standings array, so no gaps and no car positions are available. No incident or offtrack event accompanies this yellow in the detector feed; the only recent off was our own at session time 367.7s, lap 2. Hazard location unknown.",
+      "data": {
+       "threat": "hazard",
+       "side": "unknown",
+       "car_idx": null,
+       "action": "none",
+       "confidence": "low"
+      },
+      "event_ref": {
+       "event_type": "flag_change",
+       "key": "flag_change:yellow",
+       "tick": 209286,
+       "session_time": 500.81666666803,
+       "lap": 3,
+       "state_version": 28688
+      },
+      "session_time": 500.81666666803,
+      "timestamp": 1793407489.4070654,
+      "subject": "traffic:hazard",
+      "seq": 5,
+      "grounded": true,
+      "refused": false,
+      "ungrounded": [],
+      "tools_used": [
+       "get_standings_around_player",
+       "get_recent_detector_events"
+      ],
+      "model": "kimi-k3",
+      "speak": true,
+      "audio_url": null,
+      "message_id": "0ae796b2c8f8348c"
+     }
+    },
+    {
+     "seq": 526,
+     "wall_ms": 1793407459159,
+     "session_time": 371.5500000014809,
+     "tick": 207150,
+     "kind": "radio",
+     "agent": "vehicle_engineer",
+     "run_id": null,
+     "event_key": "tyre_out_of_band",
+     "data": {
+      "agent": "vehicle_engineer",
+      "priority": "advisory",
+      "spoken_text": "Pressures are building four kPa per lap across all four tyres - RF is worst. Temps are fine. We'll adjust cold pressures at the stop.",
+      "detail_text": "RF pressure trend flagged at 4.184 kPa/lap against a 2.0 kPa/lap threshold - more than double the limit. All four corners are climbing at similar rates (LF 4.0663, RF 4.184, LR 3.9214, RR 3.9583 kPa/lap), so this is a set-wide pressure buildup, not a corner-specific issue. Current pressures after 2 laps on tyres: LF 175.7, RF 176.8, LR 174.9, RR 175.7 kPa. Starting pressure was 165 kPa all round per setup. Tyre temps are stable - temp trend is 0.0 C/lap on all four corners, current temps 54.9-55.5 C. This is pure pressure growth from heat soak, not a temperature problem. If this rate continues, pressures will keep climbing roughly 4 kPa per lap. At the next stop, dropping starting pressures by 2-3 kPa would bring the hot running pressure into a better window.",
+      "data": {
+       "finding": "tyre_pressures",
+       "corner": null,
+       "affected": [
+        "RF",
+        "LF",
+        "LR",
+        "RR"
+       ],
+       "trend": "worsening",
+       "driver_action": "No immediate action needed - pressures are climbing but not yet critical. Be aware grip balance may shift as pressures build.",
+       "setup_note": "Current starting pressures are 165 kPa all round. With ~4 kPa/lap buildup, consider dropping cold pressures 2-3 kPa at the next stop to keep hot pressures in window.",
+       "confidence": "high",
+       "rationale": "RF pressure trend at 4.184 kPa/lap exceeds the 2.0 kPa/lap threshold by 2.184. All four tyres show similar ~4 kPa/lap growth from a 165 kPa start, with temps flat at 0.0 C/lap trend - this is pressure buildup, not overheating."
+      },
+      "event_ref": {
+       "event_type": "tyre_out_of_band",
+       "key": "tyre_out_of_band",
+       "tick": 201530,
+       "session_time": 371.5500000014809,
+       "lap": 3,
+       "state_version": 20932
+      },
+      "session_time": 371.5500000014809,
+      "timestamp": 1793407459.158266,
+      "subject": "tyres",
+      "seq": 4,
+      "grounded": true,
+      "refused": false,
+      "ungrounded": [],
+      "tools_used": [
+       "get_tyre_trend",
+       "get_setup_snapshot"
+      ],
+      "model": "kimi-k3",
+      "speak": true,
+      "audio_url": null,
+      "message_id": "11e83fdbc2e0e577"
+     }
+    },
+    {
+     "seq": 479,
+     "wall_ms": 1793407438300,
+     "session_time": 367.71666666815105,
+     "tick": 204647,
+     "kind": "radio",
+     "agent": "coach",
+     "run_id": null,
+     "event_key": "offtrack",
+     "data": {
+      "agent": "coach",
+      "priority": "advisory",
+      "spoken_text": "Brake earlier into the hairpin — you went in 14 metres late and locked up, that's what put you off.",
+      "detail_text": "Single offtrack at the T8 hairpin (lap-dist 0.979), not a recurring pattern — count is 1. Telemetry vs reference lap: brake point 14 m late, lock-up scrubbing 7 km/h at entry, minimum speed 59.45 km/h vs 66.04 reference, full throttle 60 m later than reference. Total corner delta 0.2539 s, with throttle application the largest single loss (0.1346 s). The late brake point with the lock-up is the likely cause of the off-track excursion at 27.7 km/h. Coaching the brake point as the root cause; throttle pickup will follow once entry is sorted.",
+      "data": {
+       "theme": "braking",
+       "corner": "T8",
+       "cue": "Brake 14 metres earlier into the hairpin and release the brake cleanly — you locked up and scrubbed 7 km/h at entry.",
+       "from_telemetry": true,
+       "confidence": "high",
+       "rationale": "Corner telemetry shows brake point 14 m late with a lock-up scrubbing 7 km/h at entry into T8, minimum speed 59.45 km/h vs 66.04 reference, and a 0.2539 s corner delta. The single offtrack (count 1) at 27.7 km/h is consistent with the late, locked entry."
+      },
+      "event_ref": {
+       "event_type": "offtrack",
+       "key": "offtrack",
+       "tick": 201300,
+       "session_time": 367.71666666815105,
+       "lap": 2,
+       "state_version": 20702
+      },
+      "session_time": 367.71666666815105,
+      "timestamp": 1793407438.299569,
+      "subject": "coaching",
+      "seq": 3,
+      "grounded": true,
+      "refused": false,
+      "ungrounded": [],
+      "tools_used": [
+       "get_recent_detector_events",
+       "get_corner_detail"
+      ],
+      "model": "kimi-k3",
+      "speak": false,
+      "audio_url": null,
+      "message_id": "386c95aadfe737d5",
+      "expired": true,
+      "expired_reason": "lap 3 has passed (now lap 4)",
+      "air_session_time": 423.50000000143365
+     }
+    },
+    {
+     "seq": 344,
+     "wall_ms": 1793407385424,
+     "session_time": 229.68333333489838,
+     "tick": 198302,
+     "kind": "radio",
+     "agent": "strategist",
+     "run_id": null,
+     "event_key": "fuel_margin_low",
+     "data": {
+      "agent": "strategist",
+      "priority": "advisory",
+      "spoken_text": "Late call: Box this lap, fuel only, 13.2 litres. We're 3 laps short on fuel, stop is mandatory. Rejoin position unknown - no standings data.",
+      "detail_text": "Fuel margin is -11.365L (-3.082 laps) against 16 laps to finish; current level 47.646L vs 59.011L needed. Pit window is open (laps 2-14), so a stop is mandatory. simulate_pit_outcome for a lap-2 stop is grounded on fuel: add 13.21L (target 60.86L = 16.0 laps at 3.688L/lap plus 0.5 lap reserve), which covers to the flag. Rejoin position is null - standings gaps are unavailable (gap_basis null, player not in standings array), so no track-position call can be made. Consumption is from 1 sample only, so the 13.21L figure may move; taking the stop now banks the mandatory fuel and leaves the window to lap 14 for any further adjustment.",
+      "data": {
+       "recommendation": "box_now",
+       "target_lap": 2,
+       "fuel_to_add_l": 13.21,
+       "rejoin_position": null,
+       "confidence": "medium",
+       "rationale": "We are 11.365L (-3.082 laps) short of the finish, so a stop is mandatory inside the open window (laps 2-14); a lap-2 stop needs 13.21L and covers to the flag per the grounded simulation. Rejoin position is unknown because standings gaps are unavailable.",
+       "risks": [
+        "Rejoin position unknown - standings gaps unavailable, so track-position cost of the stop cannot be quoted.",
+        "Fuel consumption is from 1 sample only; the 13.21L add may need revision as more laps are logged.",
+        "Pit-lane loss of 25.0s is a tool assumption, not measured."
+       ]
+      },
+      "event_ref": {
+       "event_type": "fuel_margin_low",
+       "key": "fuel_margin_low",
+       "tick": 193018,
+       "session_time": 229.68333333489838,
+       "lap": 2,
+       "state_version": 12420
+      },
+      "session_time": 229.68333333489838,
+      "timestamp": 1793407385.4238584,
+      "subject": "pit_stop",
+      "seq": 2,
+      "grounded": true,
+      "refused": false,
+      "ungrounded": [],
+      "tools_used": [
+       "get_fuel_projection",
+       "simulate_pit_outcome"
+      ],
+      "model": "kimi-k3",
+      "speak": true,
+      "audio_url": null,
+      "message_id": "fd8c4e03a6c93cb1",
+      "late": true,
+      "late_by_s": 88.1,
+      "max_age_s": 30.0,
+      "air_session_time": 317.7500000015298
+     }
+    },
+    {
+     "seq": 143,
+     "wall_ms": 1793407296524,
+     "session_time": 22.683333334823445,
+     "tick": 187634,
+     "kind": "radio",
+     "agent": "vehicle_engineer",
+     "run_id": null,
+     "event_key": "car_health_warning",
+     "data": {
+      "agent": "vehicle_engineer",
+      "priority": "info",
+      "spoken_text": "Standby - I can't back that call with data yet.",
+      "detail_text": "Withheld: the agent cited figures that are not traceable to the race state or to a tool result (4.6610630306531675). Original text: Engine's stalled - oil pressure is zero because the motor isn't running. Temps are fine at 77. Fire it up now, we're one lap to green.",
+      "data": {
+       "finding": "car_health",
+       "corner": null,
+       "affected": [
+        "oil_pressure",
+        "engine"
+       ],
+       "trend": "unknown",
+       "driver_action": "Restart the engine now - oil pressure will only return once it is running.",
+       "setup_note": null,
+       "confidence": "high",
+       "rationale": "The sim's own warning bits report oil_pressure_warning and engine_stalled, with oil pressure at 4.6610630306531675e-06 while the car sits at 300 rpm in get_in_car. Temps are normal (oil 77.0, water 77.0 against limits 130.0 and 105.0), so this is a stalled engine, not an overheating one."
+      },
+      "event_ref": {
+       "event_type": "car_health_warning",
+       "key": "car_health_warning",
+       "tick": 180599,
+       "session_time": 22.683333334823445,
+       "lap": 0,
+       "state_version": 1
+      },
+      "session_time": 22.683333334823445,
+      "timestamp": 1793407296.5229704,
+      "subject": "car_health",
+      "seq": 1,
+      "grounded": false,
+      "refused": true,
+      "ungrounded": [
+       "4.6610630306531675"
+      ],
+      "tools_used": [
+       "get_car_health",
+       "get_recent_detector_events"
+      ],
+      "model": "kimi-k3",
+      "speak": true,
+      "audio_url": null,
+      "message_id": "46b4373ed7ff0038"
+     }
+    }
+   ]
+  },
+  {
+   "name": "radioUpTo 420 s, before the dropped call's air time",
+   "module": "review",
+   "fn": "radioUpTo",
+   "args": [
+    {
+     "$input": "journal_air"
+    },
+    420.0
+   ],
+   "expect": [
+    {
+     "seq": 344,
+     "wall_ms": 1793407385424,
+     "session_time": 229.68333333489838,
+     "tick": 198302,
+     "kind": "radio",
+     "agent": "strategist",
+     "run_id": null,
+     "event_key": "fuel_margin_low",
+     "data": {
+      "agent": "strategist",
+      "priority": "advisory",
+      "spoken_text": "Late call: Box this lap, fuel only, 13.2 litres. We're 3 laps short on fuel, stop is mandatory. Rejoin position unknown - no standings data.",
+      "detail_text": "Fuel margin is -11.365L (-3.082 laps) against 16 laps to finish; current level 47.646L vs 59.011L needed. Pit window is open (laps 2-14), so a stop is mandatory. simulate_pit_outcome for a lap-2 stop is grounded on fuel: add 13.21L (target 60.86L = 16.0 laps at 3.688L/lap plus 0.5 lap reserve), which covers to the flag. Rejoin position is null - standings gaps are unavailable (gap_basis null, player not in standings array), so no track-position call can be made. Consumption is from 1 sample only, so the 13.21L figure may move; taking the stop now banks the mandatory fuel and leaves the window to lap 14 for any further adjustment.",
+      "data": {
+       "recommendation": "box_now",
+       "target_lap": 2,
+       "fuel_to_add_l": 13.21,
+       "rejoin_position": null,
+       "confidence": "medium",
+       "rationale": "We are 11.365L (-3.082 laps) short of the finish, so a stop is mandatory inside the open window (laps 2-14); a lap-2 stop needs 13.21L and covers to the flag per the grounded simulation. Rejoin position is unknown because standings gaps are unavailable.",
+       "risks": [
+        "Rejoin position unknown - standings gaps unavailable, so track-position cost of the stop cannot be quoted.",
+        "Fuel consumption is from 1 sample only; the 13.21L add may need revision as more laps are logged.",
+        "Pit-lane loss of 25.0s is a tool assumption, not measured."
+       ]
+      },
+      "event_ref": {
+       "event_type": "fuel_margin_low",
+       "key": "fuel_margin_low",
+       "tick": 193018,
+       "session_time": 229.68333333489838,
+       "lap": 2,
+       "state_version": 12420
+      },
+      "session_time": 229.68333333489838,
+      "timestamp": 1793407385.4238584,
+      "subject": "pit_stop",
+      "seq": 2,
+      "grounded": true,
+      "refused": false,
+      "ungrounded": [],
+      "tools_used": [
+       "get_fuel_projection",
+       "simulate_pit_outcome"
+      ],
+      "model": "kimi-k3",
+      "speak": true,
+      "audio_url": null,
+      "message_id": "fd8c4e03a6c93cb1",
+      "late": true,
+      "late_by_s": 88.1,
+      "max_age_s": 30.0,
+      "air_session_time": 317.7500000015298
+     }
+    },
+    {
+     "seq": 143,
+     "wall_ms": 1793407296524,
+     "session_time": 22.683333334823445,
+     "tick": 187634,
+     "kind": "radio",
+     "agent": "vehicle_engineer",
+     "run_id": null,
+     "event_key": "car_health_warning",
+     "data": {
+      "agent": "vehicle_engineer",
+      "priority": "info",
+      "spoken_text": "Standby - I can't back that call with data yet.",
+      "detail_text": "Withheld: the agent cited figures that are not traceable to the race state or to a tool result (4.6610630306531675). Original text: Engine's stalled - oil pressure is zero because the motor isn't running. Temps are fine at 77. Fire it up now, we're one lap to green.",
+      "data": {
+       "finding": "car_health",
+       "corner": null,
+       "affected": [
+        "oil_pressure",
+        "engine"
+       ],
+       "trend": "unknown",
+       "driver_action": "Restart the engine now - oil pressure will only return once it is running.",
+       "setup_note": null,
+       "confidence": "high",
+       "rationale": "The sim's own warning bits report oil_pressure_warning and engine_stalled, with oil pressure at 4.6610630306531675e-06 while the car sits at 300 rpm in get_in_car. Temps are normal (oil 77.0, water 77.0 against limits 130.0 and 105.0), so this is a stalled engine, not an overheating one."
+      },
+      "event_ref": {
+       "event_type": "car_health_warning",
+       "key": "car_health_warning",
+       "tick": 180599,
+       "session_time": 22.683333334823445,
+       "lap": 0,
+       "state_version": 1
+      },
+      "session_time": 22.683333334823445,
+      "timestamp": 1793407296.5229704,
+      "subject": "car_health",
+      "seq": 1,
+      "grounded": false,
+      "refused": true,
+      "ungrounded": [
+       "4.6610630306531675"
+      ],
+      "tools_used": [
+       "get_car_health",
+       "get_recent_detector_events"
+      ],
+      "model": "kimi-k3",
+      "speak": true,
+      "audio_url": null,
+      "message_id": "46b4373ed7ff0038"
+     }
+    }
+   ]
+  },
+  {
+   "name": "airBadge of a late call",
+   "module": "review",
+   "fn": "airBadge",
+   "args": [
+    {
+     "late": true,
+     "late_by_s": 88.1
+    }
+   ],
+   "expect": {
+    "kind": "late",
+    "text": "late +88s"
+   }
+  },
+  {
+   "name": "airBadge rounds a half up",
+   "module": "review",
+   "fn": "airBadge",
+   "args": [
+    {
+     "late": true,
+     "late_by_s": 2.5
+    }
+   ],
+   "expect": {
+    "kind": "late",
+    "text": "late +3s"
+   }
+  },
+  {
+   "name": "airBadge of a late call without its age",
+   "module": "review",
+   "fn": "airBadge",
+   "args": [
+    {
+     "late": true
+    }
+   ],
+   "expect": {
+    "kind": "late",
+    "text": "late"
+   }
+  },
+  {
+   "name": "airBadge of a dropped call",
+   "module": "review",
+   "fn": "airBadge",
+   "args": [
+    {
+     "expired": true,
+     "expired_reason": "lap 3 has passed (now lap 4)"
+    }
+   ],
+   "expect": {
+    "kind": "expired",
+    "text": "not aired",
+    "reason": "lap 3 has passed (now lap 4)"
+   }
+  },
+  {
+   "name": "airBadge of a dropped call without a reason",
+   "module": "review",
+   "fn": "airBadge",
+   "args": [
+    {
+     "expired": true
+    }
+   ],
+   "expect": {
+    "kind": "expired",
+    "text": "not aired",
+    "reason": "no longer valid"
+   }
+  },
+  {
+   "name": "airBadge of an ordinary call",
+   "module": "review",
+   "fn": "airBadge",
+   "args": [
+    {
+     "late": false
+    }
+   ],
+   "expect": null
+  },
+  {
+   "name": "airBadge of nothing",
+   "module": "review",
+   "fn": "airBadge",
+   "args": [
+    null
+   ],
+   "expect": null
   },
   {
    "name": "toMetres",

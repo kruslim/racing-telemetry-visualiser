@@ -186,6 +186,34 @@ class Settings(BaseSettings):
     pitwall_coach_model: str = Field(
         default="", description="Override the live coach's model. Empty = RTV_LLM_KIMI_MODEL_FAST."
     )
+    pitwall_strategist_max_age_s: float | None = Field(
+        default=None,
+        description=(
+            "Seconds a strategist call may wait for the radio before it airs "
+            "tagged late. Unset = the agent's default (30 s); 0 = never tagged late."
+        ),
+    )
+    pitwall_vehicle_engineer_max_age_s: float | None = Field(
+        default=None,
+        description=(
+            "Seconds a vehicle engineer call may wait for the radio before it airs "
+            "tagged late. Unset = the agent's default (20 s); 0 = never tagged late."
+        ),
+    )
+    pitwall_spotter_max_age_s: float | None = Field(
+        default=None,
+        description=(
+            "Seconds a spotter call may wait for the radio before it airs "
+            "tagged late. Unset = the agent's default (3 s); 0 = never tagged late."
+        ),
+    )
+    pitwall_coach_max_age_s: float | None = Field(
+        default=None,
+        description=(
+            "Seconds a coach call may wait for the radio before it airs "
+            "tagged late. Unset = the agent's default (30 s); 0 = never tagged late."
+        ),
+    )
     pitwall_agents_only: str = Field(
         default="",
         description="Comma-separated agent names to mount. Empty mounts all of them; "

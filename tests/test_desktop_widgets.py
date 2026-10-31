@@ -147,6 +147,41 @@ def test_radio_feed_variants_from_the_real_agents_on_run(qapp):
     assert_plain(feed)
 
 
+def test_radio_feed_shows_late_and_dropped_calls(qapp):
+    """B1: a late call carries a "late +Ns" badge; a dropped one is struck, with why."""
+    from rtv.desktop.widgets.radio import RadioFeed
+
+    calls = spa.load("agents-on/pitwall-radio.json")["messages"]
+    strategist = next(m for m in calls if m["agent"] == "strategist")
+    late = {
+        **strategist,
+        "spoken_text": "Late call: " + strategist["spoken_text"],
+        "late": True,
+        "late_by_s": 88.1,
+    }
+    dropped = {
+        **next(m for m in calls if m["agent"] == "coach"),
+        "expired": True,
+        "expired_reason": "lap 3 has passed (now lap 4)",
+        "speak": False,
+        "air_session_time": 423.5,
+    }
+    feed = RadioFeed()
+    feed.seed([late, dropped])
+    feed.grab()
+    shown = texts(feed)
+    assert "LATE +88S" in shown
+    assert "NOT AIRED" in shown
+    assert "Dropped before airing: lap 3 has passed (now lap 4)." in shown
+    struck = [
+        lab for lab in feed.findChildren(QLabel)
+        if lab.text() == dropped["spoken_text"] and lab.font().strikeOut()
+    ]
+    assert struck
+    assert any("→ dropped" in s for s in shown)
+    assert_plain(feed)
+
+
 def test_review_panels_on_real_summary_findings_and_journal(qapp):
     from rtv.desktop.widgets.review import AuditPanel, FindingsPanel, LapTable, SummaryPanel
 

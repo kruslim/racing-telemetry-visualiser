@@ -24,7 +24,7 @@ from typing import Literal
 from pydantic import Field
 
 from rtv.pitwall import tools as T
-from rtv.pitwall.framework import AgentOutput, AgentSpec, RadioPriority, Trigger
+from rtv.pitwall.framework import AgentOutput, AgentSpec, RadioMessage, RadioPriority, Trigger
 from rtv.racestate.models import EventType, FlagPhase, RaceEvent, RaceState
 from rtv.racestate.strategy_math import standings_around_player
 from rtv.vision.live import SPOTTER_KINDS
@@ -150,6 +150,14 @@ def spotter_subject(event: RaceEvent, output: AgentOutput) -> str:
     return f"traffic:{getattr(output, 'threat', 'unknown')}"
 
 
+def spotter_validity(
+    message: RadioMessage, state: RaceState, event: RaceEvent, pit_entry_pct: float | None
+) -> dict:
+    """A traffic call is about one car: once it has gone, so has the call."""
+    idx = event.payload.get("car_idx")
+    return {"subject_car_idx": int(idx)} if isinstance(idx, int) else {}
+
+
 SPOTTER = AgentSpec(
     name=AGENT_NAME,
     role_prompt=SPOTTER_PROMPT,
@@ -169,6 +177,9 @@ SPOTTER = AgentSpec(
         ("get_recent_detector_events", {"limit": 10}),
     ),
     max_tool_iterations=2,
+    # "Car left" is useful for about a second; three is generous.
+    max_age_s=3.0,
+    validity=spotter_validity,
 )
 
 
