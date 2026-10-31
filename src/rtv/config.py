@@ -256,6 +256,12 @@ class Settings(BaseSettings):
         "budget (a normal race hour is a low-tens number). 0 = unlimited. The "
         "counter is exposed on GET /api/v1/pitwall/status.",
     )
+    pitwall_typed_grounding: bool = Field(
+        default=True,
+        description="Typed grounding in the pitwall validator: a figure said with a unit "
+        "('6 laps', 'P4', '28 psi') must match a fact of that unit family, not just any "
+        "nearby number. false restores the old any-number check (a rollback switch).",
+    )
     pitwall_retry_backoff_s: float = Field(
         default=0.5,
         ge=0.0,

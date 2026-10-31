@@ -99,8 +99,13 @@ from `RTV_PITWALL_<NAME>_MODEL`, else `RTV_LLM_KIMI_MODEL_REASONING` / `_FAST` (
 
 **Validator** (`pitwall/validator.py`). Every number in an answer must be in the
 `FactSet` built from what the run was shown: state slice, triggering event, prefetch and
-tool results. Spoken text is tolerant (±0.05 or 2 %, rounding, clock notation, a fraction
-as a percentage); structured payload fields are exact. Also the 25-word limit and the
+tool results. Facts are typed: each carries its unit family and path
+(`race_state.fuel.laps_remaining = 6.2 laps`), and a spoken figure with a unit ("6 laps",
+"P4", "28 psi", "three tenths") must match a fact of that family, converted into the unit
+spoken (`rtv.grounding.units`, shared with the Layer-3b prose check). A bare figure keeps
+the any-fact match, and 0-3 are free only when bare. `RTV_PITWALL_TYPED_GROUNDING=false`
+restores the old any-number check. Spoken text is tolerant (±0.05 or 2 %, rounding, clock
+notation, a fraction as a percentage); structured payload fields are exact. Also the 25-word limit and the
 spec's deterministic `policy`. On failure: one repair turn naming the figures, then a
 grounded refusal at `info` priority with the blocked text kept in `detail_text`.
 
@@ -3107,3 +3112,33 @@ Not done: template calls need a mounted agent layer, which `services.build_pitwa
 only builds with a Kimi key. Running the radio and the callers without any key is a
 possible follow-up. Desktop: template calls are ordinary radio messages, so the live view
 shows them like any other; no view field changed, so the golden file is unchanged.
+
+## A1 — typed grounding in the pitwall validator (2026-10-31)
+
+Plan task A1 (REVIEW.md P1-1). The validator used to accept any spoken number near *any*
+number the run had been shown. Now facts are typed and a figure said with a unit must match
+a fact of that unit family.
+
+- `rtv.grounding.units`: the Layer-3b prose check's figure patterns, moved unchanged
+  (`prose.py` imports them back), plus `read_figures(text)` (figure, unit family, unit;
+  spelled-out numbers up to ninety-nine, "two point four", "half a second", "a lap and a
+  half", "three tenths"; "a couple" is not a number), `field_unit(path)` (the unit an engine
+  field is reported in, from its key) and `convert()` within a family.
+- `FactSet(typed=None)`: `None` reads `RTV_PITWALL_TYPED_GROUNDING` (default true). Typed facts
+  are `(value, unit, path)` per family (`FactSet.facts(family)`); detector findings' generic
+  `value`/`threshold`/`excess` take the unit from the finding's `unit`/`measure`, and numbers
+  inside tool strings carry the unit written next to them. `supports_figure(Figure)` converts
+  the fact into the spoken unit (kPa to psi, m/s to km/h, fraction to %) and then applies the
+  old rounding and tolerance. Bare figures and `_ALWAYS_ALLOWED` (0-3, bare only) are as
+  before; structured payload fields are still exact.
+- `GroundingReport.unsupported_detail` / `.typed`; the repair turn now quotes the detail
+  ("166.5 laps (no laps figure in the data matches; 166.5 is race_state.tyres.pressures.LF
+  (pressure))"). `unsupported` is unchanged.
+- Evals: `evals.pitwall_cases.swapped_fact_cases()` (one per agent, the right fact swapped
+  for another real fact in the agent's FactSet) and `agent_facts(spec, case)` (the FactSet
+  the runtime would build). All four pass the old check and are caught by the typed one;
+  `run_pitwall.py --dry-run` prints them.
+- Kimi Spa replays (`project-files/spa-kimi-run-A1/`): refusals 2 (run 3) to 5, then 4 after
+  fixing "seventy-two" being read as "two". The new refusals are a speed from an event
+  payload (m/s) quoted with another unit, and derived counts ("three laps running" from a
+  recurrence). Task A3 is the planned fix for the derived counts.

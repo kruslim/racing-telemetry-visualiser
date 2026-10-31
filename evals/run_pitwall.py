@@ -51,7 +51,31 @@ def _dry_run(sets: dict[str, list]) -> int:
             if case.note:
                 print(f"  note: {case.note}")
         print()
+    _print_swapped_facts(list(sets))
     return 0
+
+
+def _print_swapped_facts(agents: list[str]) -> None:
+    """The swapped-fact cases: the grounding check must catch a real fact in the wrong unit."""
+    from evals.pitwall_cases import agent_facts, swapped_fact_cases
+
+    rows = [c for c in swapped_fact_cases() if c.agent in agents]
+    caught = 0
+    print(f"=== swapped-fact grounding cases ({len(rows)}) ===")
+    for case in rows:
+        facts = agent_facts(SPECS[case.agent], case.case)
+        right = check_for_agent(
+            case.agent, case.faithful, case.case.state, case.case.event, facts=facts
+        )["grounding_ok"]
+        wrong = check_for_agent(
+            case.agent, case.swapped, case.case.state, case.case.event, facts=facts
+        )["grounding_ok"]
+        caught += int(right and not wrong)
+        verdict = "caught" if not wrong else "MISSED"
+        print(f"# {case.agent}: {case.case.name}")
+        print(f"  right   ({case.right_path}): {case.faithful['spoken_text']!r} grounded={right}")
+        print(f"  swapped ({case.wrong_path}): {case.swapped['spoken_text']!r} {verdict}")
+    print(f"{caught}/{len(rows)} swapped facts caught with the right fact still grounded\n")
 
 
 def _kwargs_for(agent: str, case, pit_loss: float) -> dict:
