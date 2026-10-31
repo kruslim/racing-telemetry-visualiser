@@ -51,6 +51,7 @@ src/rtv/desktop/
     review.py          ← js/review/review-model.js (+ session_clock, aired_times)
     audio_queue.py     ← js/audio-manager.js (radio discipline)
     radio.py           driver threading ("after your message", 45 s)
+    vision.py          onboard video sync, visual-note rows, camera lane (docs/VISION.md)
   client/            Api (QtNetwork REST) and JsonSocket (QtWebSockets, backoff)
   theme/             tokens.py (the palette) and qss.py (the stylesheet)
   widgets/           data-free panels and QPainter drawings
@@ -64,7 +65,8 @@ frontend does in its node-tested modules. `tests/test_desktop_model.py` restates
 the JS suites' rules and runs the ports over the real Spa payloads from the
 brief's zip; `tests/test_desktop_widgets.py` paints every panel with those payloads
 offscreen; `tests/test_desktop_server.py` boots the embedded server and the window
-on an empty store. CI runs the Qt tests in their own `desktop` job.
+on an empty store; `tests/test_desktop_vision.py` covers the onboard video panel and
+drives the review's add/sync/plan/analyse flow against a fake API. CI runs the Qt tests in their own `desktop` job.
 
 The visual design is the "RTV Desktop" Design canvas made for this work (six
 artboards: live pitwall, live states, review, radio window, component sheet,
@@ -87,6 +89,7 @@ names match `frontend/css/pitwall.css`.
 | R3 tower | `TowerPanel` incl. the no-field state for `.ibt` |
 | B1 ticker | `TickerStrip`, severity by icon and colour |
 | V1–V6 review | `SessionBar`, `SummaryPanel`, replay lanes + `CarStatePanel` + radio/events so far + the agents at the cursor, `LapTable` + `TraceStack` + `TrackMap`, `FindingsPanel`, `AuditPanel` |
+| §5.9 onboard video | `OnboardPanel` under the replay: add a video (by path with the embedded server, else upload), sync it by "lap N starts at video time" with a live frame preview, the frame at the review cursor, the kept visual notes (click to move the cursor; a corner picked in the findings filters them), a **camera** lane on the replay timeline, a free **Plan**, and **Analyse…** behind `VisionSpendDialog` (Cancel is the default), polled while it runs, with **Stop** |
 | §3.3 AI controls | `AiControls`: master switch, per-agent toggles, reset, budget; disabled with the reason when not mounted |
 | §3.3 quota prompt | `QuotaDialog` before Record a run and before a live replay while agents are mounted and enabled |
 | §6 states | empty store, waiting, loading, agents off, degraded, budget exhausted (banner), no field, replay running, socket lost (frozen and greyed), error notice with the server's `detail`, caution flag, stale |
@@ -103,6 +106,10 @@ names match `frontend/css/pitwall.css`.
   event that woke them, so the desktop maps a run's end and a call's air time onto
   the race clock through records written at the moment (`review.session_clock`,
   `aired_times`). A call therefore shows "L2 · 3:49 → aired 5:17".
+- **Frames, not a player.** The onboard panel shows the JPEG the server grabs at the
+  cursor (`/videos/{vid}/frame`) instead of embedding a video player, so the app needs
+  no codecs and the frame always matches the telemetry cursor. Playing the replay does
+  not stream frames; the frame catches up when the cursor stops.
 - **Import by path.** With the embedded server the app posts the file's path to
   `POST /import` instead of uploading 160 MB to itself; attached to another server
   (`--server`) it uploads, as the web review does.

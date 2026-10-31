@@ -3,7 +3,8 @@
 Onboard video, synced to the telemetry, plus short VLM-written "visual notes" on the
 moments the telemetry already flagged. This page is the backend contract for the UI
 redesign: everything a review page needs to show a synced video and the notes is here.
-There is no UI for it yet.
+RTV Desktop shows it in the review's onboard video panel (`docs/DESKTOP.md`, §5.9 row); the
+web review has no video panel yet.
 
 The rule that shapes all of it: **telemetry picks the moment, the VLM describes it.** A
 visual note is words about what the camera saw (kerb use, the line, other cars, damage,

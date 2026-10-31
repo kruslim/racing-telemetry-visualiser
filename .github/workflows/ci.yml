@@ -58,7 +58,7 @@ jobs:
       - name: Install
         run: python -m pip install -r requirements-dev.txt -e ".[desktop]"
       - name: Desktop tests
-        run: pytest -q tests/test_desktop_model.py tests/test_desktop_widgets.py tests/test_desktop_server.py -rs
+        run: pytest -q tests/test_desktop_model.py tests/test_desktop_widgets.py tests/test_desktop_vision.py tests/test_desktop_server.py -rs
 
   real-data:
     # The same suite's real-telemetry tests (tests/test_real_ibt.py) on a 42-minute
