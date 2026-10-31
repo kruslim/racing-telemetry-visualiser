@@ -671,7 +671,7 @@ class ReviewView(QWidget):
                 + (f" · {badge['text']}" if badge else "")
             )
             text = d.get("spoken_text") or ""
-            expired = bool(badge and badge["kind"] == "expired")
+            expired = bool(badge and badge["kind"] in review.NOT_AIRED)
             if expired:
                 text += f"  ({badge['reason']})"
             rows.append((head, text, t.agent_color(d.get("agent")), expired))

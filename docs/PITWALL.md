@@ -106,7 +106,13 @@ grounded refusal at `info` priority with the blocked text kept in `detail_text`.
 
 **Radio** (`pitwall/radio.py`). One channel, ordered by `(priority, sequence)`. A newer
 non-critical message with the same `(agent, subject)` supersedes a queued one; a critical
-message is never superseded. Airtime is about 0.4 s per word, and
+message is never superseded. Subjects of different agents that answer one decision share a
+group (`pitwall/decisions.py`, appendix B3: `pit_stop` = the strategist's calls plus the
+engineer's `damage_stop`/`tyre_stop` "box now"). In a group the newer call replaces a queued
+one of the same or lower priority from any agent, and a call that contradicts a
+higher-priority one still queued or aired within 60 s is dropped; the loser goes to
+consumers marked `superseded` (`radio_superseded` with `by_message_id`, `rule`, `reason`),
+and its agent sees one "NOT AIRED" line on its next run. Airtime is about 0.4 s per word, and
 `pump(session_time)` is the deterministic, clock-injected twin of `run()`. Every agent
 message is checked again when it reaches the front (`pitwall/validity.py`, appendix B1):
 older than its agent's `max_age_s` but still true, it airs tagged late ("Late call:
@@ -3107,3 +3113,46 @@ Not done: template calls need a mounted agent layer, which `services.build_pitwa
 only builds with a Kimi key. Running the radio and the callers without any key is a
 possible follow-up. Desktop: template calls are ordinary radio messages, so the live view
 shows them like any other; no view field changed, so the golden file is unchanged.
+
+## B3: cross-agent decision groups
+
+`rtv.pitwall.decisions`: `DECISION_GROUPS` (one group, `pit_stop`: `strategist/pit_stop`,
+`vehicle_engineer/damage_stop`, `vehicle_engineer/tyre_stop`), `CONFLICT_WINDOW_S = 60`,
+`group_of(message)`, `action_of(message)` (`box_now`, `stop_later`, `stay_out` or `None`
+from the structured answer; refusals and `hold` take no side) and `opposed(a, b)` (box_now
+vs stay_out or stop_later). The coach's `coaching` and the engineer's `grip` were
+considered and left out: they complement each other on a lockup rather than decide one
+thing.
+
+`EngineerCall.pit_request` (`none` | `box_now`) is new, with a prompt paragraph: box_now only
+when the car cannot safely reach the planned stop. With it the engineer's subject is
+`damage_stop` (or `tyre_stop` for a tyre finding) and `vehicle_engineer_validity` stamps the
+box-call rules for the current lap. This changes the engineer's output contract, so
+`spec_drift` reports `output_contract` and `prompt` against older journals.
+
+`RadioFeed.publish` rules inside a group: (1) a newer call replaces queued non-critical calls
+of the same or lower priority from any agent (`rule` `same_agent` / `group`, or `critical`
+when the newer one is critical; a critical call still replaces nothing of its own agent's);
+(2) a call opposed to a strictly higher-priority call from another agent, queued or aired
+within the window, is dropped itself (`conflict`). Equal priority is a revision: the newer
+airs. Outside groups nothing changed. Every superseded message (same-agent ones too, which
+before were only traced) now reaches subscribers and callbacks with `superseded`,
+`superseded_by`, `superseded_reason`, `speak=False` and `air_session_time`, so the journal
+has its `radio` record. `radio_superseded` gains `by_message_id`, `by_agent`, `by_priority`,
+`rule`, `group`, `reason`, `spoken_text` (the old `by` field is gone). `feed.stats()` adds
+`conflicts`; `feed.take_superseded(agent)` hands out, once, the agent's last call another
+agent's call beat.
+
+Agent context: the orchestrator passes it to `AgentRuntime.invoke(superseded=)`; the
+instruction gets one `NOT AIRED: ...` line (`agent_input.superseded_line`) after the recent
+radio, and `run_start.data.input.superseded` records it only when present, so other runs'
+inputs are byte-identical to before. `run_stats` adds `radio_superseded_cross_agent`,
+`radio_conflicts` (n/a for older journals) and `radio_superseded_by_rule`; compare_runs
+prints the first two.
+
+Views: `air_badge` returns `{"kind": "superseded", "text": "not aired", "reason"}` (Python
+and JS), and superseded calls are struck through with the reason like expired ones in the
+desktop live radio and review, and in the web review. The web live pages skip them like
+expired calls. Golden cases: a test-only engineer box call superseded by the strategist's
+real critical yellow-flag call in `journal_air`, plus airBadge cases.
+

@@ -493,15 +493,17 @@ class PitwallOrchestrator:
         state = self.engine.snapshot()
         events = self.engine.bus.history(EVENT_CONTEXT)
         history = self.feed.history(RADIO_CONTEXT)
+        # Its last call another agent's call kept off the air, shown once.
+        superseded = self.feed.take_superseded(name)
         sem = self._sem
         if sem is None:  # inline use (tests, smoke) without start()
             message = await runtime.invoke(
-                event, state, events=events, radio_history=history
+                event, state, events=events, radio_history=history, superseded=superseded
             )
         else:
             async with sem:
                 message = await runtime.invoke(
-                    event, state, events=events, radio_history=history
+                    event, state, events=events, radio_history=history, superseded=superseded
                 )
         self._record_outcome(name, message is not None)
         if message is not None:

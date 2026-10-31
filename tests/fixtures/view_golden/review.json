@@ -1026,6 +1026,7 @@
       "cls": "agent-vehicle_engineer refused",
       "late": false,
       "expired": false,
+      "superseded": false,
       "record": {
        "seq": 143,
        "wall_ms": 1793407296524,
@@ -1087,6 +1088,7 @@
       "cls": "agent-strategist",
       "late": false,
       "expired": false,
+      "superseded": false,
       "record": {
        "seq": 344,
        "wall_ms": 1793407385424,
@@ -1146,6 +1148,7 @@
       "cls": "agent-coach",
       "late": false,
       "expired": false,
+      "superseded": false,
       "record": {
        "seq": 479,
        "wall_ms": 1793407438300,
@@ -1200,6 +1203,7 @@
       "cls": "agent-vehicle_engineer",
       "late": false,
       "expired": false,
+      "superseded": false,
       "record": {
        "seq": 526,
        "wall_ms": 1793407459159,
@@ -1261,6 +1265,7 @@
       "cls": "agent-spotter",
       "late": false,
       "expired": false,
+      "superseded": false,
       "record": {
        "seq": 614,
        "wall_ms": 1793407489407,
@@ -1314,6 +1319,7 @@
       "cls": "agent-strategist",
       "late": false,
       "expired": false,
+      "superseded": false,
       "record": {
        "seq": 650,
        "wall_ms": 1793407505010,
@@ -1373,6 +1379,7 @@
       "cls": "agent-strategist",
       "late": false,
       "expired": false,
+      "superseded": false,
       "record": {
        "seq": 727,
        "wall_ms": 1793407531278,
@@ -1432,6 +1439,7 @@
       "cls": "agent-spotter refused",
       "late": false,
       "expired": false,
+      "superseded": false,
       "record": {
        "seq": 754,
        "wall_ms": 1793407541700,
@@ -3324,7 +3332,7 @@
      },
      {
       "t0": 573.6166666679638,
-      "t1": 570.933333334633,
+      "t1": 540.0,
       "label": "green flag",
       "cls": "flag-green",
       "record": {
@@ -3750,6 +3758,7 @@
       "cls": "agent-vehicle_engineer refused",
       "late": false,
       "expired": false,
+      "superseded": false,
       "record": {
        "seq": 143,
        "wall_ms": 1793407296524,
@@ -3811,6 +3820,7 @@
       "cls": "agent-strategist late",
       "late": true,
       "expired": false,
+      "superseded": false,
       "record": {
        "seq": 344,
        "wall_ms": 1793407385424,
@@ -3874,6 +3884,7 @@
       "cls": "agent-coach expired",
       "late": false,
       "expired": true,
+      "superseded": false,
       "record": {
        "seq": 479,
        "wall_ms": 1793407438300,
@@ -3931,6 +3942,7 @@
       "cls": "agent-vehicle_engineer",
       "late": false,
       "expired": false,
+      "superseded": false,
       "record": {
        "seq": 526,
        "wall_ms": 1793407459159,
@@ -3992,6 +4004,7 @@
       "cls": "agent-spotter",
       "late": false,
       "expired": false,
+      "superseded": false,
       "record": {
        "seq": 614,
        "wall_ms": 1793407489407,
@@ -4045,6 +4058,7 @@
       "cls": "agent-strategist",
       "late": false,
       "expired": false,
+      "superseded": false,
       "record": {
        "seq": 650,
        "wall_ms": 1793407505010,
@@ -4104,6 +4118,7 @@
       "cls": "agent-strategist",
       "late": false,
       "expired": false,
+      "superseded": false,
       "record": {
        "seq": 727,
        "wall_ms": 1793407531278,
@@ -4163,6 +4178,7 @@
       "cls": "agent-spotter refused",
       "late": false,
       "expired": false,
+      "superseded": false,
       "record": {
        "seq": 754,
        "wall_ms": 1793407541700,
@@ -4209,6 +4225,61 @@
         "speak": true,
         "audio_url": null,
         "message_id": "a3de5cb0a803154c"
+       }
+      }
+     },
+     {
+      "t0": 540.0,
+      "label": "vehicle_engineer (not aired: replaced by the strategist's critical pit_stop call): Box this lap, the front-left is losing pressure.",
+      "cls": "agent-vehicle_engineer superseded",
+      "late": false,
+      "expired": false,
+      "superseded": true,
+      "record": {
+       "seq": 755,
+       "wall_ms": 1793407505010,
+       "session_time": 500.81666666803,
+       "tick": 212652,
+       "kind": "radio",
+       "agent": "vehicle_engineer",
+       "run_id": null,
+       "event_key": "flag_change:yellow",
+       "data": {
+        "agent": "vehicle_engineer",
+        "priority": "advisory",
+        "spoken_text": "Box this lap, the front-left is losing pressure.",
+        "detail_text": "Front-left pressure falling.",
+        "data": {
+         "finding": "damage",
+         "pit_request": "box_now"
+        },
+        "event_ref": {
+         "event_type": "flag_change",
+         "key": "flag_change:yellow",
+         "tick": 209286,
+         "session_time": 500.81666666803,
+         "lap": 3,
+         "state_version": 28688
+        },
+        "session_time": 500.81666666803,
+        "timestamp": 1793407505.0097091,
+        "subject": "damage_stop",
+        "seq": 6,
+        "grounded": true,
+        "refused": false,
+        "ungrounded": [],
+        "tools_used": [
+         "simulate_pit_outcome",
+         "get_fuel_projection"
+        ],
+        "model": "kimi-k3",
+        "speak": false,
+        "audio_url": null,
+        "message_id": "b3e0c2d9f1a7e440",
+        "superseded": true,
+        "superseded_by": "13dfdf18da914f37",
+        "superseded_reason": "replaced by the strategist's critical pit_stop call",
+        "air_session_time": 540.0
        }
       }
      }
@@ -4678,6 +4749,53 @@
      }
     },
     {
+     "seq": 755,
+     "wall_ms": 1793407505010,
+     "session_time": 500.81666666803,
+     "tick": 212652,
+     "kind": "radio",
+     "agent": "vehicle_engineer",
+     "run_id": null,
+     "event_key": "flag_change:yellow",
+     "data": {
+      "agent": "vehicle_engineer",
+      "priority": "advisory",
+      "spoken_text": "Box this lap, the front-left is losing pressure.",
+      "detail_text": "Front-left pressure falling.",
+      "data": {
+       "finding": "damage",
+       "pit_request": "box_now"
+      },
+      "event_ref": {
+       "event_type": "flag_change",
+       "key": "flag_change:yellow",
+       "tick": 209286,
+       "session_time": 500.81666666803,
+       "lap": 3,
+       "state_version": 28688
+      },
+      "session_time": 500.81666666803,
+      "timestamp": 1793407505.0097091,
+      "subject": "damage_stop",
+      "seq": 6,
+      "grounded": true,
+      "refused": false,
+      "ungrounded": [],
+      "tools_used": [
+       "simulate_pit_outcome",
+       "get_fuel_projection"
+      ],
+      "model": "kimi-k3",
+      "speak": false,
+      "audio_url": null,
+      "message_id": "b3e0c2d9f1a7e440",
+      "superseded": true,
+      "superseded_by": "13dfdf18da914f37",
+      "superseded_reason": "replaced by the strategist's critical pit_stop call",
+      "air_session_time": 540.0
+     }
+    },
+    {
      "seq": 614,
      "wall_ms": 1793407489407,
      "session_time": 500.81666666803,
@@ -5136,6 +5254,310 @@
     "text": "not aired",
     "reason": "no longer valid"
    }
+  },
+  {
+   "name": "airBadge of a superseded call",
+   "module": "review",
+   "fn": "airBadge",
+   "args": [
+    {
+     "superseded": true,
+     "superseded_reason": "replaced by the strategist's critical pit_stop call"
+    }
+   ],
+   "expect": {
+    "kind": "superseded",
+    "text": "not aired",
+    "reason": "replaced by the strategist's critical pit_stop call"
+   }
+  },
+  {
+   "name": "airBadge of a superseded call without a reason",
+   "module": "review",
+   "fn": "airBadge",
+   "args": [
+    {
+     "superseded": true
+    }
+   ],
+   "expect": {
+    "kind": "superseded",
+    "text": "not aired",
+    "reason": "superseded"
+   }
+  },
+  {
+   "name": "radioUpTo 530 s, before the superseded call was dropped",
+   "module": "review",
+   "fn": "radioUpTo",
+   "args": [
+    {
+     "$input": "journal_air"
+    },
+    530.0
+   ],
+   "expect": [
+    {
+     "seq": 614,
+     "wall_ms": 1793407489407,
+     "session_time": 500.81666666803,
+     "tick": 210780,
+     "kind": "radio",
+     "agent": "spotter",
+     "run_id": null,
+     "event_key": "flag_change:yellow",
+     "data": {
+      "agent": "spotter",
+      "priority": "critical",
+      "spoken_text": "Yellow, yellow. No gaps, location unknown. Expect slow traffic ahead, be ready to lift.",
+      "detail_text": "Flag changed green to yellow at session time 500.8s, lap 3; active flags yellow_waving, servicible, start_hidden. Standings tool reports gap_basis null and the player not present in the standings array, so no gaps and no car positions are available. No incident or offtrack event accompanies this yellow in the detector feed; the only recent off was our own at session time 367.7s, lap 2. Hazard location unknown.",
+      "data": {
+       "threat": "hazard",
+       "side": "unknown",
+       "car_idx": null,
+       "action": "none",
+       "confidence": "low"
+      },
+      "event_ref": {
+       "event_type": "flag_change",
+       "key": "flag_change:yellow",
+       "tick": 209286,
+       "session_time": 500.81666666803,
+       "lap": 3,
+       "state_version": 28688
+      },
+      "session_time": 500.81666666803,
+      "timestamp": 1793407489.4070654,
+      "subject": "traffic:hazard",
+      "seq": 5,
+      "grounded": true,
+      "refused": false,
+      "ungrounded": [],
+      "tools_used": [
+       "get_standings_around_player",
+       "get_recent_detector_events"
+      ],
+      "model": "kimi-k3",
+      "speak": true,
+      "audio_url": null,
+      "message_id": "0ae796b2c8f8348c"
+     }
+    },
+    {
+     "seq": 526,
+     "wall_ms": 1793407459159,
+     "session_time": 371.5500000014809,
+     "tick": 207150,
+     "kind": "radio",
+     "agent": "vehicle_engineer",
+     "run_id": null,
+     "event_key": "tyre_out_of_band",
+     "data": {
+      "agent": "vehicle_engineer",
+      "priority": "advisory",
+      "spoken_text": "Pressures are building four kPa per lap across all four tyres - RF is worst. Temps are fine. We'll adjust cold pressures at the stop.",
+      "detail_text": "RF pressure trend flagged at 4.184 kPa/lap against a 2.0 kPa/lap threshold - more than double the limit. All four corners are climbing at similar rates (LF 4.0663, RF 4.184, LR 3.9214, RR 3.9583 kPa/lap), so this is a set-wide pressure buildup, not a corner-specific issue. Current pressures after 2 laps on tyres: LF 175.7, RF 176.8, LR 174.9, RR 175.7 kPa. Starting pressure was 165 kPa all round per setup. Tyre temps are stable - temp trend is 0.0 C/lap on all four corners, current temps 54.9-55.5 C. This is pure pressure growth from heat soak, not a temperature problem. If this rate continues, pressures will keep climbing roughly 4 kPa per lap. At the next stop, dropping starting pressures by 2-3 kPa would bring the hot running pressure into a better window.",
+      "data": {
+       "finding": "tyre_pressures",
+       "corner": null,
+       "affected": [
+        "RF",
+        "LF",
+        "LR",
+        "RR"
+       ],
+       "trend": "worsening",
+       "driver_action": "No immediate action needed - pressures are climbing but not yet critical. Be aware grip balance may shift as pressures build.",
+       "setup_note": "Current starting pressures are 165 kPa all round. With ~4 kPa/lap buildup, consider dropping cold pressures 2-3 kPa at the next stop to keep hot pressures in window.",
+       "confidence": "high",
+       "rationale": "RF pressure trend at 4.184 kPa/lap exceeds the 2.0 kPa/lap threshold by 2.184. All four tyres show similar ~4 kPa/lap growth from a 165 kPa start, with temps flat at 0.0 C/lap trend - this is pressure buildup, not overheating."
+      },
+      "event_ref": {
+       "event_type": "tyre_out_of_band",
+       "key": "tyre_out_of_band",
+       "tick": 201530,
+       "session_time": 371.5500000014809,
+       "lap": 3,
+       "state_version": 20932
+      },
+      "session_time": 371.5500000014809,
+      "timestamp": 1793407459.158266,
+      "subject": "tyres",
+      "seq": 4,
+      "grounded": true,
+      "refused": false,
+      "ungrounded": [],
+      "tools_used": [
+       "get_tyre_trend",
+       "get_setup_snapshot"
+      ],
+      "model": "kimi-k3",
+      "speak": true,
+      "audio_url": null,
+      "message_id": "11e83fdbc2e0e577"
+     }
+    },
+    {
+     "seq": 479,
+     "wall_ms": 1793407438300,
+     "session_time": 367.71666666815105,
+     "tick": 204647,
+     "kind": "radio",
+     "agent": "coach",
+     "run_id": null,
+     "event_key": "offtrack",
+     "data": {
+      "agent": "coach",
+      "priority": "advisory",
+      "spoken_text": "Brake earlier into the hairpin — you went in 14 metres late and locked up, that's what put you off.",
+      "detail_text": "Single offtrack at the T8 hairpin (lap-dist 0.979), not a recurring pattern — count is 1. Telemetry vs reference lap: brake point 14 m late, lock-up scrubbing 7 km/h at entry, minimum speed 59.45 km/h vs 66.04 reference, full throttle 60 m later than reference. Total corner delta 0.2539 s, with throttle application the largest single loss (0.1346 s). The late brake point with the lock-up is the likely cause of the off-track excursion at 27.7 km/h. Coaching the brake point as the root cause; throttle pickup will follow once entry is sorted.",
+      "data": {
+       "theme": "braking",
+       "corner": "T8",
+       "cue": "Brake 14 metres earlier into the hairpin and release the brake cleanly — you locked up and scrubbed 7 km/h at entry.",
+       "from_telemetry": true,
+       "confidence": "high",
+       "rationale": "Corner telemetry shows brake point 14 m late with a lock-up scrubbing 7 km/h at entry into T8, minimum speed 59.45 km/h vs 66.04 reference, and a 0.2539 s corner delta. The single offtrack (count 1) at 27.7 km/h is consistent with the late, locked entry."
+      },
+      "event_ref": {
+       "event_type": "offtrack",
+       "key": "offtrack",
+       "tick": 201300,
+       "session_time": 367.71666666815105,
+       "lap": 2,
+       "state_version": 20702
+      },
+      "session_time": 367.71666666815105,
+      "timestamp": 1793407438.299569,
+      "subject": "coaching",
+      "seq": 3,
+      "grounded": true,
+      "refused": false,
+      "ungrounded": [],
+      "tools_used": [
+       "get_recent_detector_events",
+       "get_corner_detail"
+      ],
+      "model": "kimi-k3",
+      "speak": false,
+      "audio_url": null,
+      "message_id": "386c95aadfe737d5",
+      "expired": true,
+      "expired_reason": "lap 3 has passed (now lap 4)",
+      "air_session_time": 423.50000000143365
+     }
+    },
+    {
+     "seq": 344,
+     "wall_ms": 1793407385424,
+     "session_time": 229.68333333489838,
+     "tick": 198302,
+     "kind": "radio",
+     "agent": "strategist",
+     "run_id": null,
+     "event_key": "fuel_margin_low",
+     "data": {
+      "agent": "strategist",
+      "priority": "advisory",
+      "spoken_text": "Late call: Box this lap, fuel only, 13.2 litres. We're 3 laps short on fuel, stop is mandatory. Rejoin position unknown - no standings data.",
+      "detail_text": "Fuel margin is -11.365L (-3.082 laps) against 16 laps to finish; current level 47.646L vs 59.011L needed. Pit window is open (laps 2-14), so a stop is mandatory. simulate_pit_outcome for a lap-2 stop is grounded on fuel: add 13.21L (target 60.86L = 16.0 laps at 3.688L/lap plus 0.5 lap reserve), which covers to the flag. Rejoin position is null - standings gaps are unavailable (gap_basis null, player not in standings array), so no track-position call can be made. Consumption is from 1 sample only, so the 13.21L figure may move; taking the stop now banks the mandatory fuel and leaves the window to lap 14 for any further adjustment.",
+      "data": {
+       "recommendation": "box_now",
+       "target_lap": 2,
+       "fuel_to_add_l": 13.21,
+       "rejoin_position": null,
+       "confidence": "medium",
+       "rationale": "We are 11.365L (-3.082 laps) short of the finish, so a stop is mandatory inside the open window (laps 2-14); a lap-2 stop needs 13.21L and covers to the flag per the grounded simulation. Rejoin position is unknown because standings gaps are unavailable.",
+       "risks": [
+        "Rejoin position unknown - standings gaps unavailable, so track-position cost of the stop cannot be quoted.",
+        "Fuel consumption is from 1 sample only; the 13.21L add may need revision as more laps are logged.",
+        "Pit-lane loss of 25.0s is a tool assumption, not measured."
+       ]
+      },
+      "event_ref": {
+       "event_type": "fuel_margin_low",
+       "key": "fuel_margin_low",
+       "tick": 193018,
+       "session_time": 229.68333333489838,
+       "lap": 2,
+       "state_version": 12420
+      },
+      "session_time": 229.68333333489838,
+      "timestamp": 1793407385.4238584,
+      "subject": "pit_stop",
+      "seq": 2,
+      "grounded": true,
+      "refused": false,
+      "ungrounded": [],
+      "tools_used": [
+       "get_fuel_projection",
+       "simulate_pit_outcome"
+      ],
+      "model": "kimi-k3",
+      "speak": true,
+      "audio_url": null,
+      "message_id": "fd8c4e03a6c93cb1",
+      "late": true,
+      "late_by_s": 88.1,
+      "max_age_s": 30.0,
+      "air_session_time": 317.7500000015298
+     }
+    },
+    {
+     "seq": 143,
+     "wall_ms": 1793407296524,
+     "session_time": 22.683333334823445,
+     "tick": 187634,
+     "kind": "radio",
+     "agent": "vehicle_engineer",
+     "run_id": null,
+     "event_key": "car_health_warning",
+     "data": {
+      "agent": "vehicle_engineer",
+      "priority": "info",
+      "spoken_text": "Standby - I can't back that call with data yet.",
+      "detail_text": "Withheld: the agent cited figures that are not traceable to the race state or to a tool result (4.6610630306531675). Original text: Engine's stalled - oil pressure is zero because the motor isn't running. Temps are fine at 77. Fire it up now, we're one lap to green.",
+      "data": {
+       "finding": "car_health",
+       "corner": null,
+       "affected": [
+        "oil_pressure",
+        "engine"
+       ],
+       "trend": "unknown",
+       "driver_action": "Restart the engine now - oil pressure will only return once it is running.",
+       "setup_note": null,
+       "confidence": "high",
+       "rationale": "The sim's own warning bits report oil_pressure_warning and engine_stalled, with oil pressure at 4.6610630306531675e-06 while the car sits at 300 rpm in get_in_car. Temps are normal (oil 77.0, water 77.0 against limits 130.0 and 105.0), so this is a stalled engine, not an overheating one."
+      },
+      "event_ref": {
+       "event_type": "car_health_warning",
+       "key": "car_health_warning",
+       "tick": 180599,
+       "session_time": 22.683333334823445,
+       "lap": 0,
+       "state_version": 1
+      },
+      "session_time": 22.683333334823445,
+      "timestamp": 1793407296.5229704,
+      "subject": "car_health",
+      "seq": 1,
+      "grounded": false,
+      "refused": true,
+      "ungrounded": [
+       "4.6610630306531675"
+      ],
+      "tools_used": [
+       "get_car_health",
+       "get_recent_detector_events"
+      ],
+      "model": "kimi-k3",
+      "speak": true,
+      "audio_url": null,
+      "message_id": "46b4373ed7ff0038"
+     }
+    }
+   ]
   },
   {
    "name": "airBadge of an ordinary call",
