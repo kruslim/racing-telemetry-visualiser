@@ -45,3 +45,7 @@ bucket `C09` (the check compares the raw strings, a false positive for a later f
 After A1 (typed grounding) merged, the baseline was rebuilt on its validator: two coach calls
 that passed live now fail it, on spelled-out counts ("two laps", "three laps running wide" for
 a recurring issue with `occurrences: 3`). `same_as_recorded` is false on exactly those two.
+
+After A3 (derived numbers) the baseline was rebuilt again: a spelled-out count said as laps
+("two laps", "three laps running wide") now matches a count fact (`occurrences`, a corner's
+`count`), so both coach calls pass again and `same_as_recorded` is true on every answer.
