@@ -66,6 +66,10 @@ def make_table(headers: list[str]) -> QTableWidget:
     table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
     table.setWordWrap(True)
     table.horizontalHeader().setHighlightSections(False)
+    # Left-aligned, or the stretched last column centres its title far from its values.
+    table.horizontalHeader().setDefaultAlignment(
+        Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
+    )
     table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
     table.horizontalHeader().setStretchLastSection(True)
     table.verticalHeader().setDefaultSectionSize(30)

@@ -12,7 +12,7 @@ import os
 
 import pytest
 
-pytest.importorskip("PySide6")
+pytest.importorskip("PySide6.QtWidgets")  # also skips when Qt's system libraries are missing
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtCore import Qt  # noqa: E402
@@ -29,7 +29,17 @@ def qapp():
     from rtv.desktop.theme.qss import stylesheet
 
     app.setStyleSheet(stylesheet())
-    return app
+    yield app
+    # Delete the panels while Qt is still up: left to interpreter exit, Python frees
+    # them after QApplication and the process segfaults (pytest exit 139).
+    import gc
+
+    from PySide6.QtCore import QCoreApplication, QEvent
+
+    for widget in app.topLevelWidgets():
+        widget.deleteLater()
+    QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+    gc.collect()
 
 
 def texts(widget) -> list[str]:
@@ -215,3 +225,16 @@ def test_quota_dialog_copy_and_ai_controls_off(qapp):
     assert "not mounted" in controls.reason.text()
     controls.set_status(status_on)
     assert controls.master.isEnabled() and controls.agents["coach"].isChecked()
+
+
+def test_ticker_keeps_its_items_when_the_events_have_not_changed(qapp):
+    from rtv.desktop.widgets.live import TickerStrip
+
+    ticker = TickerStrip()
+    lines = [vm.event_line(e) for e in spa.load("racestate_events.json")["events"][:3]]
+    ticker.set_events(lines, 3)
+    before = ticker.findChildren(QLabel)
+    ticker.set_events(list(lines), 3)  # the live view calls this on every 10 Hz render
+    assert ticker.findChildren(QLabel) == before
+    ticker.set_events(lines[:2], 4)
+    assert "RACE EVENTS 4" in [lab.text() for lab in ticker.findChildren(QLabel)]

@@ -105,6 +105,33 @@ def test_coaching_findings_on_real_laps(client):
     assert f["chief"]["time_spread"] < 10
 
 
+def test_session_track_names_spas_corners_in_lap_order(client):
+    r = client.get(f"/api/v1/sessions/{client.session_id}/track")
+    assert r.status_code == 200, r.text
+    t = r.json()
+    header = t["header"]
+    assert header["config_name"] == "Grand Prix Pit"
+    assert header["num_turns"] == 21 and header["pit_speed_limit_kph"] == 80.0
+    assert header["sector_starts_pct"][0] == 0.0 and len(header["sector_starts_pct"]) == 5
+    assert t["reference"]["key"] == "spa"
+    names = [c["name"] for c in t["corners"]]
+    # The circuit's real order, read off its own Lat/Lon trace.
+    expected = ["La Source", "Eau Rouge", "Raidillon", "Kemmel", "Les Combes", "Bruxelles",
+                "Double Gauche", "Fagnes", "Campus", "Blanchimont", "Chicane"]
+    assert [n for n in names if n in expected] == expected
+
+
+def test_layer1_corners_carry_the_circuits_names(client):
+    r = client.get(
+        "/api/v1/coaching/lap-findings",
+        params={"session_id": client.session_id, "main_lap": 6, "ref_lap": 11},
+    )
+    corners = r.json()["corners"]
+    assert corners[0]["name"] == "La Source"
+    assert corners[-1]["name"] == "Chicane"  # the Bus Stop
+    assert sum(1 for c in corners if c["name"]) >= len(corners) - 1
+
+
 def test_replay_runs_the_real_race_through_the_live_path(client):
     seen_speeds: list[float] = []
     with client.websocket_connect("/ws/live") as ws:

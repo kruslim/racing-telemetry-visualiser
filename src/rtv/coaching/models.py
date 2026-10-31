@@ -56,6 +56,7 @@ class CornerFinding:
     diags: list[Diagnostic] = field(default_factory=list)
     entry_m: float = 0.0  # start of the window net_dt is measured over (m)
     exit_m: float = 0.0  # end of that window (m)
+    name: str | None = None  # the circuit's own name ("Eau Rouge") from rtv.tracks, if mapped
 
 
 @dataclass

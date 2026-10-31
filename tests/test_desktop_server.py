@@ -12,7 +12,7 @@ import time
 
 import pytest
 
-pytest.importorskip("PySide6")
+pytest.importorskip("PySide6.QtWidgets")  # also skips when Qt's system libraries are missing
 pytest.importorskip("duckdb")
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 

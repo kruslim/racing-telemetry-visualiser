@@ -32,6 +32,7 @@ from rtv.coaching.models import (
 )
 from rtv.logging import get_logger
 from rtv.store.repository import Repository
+from rtv.tracks.service import lap_trace, session_reference
 
 log = get_logger("coaching.features")
 
@@ -141,6 +142,7 @@ class CoachingService:
             for idx, ax in enumerate(apexes)
         ]
 
+        self._name_corners(session_id, main_lap, apexes, corners, n)
         self._consistency(session_id, corners, di, step, notes)
         sectors = self._sectors(sp_main, sp_ref, dist, lap_length, laps, main_lap, ref_lap)
         chief = self._chief(corners, delta, laps)
@@ -394,6 +396,25 @@ class CoachingService:
             net_dt=net_dt, diags=diags,
             entry_m=float(dist[entry]), exit_m=float(dist[exit_]),
         )
+
+    # ------------------------------------------------------------------ corner names
+    def _name_corners(self, session_id: str, lap: int, apexes, corners, grid: int) -> None:
+        """Put the circuit's own name on each apex that sits on a mapped corner.
+
+        The apex position comes from this lap's own Lat/Lon on the same grid; the
+        names come from the venue reference (OpenStreetMap). Unmapped stays ``None``.
+        """
+        ref = session_reference(self._repo, session_id)
+        if ref is None or not ref.corners or not corners:
+            return
+        trace = lap_trace(self._repo, session_id, lap, grid=grid)
+        if trace is None:
+            return
+        lat, lon, _ = trace
+        for ax, corner in zip(apexes, corners, strict=True):
+            if np.isfinite(lat[ax]) and np.isfinite(lon[ax]):
+                seg = ref.name_at(float(lat[ax]), float(lon[ax]))
+                corner.name = seg.name if seg else None
 
     # ------------------------------------------------------------------ stint consistency
     def _consistency(self, session_id: str, corners, di, step: float, notes: list[str]) -> None:

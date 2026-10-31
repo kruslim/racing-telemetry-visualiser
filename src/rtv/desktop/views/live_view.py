@@ -400,9 +400,9 @@ class LiveView(QWidget):
         wall = max((r.end_wall or r.start_wall or 0 for r in runs), default=None)
         self.runs.set_runs(runs, wall)
         if not mounted and not runs:
+            reason = (llm.get("detail") or "the agent layer is not mounted").rstrip(".")
             self.run_detail.setText(
-                "No agent runs: the agent layer is not mounted "
-                f"({llm.get('detail') or 'RTV_PITWALL_AGENTS'}). The race-state engine, "
+                f"No agent runs: {reason}. The race-state engine, "
                 "strategy panel and ticker run regardless."
             )
         self._render_timeline()
