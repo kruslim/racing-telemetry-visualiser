@@ -385,7 +385,38 @@ def spotter_degraded_cases() -> list[EvalCase]:
             agent=SPOTTER.name,
         )
     )
+
+    seen = base.model_copy(deep=True)
+    out.append(
+        EvalCase(
+            name="spotter-visual-traffic",
+            event=_synthetic_event(
+                seen,
+                "visual_observation",
+                _visual_payload("traffic", "The car behind is weaving under braking."),
+                Severity.INFO,
+            ),
+            state=seen,
+            events=events,
+            note="A camera note: words, no figures, seconds old. Low priority or nothing.",
+            agent=SPOTTER.name,
+        )
+    )
     return out
+
+
+def _visual_payload(kind: str, text: str) -> dict:
+    """A kept visual note as ``rtv.vision.live`` publishes it (docs/VISION.md)."""
+    return {
+        "source": "vision",
+        "kind": kind,
+        "text": text,
+        "confidence": "medium",
+        "status": "uncheckable",
+        "note_id": "eval:visual",
+        "corner": None,
+        "trigger": {"kind": "offtrack", "session_time": 0.0, "journal_seq": None},
+    }
 
 
 def coach_degraded_cases() -> list[EvalCase]:
@@ -430,6 +461,23 @@ def coach_degraded_cases() -> list[EvalCase]:
             state=off,
             events=events,
             note="One off: one cue for that corner, nothing else.",
+            agent=COACH.name,
+        )
+    )
+
+    seen = base.model_copy(deep=True)
+    out.append(
+        EvalCase(
+            name="coach-visual-line",
+            event=_synthetic_event(
+                seen,
+                "visual_observation",
+                _visual_payload("line", "Turned in early and ran out to the exit kerb."),
+                Severity.INFO,
+            ),
+            state=seen,
+            events=events,
+            note="A camera note on the line: coach it in words, take no figure from it.",
             agent=COACH.name,
         )
     )

@@ -142,8 +142,14 @@ except for flag changes which render as `flag_change:<phase>`.
 | `traffic_close` | advisory | a car is inside the gap threshold *and* closing | `car_idx`, `gap`, `side`, `closing_rate_s_per_s` |
 | `weather_change` | — | **never** — director-only, see stage 5 | `measure`, `from`, `to`, … |
 | `regulation_change` | — | **never** — director-only, see stage 5 | `regulation`, `applies_from_lap`, … |
+| `visual_observation` | info | **never** — published by `rtv.vision.live`, see `docs/VISION.md` | `source: "vision"`, `kind`, `text`, `confidence`, `trigger` |
 
-The last two rows are the only members of the catalog **no detector emits**. They
+`visual_observation` is the third member no detector emits: a kept VLM note about a
+moment the telemetry flagged, words only, published straight to the bus and never read
+by the engine. The spotter and coach take it, always at `info` priority (see
+`docs/VISION.md`).
+
+The `weather_change` and `regulation_change` rows are director-only. They
 exist so a scripted scenario can say "rain in eight minutes" or "the stop is now
 mandatory" *as an ordinary event*: nothing in the channel contract announces
 either, and inferring one from a temperature drift would be exactly the invented

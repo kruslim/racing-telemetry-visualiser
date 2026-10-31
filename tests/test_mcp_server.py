@@ -74,7 +74,7 @@ def test_all_tools_registered():
     names = {t.name for t in tools}
     assert names == {
         "list_sessions", "list_laps", "get_lap_findings",
-        "compare_channel", "get_corner_detail", "get_session_info",
+        "compare_channel", "get_corner_detail", "get_session_info", "get_visual_notes",
     }
     # every tool carries a description (drives Claude's tool selection)
     assert all(t.description for t in tools)

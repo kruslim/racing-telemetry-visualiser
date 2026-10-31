@@ -22,6 +22,7 @@ from pydantic import Field
 from rtv.pitwall import tools as T
 from rtv.pitwall.framework import AgentOutput, AgentSpec, RadioPriority, Trigger
 from rtv.racestate.models import EventType, FlagPhase, RaceEvent, RaceState
+from rtv.vision.live import COACH_KINDS
 
 AGENT_NAME = "coach"
 
@@ -46,6 +47,9 @@ How to think:
   lost. Quote those figures; they are measured. When it reports available=false,
   you still have the live detector events, but say your cue is from the pattern
   rather than from the trace.
+- A visual_observation trigger is the onboard camera's description of a moment the
+  telemetry flagged (kerb use, the line, a slide): words only, no figures. Use it
+  for the *how* of a cue, mark confidence low, and never take a number from it.
 - get_stint_history gives lap times for the stint. Slower laps late in a stint on
   rising tyre temperatures is a tyre-management cue, not a technique one.
 
@@ -102,6 +106,11 @@ def _has_pace_history(event: RaceEvent, state: RaceState) -> bool:
     return _under_green(event, state) and state.player.laps_on_tyres >= 2
 
 
+def _visual_for_coach(event: RaceEvent, state: RaceState) -> bool:
+    """Line, kerb and car-behaviour notes from the camera, and never under a caution."""
+    return event.payload.get("kind") in COACH_KINDS and _under_green(event, state)
+
+
 COACH_TRIGGERS: tuple[Trigger, ...] = (
     # The same event the vehicle engineer takes, read from the driver's side --
     # and on a cooldown nearly three times as long, so the car's advocate speaks
@@ -123,6 +132,12 @@ COACH_TRIGGERS: tuple[Trigger, ...] = (
         predicate=_has_pace_history,
         label="stint pace review",
         cooldown_s=180.0,
+    ),
+    Trigger(
+        EventType.VISUAL_OBSERVATION.value,
+        predicate=_visual_for_coach,
+        label="the onboard camera saw the line or kerb use",
+        cooldown_s=120.0,
     ),
 )
 

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -285,6 +286,35 @@ class Settings(BaseSettings):
         ge=0,
         description="Synthesised clips kept in memory, keyed by message id.",
     )
+
+    # --- vision: onboard video and VLM visual notes (see docs/VISION.md) ---
+    vision_mode: Literal["off", "post", "live"] = Field(
+        default="off",
+        description="off: no VLM calls (videos, sync, frames and dry-run plans still "
+        "work). post: post-race analyses may call Kimi. live: post, plus kept notes for "
+        "the session the engine is consuming are published as visual_observation events.",
+    )
+    vision_model: str = Field(
+        default="",
+        description="Model for vision calls. Empty = RTV_LLM_KIMI_MODEL_REASONING.",
+    )
+    vision_max_frames: int = Field(
+        default=60,
+        ge=1,
+        le=2000,
+        description="Frame budget per analysis; moments are cut to fit, by trigger rank.",
+    )
+    vision_frames_per_moment: int = Field(
+        default=4, ge=1, le=12, description="Frames sent to the VLM for one moment."
+    )
+    vision_frame_width: int = Field(
+        default=768,
+        ge=160,
+        le=3840,
+        description="Frames are scaled down to this width (px) before they are sent.",
+    )
+    vision_ffmpeg: str = Field(default="ffmpeg", description="ffmpeg binary name or path.")
+    vision_ffprobe: str = Field(default="ffprobe", description="ffprobe binary name or path.")
 
     # --- server ----------------------------------------------------------
     host: str = "127.0.0.1"

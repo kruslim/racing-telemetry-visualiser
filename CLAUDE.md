@@ -8,7 +8,7 @@ a multi-agent orchestrator, Layer 3b a LangGraph coach with grounded refusal and
 in-loop citation checks, plus a hermetic eval harness. v2 adds a live pitwall: a
 deterministic race-state engine, four event-driven agents (strategist, vehicle engineer,
 spotter, coach) on one prioritised radio feed, browser TTS, and a live pit-stand UI.
-`README.md` has the full tour; `docs/COACHING.md`, `docs/PITWALL.md` and
+`README.md` has the full tour; `docs/COACHING.md`, `docs/PITWALL.md`, `docs/VISION.md` and
 `docs/VARIABLES.md` go deeper.
 
 ## Commands
@@ -44,7 +44,8 @@ files that were already formatted and sorts imports in every edited file.
   (DuckDB, Parquet writer, queries), `stream/`, `api/` (routes, `ws.py`),
   `coaching/` (Layer 1 `features.py`, Layer 3a `orchestrator.py`, Layer 3b `agent/`),
   `racestate/` (v2 race-state engine, detectors, event bus, replay), `pitwall/` (v2
-  agents, provider, radio, TTS), `director/` (interfaces only), `llm.py` (the Kimi
+  agents, provider, radio, TTS), `vision/` (onboard video sync and grounded VLM visual
+  notes, `docs/VISION.md`), `director/` (interfaces only), `llm.py` (the Kimi
   Code client), `config.py`, `services.py`, `main.py`.
 - `frontend/` served by FastAPI at `/`: the live view (`index.html`, `css/`, `js/`), the
   post-race review at `/review/` (`review/index.html`, `js/review/`), `radio.html` and
@@ -103,7 +104,8 @@ Anything that calls Kimi uses the user's Kimi Code quota and needs the user's go
 first: `evals/run.py` (coach plus judge; `--no-judge`
 still calls the coach), `evals/run_pitwall.py` without `--dry-run`,
 `scripts/deep_coach.py` without `--findings-only`, `scripts/check_llm.py`, the
-`orchestrator`, the pitwall agents (`RTV_PITWALL_AGENTS=true`), and
+`orchestrator`, the pitwall agents (`RTV_PITWALL_AGENTS=true`), vision analyses
+(`POST .../vision/analyses` with `RTV_VISION_MODE` on; the `/vision/plan` dry run is free), and
 `POST /api/v1/coaching/chat` or the frontend chat while a key is set. The pytest suite,
 the hermetic eval runner, `--dry-run` and `--findings-only` are free.
 

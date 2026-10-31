@@ -19,7 +19,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from rtv import llm
-from rtv.api.deps import get_coaching, get_repo
+from rtv.api.deps import get_coaching, get_repo, get_vision
 from rtv.coaching.agent.contracts import CoachingAnswer
 from rtv.coaching.agent.graph import run_coach
 from rtv.coaching.agent.provider import RepositoryFindingsProvider
@@ -27,6 +27,7 @@ from rtv.coaching.features import CoachingService
 from rtv.coaching.models import AGENT_ROSTER
 from rtv.logging import get_logger
 from rtv.store.repository import Repository
+from rtv.vision.service import VisionService
 
 log = get_logger("api.coaching")
 
@@ -41,10 +42,19 @@ def lap_findings(
     session_id: str = Query(..., description="Session to analyse."),
     main_lap: int = Query(..., ge=0, description="The lap being coached."),
     ref_lap: int = Query(..., ge=0, description="The reference (target) lap to compare against."),
+    include_visual: bool = Query(
+        False,
+        description="Add 'visual_notes': the kept VLM notes for the main lap from the "
+        "newest vision analysis (words only; see docs/VISION.md).",
+    ),
     coaching: CoachingService = Depends(get_coaching),
+    vision: VisionService = Depends(get_vision),
 ) -> dict:
     try:
-        return coaching.lap_findings(session_id, main_lap, ref_lap).to_dict()
+        out = coaching.lap_findings(session_id, main_lap, ref_lap).to_dict()
+        if include_visual:
+            out["visual_notes"] = vision.coach_notes(session_id, main_lap)
+        return out
     except KeyError as exc:
         raise HTTPException(404, str(exc)) from exc
     except FileNotFoundError as exc:
@@ -264,6 +274,7 @@ def coaching_chat(
     body: ChatRequest,
     repo: Repository = Depends(get_repo),
     coaching: CoachingService = Depends(get_coaching),
+    vision: VisionService = Depends(get_vision),
 ) -> ChatResponse:
     if not llm.is_configured():
         raise HTTPException(
@@ -279,7 +290,7 @@ def coaching_chat(
         f"For session '{body.session_id}', analyse lap {body.main_lap} against "
         f"reference lap {body.ref_lap}. {body.question.strip()}"
     )
-    provider = RepositoryFindingsProvider(repo)
+    provider = RepositoryFindingsProvider(repo, vision=vision)
 
     try:
         model = _build_model(model_name)

@@ -61,6 +61,11 @@ class EventType(StrEnum):
     #: which is what makes the director seam need no special case downstream.
     WEATHER_CHANGE = "weather_change"
     REGULATION_CHANGE = "regulation_change"
+    #: Vision-only (see :mod:`rtv.vision.live`). No detector emits it and the
+    #: engine never reads it: a VLM's words about a moment the telemetry already
+    #: flagged, number-free, ``payload.source == "vision"``. Spotter and coach may
+    #: take it, always at the lowest radio priority.
+    VISUAL_OBSERVATION = "visual_observation"
 
 
 class FlagPhase(StrEnum):
