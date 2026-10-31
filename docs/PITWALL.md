@@ -69,8 +69,13 @@ from `RTV_PITWALL_<NAME>_MODEL`, else `RTV_LLM_KIMI_MODEL_REASONING` / `_FAST` (
 
 **Validator** (`pitwall/validator.py`). Every number in an answer must be in the
 `FactSet` built from what the run was shown: state slice, triggering event, prefetch and
-tool results. Spoken text is tolerant (±0.05 or 2 %, rounding, clock notation, a fraction
-as a percentage); structured payload fields are exact. Also the 25-word limit and the
+tool results. Facts are typed: each carries its unit family and path
+(`race_state.fuel.laps_remaining = 6.2 laps`), and a spoken figure with a unit ("6 laps",
+"P4", "28 psi", "three tenths") must match a fact of that family, converted into the unit
+spoken (`rtv.grounding.units`, shared with the Layer-3b prose check). A bare figure keeps
+the any-fact match, and 0-3 are free only when bare. `RTV_PITWALL_TYPED_GROUNDING=false`
+restores the old any-number check. Spoken text is tolerant (±0.05 or 2 %, rounding, clock
+notation, a fraction as a percentage); structured payload fields are exact. Also the 25-word limit and the
 spec's deterministic `policy`. On failure: one repair turn naming the figures, then a
 grounded refusal at `info` priority with the blocked text kept in `detail_text`.
 
