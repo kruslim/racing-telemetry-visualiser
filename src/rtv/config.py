@@ -26,6 +26,11 @@ class Settings(BaseSettings):
         default=Path("./data"),
         description="Root directory for the DuckDB catalog and Parquet telemetry.",
     )
+    frontend_dir: Path | None = Field(
+        default=None,
+        description="Folder served at / (default: the repo's frontend/). The desktop "
+        "build points it at its bundled copy.",
+    )
 
     # --- ingestion -------------------------------------------------------
     poll_hz: int = Field(default=60, ge=1, le=360, description="Live poll rate.")

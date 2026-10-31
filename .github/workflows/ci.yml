@@ -36,6 +36,30 @@ jobs:
       - name: Offline smoke test
         run: python scripts/smoke_offline.py
 
+  desktop:
+    # RTV Desktop's Qt widgets and the embedded-server window test, offscreen. The
+    # pure view models (tests/test_desktop_model.py) already run in the matrix above;
+    # the Qt tests skip there because PySide6 is only in the desktop extra.
+    runs-on: ubuntu-latest
+    env:
+      KIMI_CODE_API_KEY: ""
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            requirements*.txt
+            pyproject.toml
+      - name: Qt runtime libraries
+        run: sudo apt-get update && sudo apt-get install -y libegl1 libgl1 libxkbcommon0 libfontconfig1 libdbus-1-3
+      - name: Install
+        run: python -m pip install -r requirements-dev.txt -e ".[desktop]"
+      - name: Desktop tests
+        run: pytest -q tests/test_desktop_model.py tests/test_desktop_widgets.py tests/test_desktop_server.py -rs
+
   real-data:
     # The same suite's real-telemetry tests (tests/test_real_ibt.py) on a 42-minute
     # iRacing race. The tests themselves stay offline; only this step downloads the

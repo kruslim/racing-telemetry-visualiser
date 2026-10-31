@@ -56,12 +56,22 @@ agent = [
     "anthropic>=0.40",
     "langchain-anthropic>=0.2",
 ]
+# RTV Desktop — the native Qt client (rtv.desktop); the server runs embedded in it.
+desktop = [
+    "PySide6>=6.7",
+]
 
 [project.scripts]
 rtv = "rtv.__main__:main"
 
+[project.gui-scripts]
+rtv-desktop = "rtv.desktop.__main__:main"
+
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+rtv = ["desktop/rtv.png"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

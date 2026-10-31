@@ -132,7 +132,7 @@ def _mount_frontend(app: FastAPI) -> None:
     reaches FastAPI's own 404 rather than the static handler's, and the v1
     surface is unchanged whether or not this directory exists.
     """
-    directory = FRONTEND_DIR
+    directory = get_settings().frontend_dir or FRONTEND_DIR
     if not directory.is_dir():  # pragma: no cover - a source checkout always has it
         log.info("No frontend/ directory at %s; serving the API only.", directory)
         return
