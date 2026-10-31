@@ -34,6 +34,21 @@ corners are *called*. That is the one thing `rtv.tracks` adds.
 the corner map for the fastest clean lap (`?lap=` for another). `GET /api/v1/tracks`
 lists the venues and `GET /api/v1/tracks/{key}` returns one venue's geometry.
 
+## Live labels
+
+The live pitwall uses the same labels. `rtv.tracks.live.LiveCornerMap` keeps the
+lap being driven, resampled the way the store resamples a lap, and runs Layer 1's
+apex detector and the same name lookup on each clean lap. Once two clean laps agree
+on their apexes it becomes `RaceState.track`, and every event that happened
+somewhere (lock-up, wheelspin, off-track, incident, recurring issue) carries
+`place: {label, name, lap_dist_pct, provisional}`: `T1 La Source`, as the review
+shows it. Until then the label is the lap-distance bucket (`C00`-`C19`) with
+`provisional: true`. Two laps rather than one because Layer 1 numbers each lap on
+its own and one odd lap (a start in traffic, a lift) can add or lose an apex. On
+the Spa race the map is ready after lap 5 and equals the review's T1-T8. A live
+stream without `Lat`/`Lon` still gets the labels; its names stay empty, as in its
+own review.
+
 In RTV Desktop's review, the findings table and top opportunities show
 `T1 La Source` where a name is mapped, the track map letters each named corner
 beside the line, and a line under the map gives the header facts.
@@ -93,8 +108,10 @@ no names still work in full; their corners show as T1, T2... from Layer 1.
 | WeatherTech Raceway Laguna Seca | `lagunaseca` | 3 | 1 | yes |
 
 Fuji, Hungaroring, Okayama, Barcelona and Road Atlanta have almost no corner
-names in OpenStreetMap today. Adding them there (as names on the circuit's
-`highway=raceway` ways) and re-running the build is the way to fill them in.
+names in OpenStreetMap today. By decision (2026-10-31) they keep the trace
+numbering (`T1`, `T2`... from Layer 1, live and in the review) and nobody edits
+OpenStreetMap for RTV. Should that change, adding names there (on the circuit's
+`highway=raceway` ways) and re-running the build is how they would get in.
 
 ## Rebuilding the data
 
