@@ -7,6 +7,7 @@ from fastapi import Request
 from rtv.coaching.features import CoachingService
 from rtv.services import AppServices
 from rtv.store.repository import Repository
+from rtv.vision.service import VisionService
 
 
 def get_services(request: Request) -> AppServices:
@@ -19,3 +20,7 @@ def get_repo(request: Request) -> Repository:
 
 def get_coaching(request: Request) -> CoachingService:
     return request.app.state.services.coaching
+
+
+def get_vision(request: Request) -> VisionService:
+    return request.app.state.services.vision

@@ -17,7 +17,7 @@ never allowed to crash the loop (the reference project's "errors as results" dis
 
 from __future__ import annotations
 
-from typing import Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 
 from rtv.coaching.features import CoachingService
 from rtv.store.repository import Repository
@@ -76,8 +76,10 @@ class RepositoryFindingsProvider:
     repository), so a single provider can serve any session.
     """
 
-    def __init__(self, repo: Repository) -> None:
+    def __init__(self, repo: Repository, vision: Any | None = None) -> None:
         self._repo = repo
+        #: ``rtv.vision.service.VisionService``, for ``get_visual_notes``; optional.
+        self._vision = vision
 
     def list_sessions(self, limit: int = 20) -> list[dict]:
         rows = self._repo.list_sessions(limit=limit)
@@ -95,6 +97,15 @@ class RepositoryFindingsProvider:
         if self._repo.get_session(session_id) is None:
             raise KeyError(f"Unknown session {session_id}")
         return sorted(self._repo.valid_columns(session_id))
+
+    def visual_notes(self, session_id: str, lap: int | None = None) -> dict:
+        """Kept visual notes of the session's newest vision analysis (optional operation:
+        the protocol does not require it, and ``get_visual_notes`` degrades without it)."""
+        if self._repo.get_session(session_id) is None:
+            raise KeyError(f"Unknown session {session_id}")
+        if self._vision is None:
+            return {"session_id": session_id, "available": False, "notes": []}
+        return self._vision.coach_notes(session_id, lap)
 
     def compare_channel(
         self, session_id: str, name: str, laps: list[int], grid: int = 200

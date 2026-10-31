@@ -116,3 +116,21 @@ def build_client(settings: Settings | None = None) -> Any:
     url = base_url(s)
     log.info("LLM backend: kimi at %s", url)
     return AsyncAnthropic(api_key=key, base_url=url)
+
+
+def image_block(data: bytes, media_type: str = "image/jpeg") -> dict[str, Any]:
+    """An Anthropic-format base64 image content block, as the Kimi Code endpoint takes it.
+
+    Verified on kimi-k3 (2026-10-30): base64 works; image URLs are untested. Used by
+    :mod:`rtv.vision` so vision calls go through the same client as every other layer.
+    """
+    import base64
+
+    return {
+        "type": "image",
+        "source": {
+            "type": "base64",
+            "media_type": media_type,
+            "data": base64.b64encode(data).decode("ascii"),
+        },
+    }
