@@ -1,0 +1,365 @@
+{
+ "module": "format",
+ "cases": [
+  {
+   "name": "num of a real fuel level",
+   "module": "format",
+   "fn": "num",
+   "args": [
+    5.137364864349365,
+    2
+   ],
+   "expect": "5.14"
+  },
+  {
+   "name": "num rounds a half up like toFixed",
+   "module": "format",
+   "fn": "num",
+   "args": [
+    2.5,
+    0
+   ],
+   "expect": "3"
+  },
+  {
+   "name": "num rounds 0.125 up like toFixed",
+   "module": "format",
+   "fn": "num",
+   "args": [
+    0.125,
+    2
+   ],
+   "expect": "0.13"
+  },
+  {
+   "name": "num of a negative half",
+   "module": "format",
+   "fn": "num",
+   "args": [
+    -2.5,
+    0
+   ],
+   "expect": "-3"
+  },
+  {
+   "name": "num of 1.005 (binary below the half)",
+   "module": "format",
+   "fn": "num",
+   "args": [
+    1.005,
+    2
+   ],
+   "expect": "1.00"
+  },
+  {
+   "name": "num of negative zero",
+   "module": "format",
+   "fn": "num",
+   "args": [
+    -0.0,
+    2
+   ],
+   "expect": "0.00"
+  },
+  {
+   "name": "num of a tiny negative",
+   "module": "format",
+   "fn": "num",
+   "args": [
+    -0.0001,
+    2
+   ],
+   "expect": "-0.00"
+  },
+  {
+   "name": "num of null",
+   "module": "format",
+   "fn": "num",
+   "args": [
+    null
+   ],
+   "expect": "n/a"
+  },
+  {
+   "name": "num of a string",
+   "module": "format",
+   "fn": "num",
+   "args": [
+    "3.2"
+   ],
+   "expect": "n/a"
+  },
+  {
+   "name": "num of a bool",
+   "module": "format",
+   "fn": "num",
+   "args": [
+    true
+   ],
+   "expect": "n/a"
+  },
+  {
+   "name": "num with suffix",
+   "module": "format",
+   "fn": "num",
+   "args": [
+    82.30874633789062,
+    1,
+    " °C"
+   ],
+   "expect": "82.3 °C"
+  },
+  {
+   "name": "integer rounds a half up",
+   "module": "format",
+   "fn": "integer",
+   "args": [
+    2.5
+   ],
+   "expect": "3"
+  },
+  {
+   "name": "integer of a negative half",
+   "module": "format",
+   "fn": "integer",
+   "args": [
+    -2.5
+   ],
+   "expect": "-2"
+  },
+  {
+   "name": "integer of rpm",
+   "module": "format",
+   "fn": "integer",
+   "args": [
+    1249.9979248046875,
+    " rpm"
+   ],
+   "expect": "1250 rpm"
+  },
+  {
+   "name": "lapTime of the best Spa lap",
+   "module": "format",
+   "fn": "lapTime",
+   "args": [
+    140.61790466308594
+   ],
+   "expect": "2:20.618"
+  },
+  {
+   "name": "lapTime under a minute",
+   "module": "format",
+   "fn": "lapTime",
+   "args": [
+    52.104
+   ],
+   "expect": "52.104"
+  },
+  {
+   "name": "lapTime that rounds to the minute",
+   "module": "format",
+   "fn": "lapTime",
+   "args": [
+    59.9996
+   ],
+   "expect": "60.000"
+  },
+  {
+   "name": "lapTime of zero",
+   "module": "format",
+   "fn": "lapTime",
+   "args": [
+    0
+   ],
+   "expect": "n/a"
+  },
+  {
+   "name": "clock of time remaining",
+   "module": "format",
+   "fn": "clock",
+   "args": [
+    154.71901666026497
+   ],
+   "expect": "2:34"
+  },
+  {
+   "name": "clock with hours",
+   "module": "format",
+   "fn": "clock",
+   "args": [
+    3753.2
+   ],
+   "expect": "1:02:33"
+  },
+  {
+   "name": "clock of a negative",
+   "module": "format",
+   "fn": "clock",
+   "args": [
+    -1
+   ],
+   "expect": "n/a"
+  },
+  {
+   "name": "gap positive",
+   "module": "format",
+   "fn": "gap",
+   "args": [
+    0.9
+   ],
+   "expect": "+0.90"
+  },
+  {
+   "name": "gap negative uses a real minus",
+   "module": "format",
+   "fn": "gap",
+   "args": [
+    -1.1
+   ],
+   "expect": "−1.10"
+  },
+  {
+   "name": "gap zero",
+   "module": "format",
+   "fn": "gap",
+   "args": [
+    0
+   ],
+   "expect": "0.00"
+  },
+  {
+   "name": "gap of null",
+   "module": "format",
+   "fn": "gap",
+   "args": [
+    null
+   ],
+   "expect": "n/a"
+  },
+  {
+   "name": "signed fuel margin",
+   "module": "format",
+   "fn": "signed",
+   "args": [
+    -0.706,
+    2
+   ],
+   "expect": "−0.71"
+  },
+  {
+   "name": "signed with suffix",
+   "module": "format",
+   "fn": "signed",
+   "args": [
+    1.25,
+    1,
+    " L"
+   ],
+   "expect": "+1.3 L"
+  },
+  {
+   "name": "trendArrow up",
+   "module": "format",
+   "fn": "trendArrow",
+   "args": [
+    0.6,
+    0.5
+   ],
+   "expect": "▲"
+  },
+  {
+   "name": "trendArrow inside the deadband",
+   "module": "format",
+   "fn": "trendArrow",
+   "args": [
+    -0.4,
+    0.5
+   ],
+   "expect": "–"
+  },
+  {
+   "name": "trendArrow down",
+   "module": "format",
+   "fn": "trendArrow",
+   "args": [
+    -0.51,
+    0.5
+   ],
+   "expect": "▼"
+  },
+  {
+   "name": "trendArrow of null",
+   "module": "format",
+   "fn": "trendArrow",
+   "args": [
+    null
+   ],
+   "expect": ""
+  },
+  {
+   "name": "humanise an event key",
+   "module": "format",
+   "fn": "humanise",
+   "args": [
+    "pit_window_open"
+   ],
+   "expect": "pit window open"
+  },
+  {
+   "name": "humanise a dispatch key",
+   "module": "format",
+   "fn": "humanise",
+   "args": [
+    "offtrack:lap:5"
+   ],
+   "expect": "offtrack lap 5"
+  },
+  {
+   "name": "humanise null",
+   "module": "format",
+   "fn": "humanise",
+   "args": [
+    null
+   ],
+   "expect": ""
+  },
+  {
+   "name": "agentBadge",
+   "module": "format",
+   "fn": "agentBadge",
+   "args": [
+    "vehicle_engineer"
+   ],
+   "expect": "VEHICLE ENGINEER"
+  },
+  {
+   "name": "agentBadge of nothing",
+   "module": "format",
+   "fn": "agentBadge",
+   "args": [
+    ""
+   ],
+   "expect": "?"
+  },
+  {
+   "name": "stamp falls back to the session clock",
+   "module": "format",
+   "fn": "stamp",
+   "args": [
+    null,
+    2554.2166666730686
+   ],
+   "expect": "42:34"
+  },
+  {
+   "name": "stamp with nothing",
+   "module": "format",
+   "fn": "stamp",
+   "args": [
+    null,
+    null
+   ],
+   "expect": "n/a"
+  }
+ ]
+}

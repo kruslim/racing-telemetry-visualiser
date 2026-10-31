@@ -1,0 +1,7900 @@
+{
+ "module": "activity",
+ "cases": [
+  {
+   "name": "reduce the agents-on activity",
+   "module": "activity",
+   "fn": "reduce",
+   "args": [
+    {
+     "$input": "activity"
+    }
+   ],
+   "expect": {
+    "last_seq": 449,
+    "agents": {
+     "strategist": {
+      "name": "strategist",
+      "status": "idle",
+      "run_id": null,
+      "since": 2499.683333339041,
+      "detail": "",
+      "runs": 9,
+      "calls": 19,
+      "tools": 19,
+      "refused": 0,
+      "errors": 0,
+      "last_outcome": "radio",
+      "last_latency_ms": 10203.59,
+      "skipped": null
+     },
+     "vehicle_engineer": {
+      "name": "vehicle_engineer",
+      "status": "idle",
+      "run_id": null,
+      "since": 1883.4333333334394,
+      "detail": "",
+      "runs": 5,
+      "calls": 17,
+      "tools": 14,
+      "refused": 1,
+      "errors": 0,
+      "last_outcome": "radio",
+      "last_latency_ms": 10253.57,
+      "skipped": null
+     },
+     "spotter": {
+      "name": "spotter",
+      "status": "idle",
+      "run_id": null,
+      "since": 2483.683333338837,
+      "detail": "",
+      "runs": 6,
+      "calls": 13,
+      "tools": 11,
+      "refused": 1,
+      "errors": 0,
+      "last_outcome": "radio",
+      "last_latency_ms": 7464.85,
+      "skipped": null
+     },
+     "coach": {
+      "name": "coach",
+      "status": "idle",
+      "run_id": null,
+      "since": 2342.53333333704,
+      "detail": "",
+      "runs": 10,
+      "calls": 26,
+      "tools": 24,
+      "refused": 0,
+      "errors": 0,
+      "last_outcome": "radio",
+      "last_latency_ms": 16983.15,
+      "skipped": null
+     }
+    },
+    "runs": [
+     {
+      "run_id": "vehicle_engineer-1",
+      "agent": "vehicle_engineer",
+      "event_key": "car_health_warning",
+      "session_time": 22.683333334823445,
+      "tick": 180599,
+      "start_wall": 1793407238047,
+      "end_wall": 1793407296523,
+      "trigger": "car_health_warning",
+      "model": "kimi-k3",
+      "context_radio": [],
+      "spans": [
+       {
+        "kind": "llm",
+        "call": 1,
+        "name": "kimi-k3",
+        "start_wall": 1793407238048,
+        "end_wall": 1793407254110,
+        "ok": true,
+        "latency_ms": 16061.44,
+        "error": null,
+        "tool_calls": [
+         "get_car_health"
+        ]
+       },
+       {
+        "kind": "tool",
+        "name": "get_car_health",
+        "start_wall": 1793407254109.86,
+        "end_wall": 1793407254110,
+        "latency_ms": 0.14,
+        "ok": true,
+        "args": {},
+        "result": {
+         "type": "object",
+         "keys": [
+          "oil_temp",
+          "water_temp",
+          "oil_pressure",
+          "fuel_pressure",
+          "voltage",
+          "tow_time",
+          "engine_warnings",
+          "thresholds",
+          "lap"
+         ],
+         "size": 9
+        }
+       },
+       {
+        "kind": "llm",
+        "call": 2,
+        "name": "kimi-k3",
+        "start_wall": 1793407254110,
+        "end_wall": 1793407264446,
+        "ok": true,
+        "latency_ms": 10335.88,
+        "error": null,
+        "tool_calls": [
+         "get_recent_detector_events"
+        ]
+       },
+       {
+        "kind": "tool",
+        "name": "get_recent_detector_events",
+        "start_wall": 1793407264445.79,
+        "end_wall": 1793407264446,
+        "latency_ms": 0.21,
+        "ok": true,
+        "args": {
+         "limit": 10,
+         "types": "[\"car_health_warning\"]"
+        },
+        "result": {
+         "type": "object",
+         "keys": [
+          "requested_types",
+          "returned",
+          "available",
+          "events"
+         ],
+         "size": 4
+        }
+       },
+       {
+        "kind": "llm",
+        "call": 3,
+        "name": "kimi-k3",
+        "start_wall": 1793407264446,
+        "end_wall": 1793407279973,
+        "ok": true,
+        "latency_ms": 15526.73,
+        "error": null,
+        "tool_calls": []
+       },
+       {
+        "kind": "llm",
+        "call": 4,
+        "name": "kimi-k3",
+        "start_wall": 1793407279974,
+        "end_wall": 1793407296521,
+        "ok": true,
+        "latency_ms": 16547.69,
+        "error": null,
+        "tool_calls": []
+       }
+      ],
+      "validations": [
+       {
+        "ok": false,
+        "unsupported": [
+         "4.66"
+        ],
+        "repaired": false,
+        "word_count": 27
+       },
+       {
+        "ok": false,
+        "unsupported": [
+         "4.6610630306531675"
+        ],
+        "repaired": true,
+        "word_count": 26
+       }
+      ],
+      "outcome": "refused",
+      "message_id": "46b4373ed7ff0038",
+      "latency_ms": 58475.14,
+      "turns": 4,
+      "seqs": [
+       2,
+       3,
+       5,
+       6,
+       7,
+       9,
+       10,
+       11,
+       13,
+       14,
+       15,
+       16,
+       17,
+       18
+      ]
+     },
+     {
+      "run_id": "strategist-1",
+      "agent": "strategist",
+      "event_key": "fuel_margin_low",
+      "session_time": 229.68333333489838,
+      "tick": 193018,
+      "start_wall": 1793407341390,
+      "end_wall": 1793407385423,
+      "trigger": "fuel_margin_low",
+      "model": "kimi-k3",
+      "context_radio": [
+       {
+        "message_id": "46b4373ed7ff0038",
+        "agent": "vehicle_engineer"
+       }
+      ],
+      "spans": [
+       {
+        "kind": "llm",
+        "call": 1,
+        "name": "kimi-k3",
+        "start_wall": 1793407341391,
+        "end_wall": 1793407351978,
+        "ok": true,
+        "latency_ms": 10587.17,
+        "error": null,
+        "tool_calls": [
+         "get_fuel_projection",
+         "simulate_pit_outcome"
+        ]
+       },
+       {
+        "kind": "tool",
+        "name": "get_fuel_projection",
+        "start_wall": 1793407351978.81,
+        "end_wall": 1793407351979,
+        "latency_ms": 0.19,
+        "ok": true,
+        "args": {},
+        "result": {
+         "type": "object",
+         "keys": [
+          "level_l",
+          "capacity_l",
+          "per_lap_l",
+          "per_lap_std_l",
+          "samples",
+          "laps_remaining",
+          "laps_to_finish",
+          "fuel_to_finish_l",
+          "margin_l",
+          "margin_laps",
+          "pit_window_earliest_lap",
+          "pit_window_latest_lap"
+         ],
+         "size": 14
+        }
+       },
+       {
+        "kind": "tool",
+        "name": "simulate_pit_outcome",
+        "start_wall": 1793407351978.65,
+        "end_wall": 1793407351979,
+        "latency_ms": 0.35,
+        "ok": true,
+        "args": {
+         "stop_lap": 2
+        },
+        "result": {
+         "type": "object",
+         "keys": [
+          "grounded",
+          "reason",
+          "stop_lap",
+          "current_lap",
+          "laps_before_stop",
+          "under_yellow",
+          "pit_lane_loss_s",
+          "effective_loss_s",
+          "position_before",
+          "rejoin_position",
+          "positions_lost",
+          "cars_clearing"
+         ],
+         "size": 19
+        }
+       },
+       {
+        "kind": "llm",
+        "call": 2,
+        "name": "kimi-k3",
+        "start_wall": 1793407351979,
+        "end_wall": 1793407385423,
+        "ok": true,
+        "latency_ms": 33443.67,
+        "error": null,
+        "tool_calls": []
+       }
+      ],
+      "validations": [
+       {
+        "ok": true,
+        "unsupported": [],
+        "repaired": false,
+        "word_count": 23
+       }
+      ],
+      "outcome": "radio",
+      "message_id": "fd8c4e03a6c93cb1",
+      "latency_ms": 44033.41,
+      "turns": 2,
+      "seqs": [
+       27,
+       28,
+       29,
+       30,
+       31,
+       32,
+       33,
+       34,
+       35
+      ]
+     },
+     {
+      "run_id": "coach-1",
+      "agent": "coach",
+      "event_key": "offtrack",
+      "session_time": 367.71666666815105,
+      "tick": 201300,
+      "start_wall": 1793407410406,
+      "end_wall": 1793407438299,
+      "trigger": "offtrack",
+      "model": "kimi-k3",
+      "context_radio": [
+       {
+        "message_id": "46b4373ed7ff0038",
+        "agent": "vehicle_engineer"
+       },
+       {
+        "message_id": "fd8c4e03a6c93cb1",
+        "agent": "strategist"
+       }
+      ],
+      "spans": [
+       {
+        "kind": "llm",
+        "call": 1,
+        "name": "kimi-k3",
+        "start_wall": 1793407410407,
+        "end_wall": 1793407419943,
+        "ok": true,
+        "latency_ms": 9535.85,
+        "error": null,
+        "tool_calls": [
+         "get_recent_detector_events",
+         "get_corner_detail"
+        ]
+       },
+       {
+        "kind": "tool",
+        "name": "get_recent_detector_events",
+        "start_wall": 1793407419942.59,
+        "end_wall": 1793407419943,
+        "latency_ms": 0.41,
+        "ok": true,
+        "args": {
+         "limit": 20
+        },
+        "result": {
+         "type": "object",
+         "keys": [
+          "requested_types",
+          "returned",
+          "available",
+          "events"
+         ],
+         "size": 4
+        }
+       },
+       {
+        "kind": "tool",
+        "name": "get_corner_detail",
+        "start_wall": 1793407419943.52,
+        "end_wall": 1793407420210,
+        "latency_ms": 266.48,
+        "ok": true,
+        "args": {
+         "lap_dist_pct": 0.9794633984565735
+        },
+        "result": {
+         "type": "object",
+         "keys": [
+          "requested_lap_dist_pct",
+          "live",
+          "telemetry"
+         ],
+         "size": 3
+        }
+       },
+       {
+        "kind": "llm",
+        "call": 2,
+        "name": "kimi-k3",
+        "start_wall": 1793407420210,
+        "end_wall": 1793407438299,
+        "ok": true,
+        "latency_ms": 18088.51,
+        "error": null,
+        "tool_calls": []
+       }
+      ],
+      "validations": [
+       {
+        "ok": true,
+        "unsupported": [],
+        "repaired": false,
+        "word_count": 20
+       }
+      ],
+      "outcome": "radio",
+      "message_id": "386c95aadfe737d5",
+      "latency_ms": 27893.27,
+      "turns": 2,
+      "seqs": [
+       39,
+       40,
+       47,
+       48,
+       49,
+       50,
+       57,
+       58,
+       59
+      ]
+     },
+     {
+      "run_id": "vehicle_engineer-2",
+      "agent": "vehicle_engineer",
+      "event_key": "tyre_out_of_band",
+      "session_time": 371.5500000014809,
+      "tick": 201530,
+      "start_wall": 1793407412765,
+      "end_wall": 1793407459158,
+      "trigger": "tyre_out_of_band",
+      "model": "kimi-k3",
+      "context_radio": [
+       {
+        "message_id": "46b4373ed7ff0038",
+        "agent": "vehicle_engineer"
+       },
+       {
+        "message_id": "fd8c4e03a6c93cb1",
+        "agent": "strategist"
+       }
+      ],
+      "spans": [
+       {
+        "kind": "llm",
+        "call": 1,
+        "name": "kimi-k3",
+        "start_wall": 1793407412766,
+        "end_wall": 1793407428380,
+        "ok": true,
+        "latency_ms": 15614.31,
+        "error": null,
+        "tool_calls": [
+         "get_tyre_trend"
+        ]
+       },
+       {
+        "kind": "tool",
+        "name": "get_tyre_trend",
+        "start_wall": 1793407428379.87,
+        "end_wall": 1793407428380,
+        "latency_ms": 0.13,
+        "ok": true,
+        "args": {},
+        "result": {
+         "type": "object",
+         "keys": [
+          "temps_c",
+          "pressures_kpa",
+          "temp_trend_c_per_lap",
+          "pressure_trend_per_lap",
+          "stint_laps",
+          "laps_on_tyres"
+         ],
+         "size": 6
+        }
+       },
+       {
+        "kind": "llm",
+        "call": 2,
+        "name": "kimi-k3",
+        "start_wall": 1793407428380,
+        "end_wall": 1793407438046,
+        "ok": true,
+        "latency_ms": 9665.09,
+        "error": null,
+        "tool_calls": [
+         "get_setup_snapshot"
+        ]
+       },
+       {
+        "kind": "tool",
+        "name": "get_setup_snapshot",
+        "start_wall": 1793407438045.4,
+        "end_wall": 1793407438046,
+        "latency_ms": 0.6,
+        "ok": true,
+        "args": {},
+        "result": {
+         "type": "object",
+         "keys": [
+          "available",
+          "car_id",
+          "track_name",
+          "lap_length_m",
+          "car",
+          "setup",
+          "update_count"
+         ],
+         "size": 7
+        }
+       },
+       {
+        "kind": "llm",
+        "call": 3,
+        "name": "kimi-k3",
+        "start_wall": 1793407438046,
+        "end_wall": 1793407459157,
+        "ok": true,
+        "latency_ms": 21110.97,
+        "error": null,
+        "tool_calls": []
+       }
+      ],
+      "validations": [
+       {
+        "ok": true,
+        "unsupported": [],
+        "repaired": false,
+        "word_count": 25
+       }
+      ],
+      "outcome": "radio",
+      "message_id": "11e83fdbc2e0e577",
+      "latency_ms": 46392.97,
+      "turns": 3,
+      "seqs": [
+       45,
+       46,
+       51,
+       52,
+       53,
+       54,
+       55,
+       56,
+       62,
+       63,
+       64
+      ]
+     },
+     {
+      "run_id": "strategist-2",
+      "agent": "strategist",
+      "event_key": "flag_change:yellow",
+      "session_time": 500.81666666803,
+      "tick": 209286,
+      "start_wall": 1793407476955,
+      "end_wall": 1793407505009,
+      "trigger": "flag_change",
+      "model": "kimi-k3",
+      "context_radio": [
+       {
+        "message_id": "46b4373ed7ff0038",
+        "agent": "vehicle_engineer"
+       },
+       {
+        "message_id": "fd8c4e03a6c93cb1",
+        "agent": "strategist"
+       },
+       {
+        "message_id": "386c95aadfe737d5",
+        "agent": "coach"
+       },
+       {
+        "message_id": "11e83fdbc2e0e577",
+        "agent": "vehicle_engineer"
+       }
+      ],
+      "spans": [
+       {
+        "kind": "llm",
+        "call": 1,
+        "name": "kimi-k3",
+        "start_wall": 1793407476956,
+        "end_wall": 1793407485141,
+        "ok": true,
+        "latency_ms": 8184.86,
+        "error": null,
+        "tool_calls": [
+         "simulate_pit_outcome",
+         "get_fuel_projection"
+        ]
+       },
+       {
+        "kind": "tool",
+        "name": "simulate_pit_outcome",
+        "start_wall": 1793407485141.77,
+        "end_wall": 1793407485142,
+        "latency_ms": 0.23,
+        "ok": true,
+        "args": {
+         "under_yellow": true
+        },
+        "result": {
+         "type": "object",
+         "keys": [
+          "grounded",
+          "reason",
+          "stop_lap",
+          "current_lap",
+          "laps_before_stop",
+          "under_yellow",
+          "pit_lane_loss_s",
+          "effective_loss_s",
+          "position_before",
+          "rejoin_position",
+          "positions_lost",
+          "cars_clearing"
+         ],
+         "size": 19
+        }
+       },
+       {
+        "kind": "tool",
+        "name": "get_fuel_projection",
+        "start_wall": 1793407485141.94,
+        "end_wall": 1793407485142,
+        "latency_ms": 0.06,
+        "ok": true,
+        "args": {},
+        "result": {
+         "type": "object",
+         "keys": [
+          "level_l",
+          "capacity_l",
+          "per_lap_l",
+          "per_lap_std_l",
+          "samples",
+          "laps_remaining",
+          "laps_to_finish",
+          "fuel_to_finish_l",
+          "margin_l",
+          "margin_laps",
+          "pit_window_earliest_lap",
+          "pit_window_latest_lap"
+         ],
+         "size": 14
+        }
+       },
+       {
+        "kind": "llm",
+        "call": 2,
+        "name": "kimi-k3",
+        "start_wall": 1793407485142,
+        "end_wall": 1793407505009,
+        "ok": true,
+        "latency_ms": 19866.99,
+        "error": null,
+        "tool_calls": []
+       }
+      ],
+      "validations": [
+       {
+        "ok": true,
+        "unsupported": [],
+        "repaired": false,
+        "word_count": 22
+       }
+      ],
+      "outcome": "radio",
+      "message_id": "13dfdf18da914f37",
+      "latency_ms": 28054.23,
+      "turns": 2,
+      "seqs": [
+       68,
+       69,
+       80,
+       81,
+       82,
+       83,
+       89,
+       90,
+       91
+      ]
+     },
+     {
+      "run_id": "spotter-1",
+      "agent": "spotter",
+      "event_key": "flag_change:yellow",
+      "session_time": 500.81666666803,
+      "tick": 209286,
+      "start_wall": 1793407476960,
+      "end_wall": 1793407489407,
+      "trigger": "flag_change",
+      "model": "kimi-k3",
+      "context_radio": [
+       {
+        "message_id": "46b4373ed7ff0038",
+        "agent": "vehicle_engineer"
+       },
+       {
+        "message_id": "fd8c4e03a6c93cb1",
+        "agent": "strategist"
+       },
+       {
+        "message_id": "386c95aadfe737d5",
+        "agent": "coach"
+       },
+       {
+        "message_id": "11e83fdbc2e0e577",
+        "agent": "vehicle_engineer"
+       }
+      ],
+      "spans": [
+       {
+        "kind": "llm",
+        "call": 1,
+        "name": "kimi-k3",
+        "start_wall": 1793407476960,
+        "end_wall": 1793407480210,
+        "ok": true,
+        "latency_ms": 3249.93,
+        "error": null,
+        "tool_calls": [
+         "get_standings_around_player",
+         "get_recent_detector_events"
+        ]
+       },
+       {
+        "kind": "tool",
+        "name": "get_standings_around_player",
+        "start_wall": 1793407480209.91,
+        "end_wall": 1793407480210,
+        "latency_ms": 0.09,
+        "ok": true,
+        "args": {
+         "window": 3
+        },
+        "result": {
+         "type": "object",
+         "keys": [
+          "gap_basis",
+          "reference_lap_time_s",
+          "player_position",
+          "field_size",
+          "cars",
+          "unavailable"
+         ],
+         "size": 6
+        }
+       },
+       {
+        "kind": "tool",
+        "name": "get_recent_detector_events",
+        "start_wall": 1793407480210.16,
+        "end_wall": 1793407480211,
+        "latency_ms": 0.84,
+        "ok": true,
+        "args": {
+         "limit": 20
+        },
+        "result": {
+         "type": "object",
+         "keys": [
+          "requested_types",
+          "returned",
+          "available",
+          "events"
+         ],
+         "size": 4
+        }
+       },
+       {
+        "kind": "llm",
+        "call": 2,
+        "name": "kimi-k3",
+        "start_wall": 1793407480211,
+        "end_wall": 1793407489406,
+        "ok": true,
+        "latency_ms": 9195.32,
+        "error": null,
+        "tool_calls": []
+       }
+      ],
+      "validations": [
+       {
+        "ok": true,
+        "unsupported": [],
+        "repaired": false,
+        "word_count": 14
+       }
+      ],
+      "outcome": "radio",
+      "message_id": "0ae796b2c8f8348c",
+      "latency_ms": 12447.16,
+      "turns": 2,
+      "seqs": [
+       70,
+       71,
+       72,
+       73,
+       74,
+       75,
+       84,
+       85,
+       86
+      ]
+     },
+     {
+      "run_id": "strategist-3",
+      "agent": "strategist",
+      "event_key": "flag_change:yellow",
+      "session_time": 570.933333334633,
+      "tick": 213493,
+      "start_wall": 1793407512014,
+      "end_wall": 1793407531278,
+      "trigger": "flag_change",
+      "model": "kimi-k3",
+      "context_radio": [
+       {
+        "message_id": "fd8c4e03a6c93cb1",
+        "agent": "strategist"
+       },
+       {
+        "message_id": "386c95aadfe737d5",
+        "agent": "coach"
+       },
+       {
+        "message_id": "11e83fdbc2e0e577",
+        "agent": "vehicle_engineer"
+       },
+       {
+        "message_id": "0ae796b2c8f8348c",
+        "agent": "spotter"
+       },
+       {
+        "message_id": "13dfdf18da914f37",
+        "agent": "strategist"
+       }
+      ],
+      "spans": [
+       {
+        "kind": "llm",
+        "call": 1,
+        "name": "kimi-k3",
+        "start_wall": 1793407512015,
+        "end_wall": 1793407516605,
+        "ok": true,
+        "latency_ms": 4590.47,
+        "error": null,
+        "tool_calls": [
+         "get_fuel_projection",
+         "simulate_pit_outcome"
+        ]
+       },
+       {
+        "kind": "tool",
+        "name": "get_fuel_projection",
+        "start_wall": 1793407516604.84,
+        "end_wall": 1793407516605,
+        "latency_ms": 0.16,
+        "ok": true,
+        "args": {},
+        "result": {
+         "type": "object",
+         "keys": [
+          "level_l",
+          "capacity_l",
+          "per_lap_l",
+          "per_lap_std_l",
+          "samples",
+          "laps_remaining",
+          "laps_to_finish",
+          "fuel_to_finish_l",
+          "margin_l",
+          "margin_laps",
+          "pit_window_earliest_lap",
+          "pit_window_latest_lap"
+         ],
+         "size": 14
+        }
+       },
+       {
+        "kind": "tool",
+        "name": "simulate_pit_outcome",
+        "start_wall": 1793407516605.75,
+        "end_wall": 1793407516606,
+        "latency_ms": 0.25,
+        "ok": true,
+        "args": {
+         "under_yellow": true
+        },
+        "result": {
+         "type": "object",
+         "keys": [
+          "grounded",
+          "reason",
+          "stop_lap",
+          "current_lap",
+          "laps_before_stop",
+          "under_yellow",
+          "pit_lane_loss_s",
+          "effective_loss_s",
+          "position_before",
+          "rejoin_position",
+          "positions_lost",
+          "cars_clearing"
+         ],
+         "size": 19
+        }
+       },
+       {
+        "kind": "llm",
+        "call": 2,
+        "name": "kimi-k3",
+        "start_wall": 1793407516606,
+        "end_wall": 1793407531277,
+        "ok": true,
+        "latency_ms": 14670.96,
+        "error": null,
+        "tool_calls": []
+       }
+      ],
+      "validations": [
+       {
+        "ok": true,
+        "unsupported": [],
+        "repaired": false,
+        "word_count": 22
+       }
+      ],
+      "outcome": "radio",
+      "message_id": "a1d5fc09a0fc72d6",
+      "latency_ms": 19263.53,
+      "turns": 2,
+      "seqs": [
+       95,
+       96,
+       100,
+       101,
+       102,
+       103,
+       111,
+       112,
+       113
+      ]
+     },
+     {
+      "run_id": "spotter-2",
+      "agent": "spotter",
+      "event_key": "flag_change:yellow",
+      "session_time": 570.933333334633,
+      "tick": 213493,
+      "start_wall": 1793407512018,
+      "end_wall": 1793407541698,
+      "trigger": "flag_change",
+      "model": "kimi-k3",
+      "context_radio": [
+       {
+        "message_id": "fd8c4e03a6c93cb1",
+        "agent": "strategist"
+       },
+       {
+        "message_id": "386c95aadfe737d5",
+        "agent": "coach"
+       },
+       {
+        "message_id": "11e83fdbc2e0e577",
+        "agent": "vehicle_engineer"
+       },
+       {
+        "message_id": "0ae796b2c8f8348c",
+        "agent": "spotter"
+       },
+       {
+        "message_id": "13dfdf18da914f37",
+        "agent": "strategist"
+       }
+      ],
+      "spans": [
+       {
+        "kind": "llm",
+        "call": 1,
+        "name": "kimi-k3",
+        "start_wall": 1793407512018,
+        "end_wall": 1793407520970,
+        "ok": true,
+        "latency_ms": 8951.64,
+        "error": null,
+        "tool_calls": [
+         "get_recent_detector_events",
+         "get_standings_around_player"
+        ]
+       },
+       {
+        "kind": "tool",
+        "name": "get_recent_detector_events",
+        "start_wall": 1793407520969.28,
+        "end_wall": 1793407520970,
+        "latency_ms": 0.72,
+        "ok": true,
+        "args": {
+         "limit": 20
+        },
+        "result": {
+         "type": "object",
+         "keys": [
+          "requested_types",
+          "returned",
+          "available",
+          "events"
+         ],
+         "size": 4
+        }
+       },
+       {
+        "kind": "tool",
+        "name": "get_standings_around_player",
+        "start_wall": 1793407520970.96,
+        "end_wall": 1793407520971,
+        "latency_ms": 0.04,
+        "ok": true,
+        "args": {
+         "window": 3
+        },
+        "result": {
+         "type": "object",
+         "keys": [
+          "gap_basis",
+          "reference_lap_time_s",
+          "player_position",
+          "field_size",
+          "cars",
+          "unavailable"
+         ],
+         "size": 6
+        }
+       },
+       {
+        "kind": "llm",
+        "call": 2,
+        "name": "kimi-k3",
+        "start_wall": 1793407520971,
+        "end_wall": 1793407530722,
+        "ok": true,
+        "latency_ms": 9751.87,
+        "error": null,
+        "tool_calls": []
+       },
+       {
+        "kind": "llm",
+        "call": 3,
+        "name": "kimi-k3",
+        "start_wall": 1793407530723,
+        "end_wall": 1793407541698,
+        "ok": true,
+        "latency_ms": 10975.13,
+        "error": null,
+        "tool_calls": []
+       }
+      ],
+      "validations": [
+       {
+        "ok": false,
+        "unsupported": [
+         "10"
+        ],
+        "repaired": false,
+        "word_count": 14
+       },
+       {
+        "ok": false,
+        "unsupported": [
+         "10"
+        ],
+        "repaired": true,
+        "word_count": 10
+       }
+      ],
+      "outcome": "refused",
+      "message_id": "a3de5cb0a803154c",
+      "latency_ms": 29680.77,
+      "turns": 3,
+      "seqs": [
+       97,
+       98,
+       104,
+       105,
+       106,
+       107,
+       108,
+       109,
+       110,
+       116,
+       117,
+       118
+      ]
+     },
+     {
+      "run_id": "coach-2",
+      "agent": "coach",
+      "event_key": "offtrack",
+      "session_time": 724.2000000011602,
+      "tick": 222689,
+      "start_wall": 1793407588647,
+      "end_wall": 1793407611043,
+      "trigger": "offtrack",
+      "model": "kimi-k3",
+      "context_radio": [
+       {
+        "message_id": "11e83fdbc2e0e577",
+        "agent": "vehicle_engineer"
+       },
+       {
+        "message_id": "0ae796b2c8f8348c",
+        "agent": "spotter"
+       },
+       {
+        "message_id": "13dfdf18da914f37",
+        "agent": "strategist"
+       },
+       {
+        "message_id": "a1d5fc09a0fc72d6",
+        "agent": "strategist"
+       },
+       {
+        "message_id": "a3de5cb0a803154c",
+        "agent": "spotter"
+       }
+      ],
+      "spans": [
+       {
+        "kind": "llm",
+        "call": 1,
+        "name": "kimi-k3",
+        "start_wall": 1793407588648,
+        "end_wall": 1793407594099,
+        "ok": true,
+        "latency_ms": 5450.68,
+        "error": null,
+        "tool_calls": [
+         "get_recent_detector_events",
+         "get_corner_detail"
+        ]
+       },
+       {
+        "kind": "tool",
+        "name": "get_recent_detector_events",
+        "start_wall": 1793407594098.69,
+        "end_wall": 1793407594099,
+        "latency_ms": 0.31,
+        "ok": true,
+        "args": {
+         "limit": 30,
+         "types": "[\"offtrack\",\"recurring_issue\",\"lockup\",\"wheelspin\"]"
+        },
+        "result": {
+         "type": "object",
+         "keys": [
+          "requested_types",
+          "returned",
+          "available",
+          "events"
+         ],
+         "size": 4
+        }
+       },
+       {
+        "kind": "tool",
+        "name": "get_corner_detail",
+        "start_wall": 1793407594099.69,
+        "end_wall": 1793407594353,
+        "latency_ms": 253.31,
+        "ok": true,
+        "args": {
+         "lap_dist_pct": 0.48010456562042236
+        },
+        "result": {
+         "type": "object",
+         "keys": [
+          "requested_lap_dist_pct",
+          "live",
+          "telemetry"
+         ],
+         "size": 3
+        }
+       },
+       {
+        "kind": "llm",
+        "call": 2,
+        "name": "kimi-k3",
+        "start_wall": 1793407594353,
+        "end_wall": 1793407611042,
+        "ok": true,
+        "latency_ms": 16689.2,
+        "error": null,
+        "tool_calls": []
+       }
+      ],
+      "validations": [
+       {
+        "ok": true,
+        "unsupported": [],
+        "repaired": false,
+        "word_count": 17
+       }
+      ],
+      "outcome": "radio",
+      "message_id": "3456b97909a05ba1",
+      "latency_ms": 22395.27,
+      "turns": 2,
+      "seqs": [
+       124,
+       125,
+       126,
+       127,
+       128,
+       129,
+       130,
+       131,
+       132
+      ]
+     },
+     {
+      "run_id": "coach-3",
+      "agent": "coach",
+      "event_key": "offtrack",
+      "session_time": 865.6000000010316,
+      "tick": 231173,
+      "start_wall": 1793407659347,
+      "end_wall": 1793407678574,
+      "trigger": "offtrack",
+      "model": "kimi-k3",
+      "context_radio": [
+       {
+        "message_id": "0ae796b2c8f8348c",
+        "agent": "spotter"
+       },
+       {
+        "message_id": "13dfdf18da914f37",
+        "agent": "strategist"
+       },
+       {
+        "message_id": "a1d5fc09a0fc72d6",
+        "agent": "strategist"
+       },
+       {
+        "message_id": "a3de5cb0a803154c",
+        "agent": "spotter"
+       },
+       {
+        "message_id": "3456b97909a05ba1",
+        "agent": "coach"
+       }
+      ],
+      "spans": [
+       {
+        "kind": "llm",
+        "call": 1,
+        "name": "kimi-k3",
+        "start_wall": 1793407659347,
+        "end_wall": 1793407663123,
+        "ok": true,
+        "latency_ms": 3775.16,
+        "error": null,
+        "tool_calls": [
+         "get_recent_detector_events"
+        ]
+       },
+       {
+        "kind": "tool",
+        "name": "get_recent_detector_events",
+        "start_wall": 1793407663122.14,
+        "end_wall": 1793407663123,
+        "latency_ms": 0.86,
+        "ok": true,
+        "args": {
+         "limit": 30
+        },
+        "result": {
+         "type": "object",
+         "keys": [
+          "requested_types",
+          "returned",
+          "available",
+          "events"
+         ],
+         "size": 4
+        }
+       },
+       {
+        "kind": "llm",
+        "call": 2,
+        "name": "kimi-k3",
+        "start_wall": 1793407663124,
+        "end_wall": 1793407666423,
+        "ok": true,
+        "latency_ms": 3299.65,
+        "error": null,
+        "tool_calls": [
+         "get_corner_detail"
+        ]
+       },
+       {
+        "kind": "tool",
+        "name": "get_corner_detail",
+        "start_wall": 1793407666423.15,
+        "end_wall": 1793407666699,
+        "latency_ms": 275.85,
+        "ok": true,
+        "args": {
+         "lap_dist_pct": 0.48037588596343994
+        },
+        "result": {
+         "type": "object",
+         "keys": [
+          "requested_lap_dist_pct",
+          "live",
+          "telemetry"
+         ],
+         "size": 3
+        }
+       },
+       {
+        "kind": "llm",
+        "call": 3,
+        "name": "kimi-k3",
+        "start_wall": 1793407666699,
+        "end_wall": 1793407678574,
+        "ok": true,
+        "latency_ms": 11874.08,
+        "error": null,
+        "tool_calls": []
+       }
+      ],
+      "validations": [
+       {
+        "ok": true,
+        "unsupported": [],
+        "repaired": false,
+        "word_count": 22
+       }
+      ],
+      "outcome": "radio",
+      "message_id": "62ad6f237fb2df99",
+      "latency_ms": 19227.68,
+      "turns": 3,
+      "seqs": [
+       137,
+       138,
+       139,
+       140,
+       141,
+       142,
+       143,
+       144,
+       146,
+       147,
+       148
+      ]
+     },
+     {
+      "run_id": "coach-4",
+      "agent": "coach",
+      "event_key": "recurring_issue",
+      "session_time": 1006.5000000009035,
+      "tick": 239627,
+      "start_wall": 1793407729797,
+      "end_wall": 1793407750099,
+      "trigger": "recurring_issue",
+      "model": "kimi-k3",
+      "context_radio": [
+       {
+        "message_id": "13dfdf18da914f37",
+        "agent": "strategist"
+       },
+       {
+        "message_id": "a1d5fc09a0fc72d6",
+        "agent": "strategist"
+       },
+       {
+        "message_id": "a3de5cb0a803154c",
+        "agent": "spotter"
+       },
+       {
+        "message_id": "3456b97909a05ba1",
+        "agent": "coach"
+       },
+       {
+        "message_id": "62ad6f237fb2df99",
+        "agent": "coach"
+       }
+      ],
+      "spans": [
+       {
+        "kind": "llm",
+        "call": 1,
+        "name": "kimi-k3",
+        "start_wall": 1793407729798,
+        "end_wall": 1793407734175,
+        "ok": true,
+        "latency_ms": 4377.01,
+        "error": null,
+        "tool_calls": [
+         "get_corner_detail",
+         "get_recent_detector_events"
+        ]
+       },
+       {
+        "kind": "tool",
+        "name": "get_corner_detail",
+        "start_wall": 1793407734174.52,
+        "end_wall": 1793407734426,
+        "latency_ms": 251.48,
+        "ok": true,
+        "args": {
+         "corner": "C09"
+        },
+        "result": {
+         "type": "object",
+         "keys": [
+          "requested_lap_dist_pct",
+          "live",
+          "telemetry"
+         ],
+         "size": 3
+        }
+       },
+       {
+        "kind": "tool",
+        "name": "get_recent_detector_events",
+        "start_wall": 1793407734426.74,
+        "end_wall": 1793407734427,
+        "latency_ms": 0.26,
+        "ok": true,
+        "args": {
+         "limit": 30,
+         "types": "[\"offtrack\",\"recurring_issue\",\"lockup\"]"
+        },
+        "result": {
+         "type": "object",
+         "keys": [
+          "requested_types",
+          "returned",
+          "available",
+          "events"
+         ],
+         "size": 4
+        }
+       },
+       {
+        "kind": "llm",
+        "call": 2,
+        "name": "kimi-k3",
+        "start_wall": 1793407734427,
+        "end_wall": 1793407750099,
+        "ok": true,
+        "latency_ms": 15671.78,
+        "error": null,
+        "tool_calls": []
+       }
+      ],
+      "validations": [
+       {
+        "ok": true,
+        "unsupported": [],
+        "repaired": false,
+        "word_count": 24
+       }
+      ],
+      "outcome": "radio",
+      "message_id": "29deffa7102409e1",
+      "latency_ms": 20302.19,
+      "turns": 2,
+      "seqs": [
+       158,
+       159,
+       162,
+       163,
+       164,
+       165,
+       177,
+       178,
+       179
+      ]
+     },
+     {
+      "run_id": "vehicle_engineer-3",
+      "agent": "vehicle_engineer",
+      "event_key": "recurring_issue",
+      "session_time": 1006.5000000009035,
+      "tick": 239627,
+      "start_wall": 1793407729801,
+      "end_wall": 1793407754860,
+      "trigger": "recurring_issue",
+      "model": "kimi-k3",
+      "context_radio": [
+       {
+        "message_id": "13dfdf18da914f37",
+        "agent": "strategist"
+       },
+       {
+        "message_id": "a1d5fc09a0fc72d6",
+        "agent": "strategist"
+       },
+       {
+        "message_id": "a3de5cb0a803154c",
+        "agent": "spotter"
+       },
+       {
+        "message_id": "3456b97909a05ba1",
+        "agent": "coach"
+       },
+       {
+        "message_id": "62ad6f237fb2df99",
+        "agent": "coach"
+       }
+      ],
+      "spans": [
+       {
+        "kind": "llm",
+        "call": 1,
+        "name": "kimi-k3",
+        "start_wall": 1793407729801,
+        "end_wall": 1793407735039,
+        "ok": true,
+        "latency_ms": 5238.0,
+        "error": null,
+        "tool_calls": [
+         "get_corner_detail",
+         "get_recent_detector_events"
+        ]
+       },
+       {
+        "kind": "tool",
+        "name": "get_corner_detail",
+        "start_wall": 1793407735039.48,
+        "end_wall": 1793407735308,
+        "latency_ms": 268.52,
+        "ok": true,
+        "args": {
+         "corner": "C09"
+        },
+        "result": {
+         "type": "object",
+         "keys": [
+          "requested_lap_dist_pct",
+          "live",
+          "telemetry"
+         ],
+         "size": 3
+        }
+       },
+       {
+        "kind": "tool",
+        "name": "get_recent_detector_events",
+        "start_wall": 1793407735307.59,
+        "end_wall": 1793407735308,
+        "latency_ms": 0.41,
+        "ok": true,
+        "args": {
+         "limit": 20,
+         "types": "[\"offtrack\",\"lockup\",\"wheelspin\",\"incident\"]"
+        },
+        "result": {
+         "type": "object",
+         "keys": [
+          "requested_types",
+          "returned",
+          "available",
+          "events"
+         ],
+         "size": 4
+        }
+       },
+       {
+        "kind": "llm",
+        "call": 2,
+        "name": "kimi-k3",
+        "start_wall": 1793407735308,
+        "end_wall": 1793407739240,
+        "ok": true,
+        "latency_ms": 3931.13,
+        "error": null,
+        "tool_calls": [
+         "get_tyre_trend"
+        ]
+       },
+       {
+        "kind": "tool",
+        "name": "get_tyre_trend",
+        "start_wall": 1793407739239.88,
+        "end_wall": 1793407739240,
+        "latency_ms": 0.12,
+        "ok": true,
+        "args": {},
+        "result": {
+         "type": "object",
+         "keys": [
+          "temps_c",
+          "pressures_kpa",
+          "temp_trend_c_per_lap",
+          "pressure_trend_per_lap",
+          "stint_laps",
+          "laps_on_tyres"
+         ],
+         "size": 6
+        }
+       },
+       {
+        "kind": "llm",
+        "call": 3,
+        "name": "kimi-k3",
+        "start_wall": 1793407739240,
+        "end_wall": 1793407741500,
+        "ok": true,
+        "latency_ms": 2260.12,
+        "error": null,
+        "tool_calls": [
+         "get_car_health"
+        ]
+       },
+       {
+        "kind": "tool",
+        "name": "get_car_health",
+        "start_wall": 1793407741499.8,
+        "end_wall": 1793407741500,
+        "latency_ms": 0.2,
+        "ok": true,
+        "args": {},
+        "result": {
+         "type": "object",
+         "keys": [
+          "oil_temp",
+          "water_temp",
+          "oil_pressure",
+          "fuel_pressure",
+          "voltage",
+          "tow_time",
+          "engine_warnings",
+          "thresholds",
+          "lap"
+         ],
+         "size": 9
+        }
+       },
+       {
+        "kind": "llm",
+        "call": 4,
+        "name": "kimi-k3",
+        "start_wall": 1793407741500,
+        "end_wall": 1793407754859,
+        "ok": true,
+        "latency_ms": 13358.55,
+        "error": null,
+        "tool_calls": []
+       }
+      ],
+      "validations": [
+       {
+        "ok": true,
+        "unsupported": [],
+        "repaired": false,
+        "word_count": 17
+       }
+      ],
+      "outcome": "radio",
+      "message_id": "b6cffb2999b78b8f",
+      "latency_ms": 25059.1,
+      "turns": 4,
+      "seqs": [
+       160,
+       161,
+       166,
+       167,
+       168,
+       169,
+       170,
+       171,
+       172,
+       173,
+       174,
+       175,
+       182,
+       183,
+       184
+      ]
+     },
+     {
+      "run_id": "strategist-4",
+      "agent": "strategist",
+      "event_key": "stint_lap_milestone",
+      "session_time": 1079.0000000008376,
+      "tick": 243977,
+      "start_wall": 1793407766413,
+      "end_wall": 1793407783361,
+      "trigger": "stint_lap_milestone",
+      "model": "kimi-k3",
+      "context_radio": [
+       {
+        "message_id": "a3de5cb0a803154c",
+        "agent": "spotter"
+       },
+       {
+        "message_id": "3456b97909a05ba1",
+        "agent": "coach"
+       },
+       {
+        "message_id": "62ad6f237fb2df99",
+        "agent": "coach"
+       },
+       {
+        "message_id": "29deffa7102409e1",
+        "agent": "coach"
+       },
+       {
+        "message_id": "b6cffb2999b78b8f",
+        "agent": "vehicle_engineer"
+       }
+      ],
+      "spans": [
+       {
+        "kind": "llm",
+        "call": 1,
+        "name": "kimi-k3",
+        "start_wall": 1793407766414,
+        "end_wall": 1793407770022,
+        "ok": true,
+        "latency_ms": 3608.04,
+        "error": null,
+        "tool_calls": [
+         "get_fuel_projection",
+         "simulate_pit_outcome"
+        ]
+       },
+       {
+        "kind": "tool",
+        "name": "get_fuel_projection",
+        "start_wall": 1793407770021.9,
+        "end_wall": 1793407770022,
+        "latency_ms": 0.1,
+        "ok": true,
+        "args": {},
+        "result": {
+         "type": "object",
+         "keys": [
+          "level_l",
+          "capacity_l",
+          "per_lap_l",
+          "per_lap_std_l",
+          "samples",
+          "laps_remaining",
+          "laps_to_finish",
+          "fuel_to_finish_l",
+          "margin_l",
+          "margin_laps",
+          "pit_window_earliest_lap",
+          "pit_window_latest_lap"
+         ],
+         "size": 14
+        }
+       },
+       {
+        "kind": "tool",
+        "name": "simulate_pit_outcome",
+        "start_wall": 1793407770022.81,
+        "end_wall": 1793407770023,
+        "latency_ms": 0.19,
+        "ok": true,
+        "args": {
+         "stop_lap": 8
+        },
+        "result": {
+         "type": "object",
+         "keys": [
+          "grounded",
+          "reason",
+          "stop_lap",
+          "current_lap",
+          "laps_before_stop",
+          "under_yellow",
+          "pit_lane_loss_s",
+          "effective_loss_s",
+          "position_before",
+          "rejoin_position",
+          "positions_lost",
+          "cars_clearing"
+         ],
+         "size": 19
+        }
+       },
+       {
+        "kind": "llm",
+        "call": 2,
+        "name": "kimi-k3",
+        "start_wall": 1793407770023,
+        "end_wall": 1793407783361,
+        "ok": true,
+        "latency_ms": 13338.01,
+        "error": null,
+        "tool_calls": []
+       }
+      ],
+      "validations": [
+       {
+        "ok": true,
+        "unsupported": [],
+        "repaired": false,
+        "word_count": 13
+       }
+      ],
+      "outcome": "radio",
+      "message_id": "17de3fc72c75dba2",
+      "latency_ms": 16948.15,
+      "turns": 2,
+      "seqs": [
+       190,
+       191,
+       194,
+       195,
+       196,
+       197,
+       205,
+       206,
+       207
+      ]
+     },
+     {
+      "run_id": "coach-5",
+      "agent": "coach",
+      "event_key": "stint_lap_milestone",
+      "session_time": 1079.0000000008376,
+      "tick": 243977,
+      "start_wall": 1793407766419,
+      "end_wall": 1793407806750,
+      "trigger": "stint_lap_milestone",
+      "model": "kimi-k3",
+      "context_radio": [
+       {
+        "message_id": "a3de5cb0a803154c",
+        "agent": "spotter"
+       },
+       {
+        "message_id": "3456b97909a05ba1",
+        "agent": "coach"
+       },
+       {
+        "message_id": "62ad6f237fb2df99",
+        "agent": "coach"
+       },
+       {
+        "message_id": "29deffa7102409e1",
+        "agent": "coach"
+       },
+       {
+        "message_id": "b6cffb2999b78b8f",
+        "agent": "vehicle_engineer"
+       }
+      ],
+      "spans": [
+       {
+        "kind": "llm",
+        "call": 1,
+        "name": "kimi-k3",
+        "start_wall": 1793407766419,
+        "end_wall": 1793407770250,
+        "ok": true,
+        "latency_ms": 3830.81,
+        "error": null,
+        "tool_calls": [
+         "get_recent_detector_events",
+         "get_stint_history"
+        ]
+       },
+       {
+        "kind": "tool",
+        "name": "get_recent_detector_events",
+        "start_wall": 1793407770250.58,
+        "end_wall": 1793407770252,
+        "latency_ms": 1.42,
+        "ok": true,
+        "args": {
+         "limit": 30
+        },
+        "result": {
+         "type": "object",
+         "keys": [
+          "requested_types",
+          "returned",
+          "available",
+          "events"
+         ],
+         "size": 4
+        }
+       },
+       {
+        "kind": "tool",
+        "name": "get_stint_history",
+        "start_wall": 1793407770251.75,
+        "end_wall": 1793407770252,
+        "latency_ms": 0.25,
+        "ok": true,
+        "args": {},
+        "result": {
+         "type": "object",
+         "keys": [
+          "current_stint",
+          "stint_start_lap",
+          "laps_on_tyres",
+          "stints"
+         ],
+         "size": 4
+        }
+       },
+       {
+        "kind": "llm",
+        "call": 2,
+        "name": "kimi-k3",
+        "start_wall": 1793407770252,
+        "end_wall": 1793407774284,
+        "ok": true,
+        "latency_ms": 4031.76,
+        "error": null,
+        "tool_calls": [
+         "get_corner_detail"
+        ]
+       },
+       {
+        "kind": "tool",
+        "name": "get_corner_detail",
+        "start_wall": 1793407774284.11,
+        "end_wall": 1793407774556,
+        "latency_ms": 271.89,
+        "ok": true,
+        "args": {
+         "corner": "C09"
+        },
+        "result": {
+         "type": "object",
+         "keys": [
+          "requested_lap_dist_pct",
+          "live",
+          "telemetry"
+         ],
+         "size": 3
+        }
+       },
+       {
+        "kind": "llm",
+        "call": 3,
+        "name": "kimi-k3",
+        "start_wall": 1793407774556,
+        "end_wall": 1793407791515,
+        "ok": true,
+        "latency_ms": 16958.53,
+        "error": null,
+        "tool_calls": []
+       },
+       {
+        "kind": "llm",
+        "call": 4,
+        "name": "kimi-k3",
+        "start_wall": 1793407791515,
+        "end_wall": 1793407806750,
+        "ok": true,
+        "latency_ms": 15234.44,
+        "error": null,
+        "tool_calls": []
+       }
+      ],
+      "validations": [
+       {
+        "ok": false,
+        "unsupported": [],
+        "repaired": false,
+        "word_count": 28
+       },
+       {
+        "ok": true,
+        "unsupported": [],
+        "repaired": true,
+        "word_count": 24
+       }
+      ],
+      "outcome": "radio",
+      "message_id": "011efe3a879ed20c",
+      "latency_ms": 40331.8,
+      "turns": 4,
+      "seqs": [
+       192,
+       193,
+       198,
+       199,
+       200,
+       201,
+       202,
+       203,
+       204,
+       210,
+       211,
+       212,
+       213,
+       214,
+       215
+      ]
+     },
+     {
+      "run_id": "coach-6",
+      "agent": "coach",
+      "event_key": "offtrack",
+      "session_time": 1572.683333333722,
+      "tick": 273598,
+      "start_wall": 1793408012889,
+      "end_wall": 1793408032475,
+      "trigger": "offtrack",
+      "model": "kimi-k3",
+      "context_radio": [
+       {
+        "message_id": "62ad6f237fb2df99",
+        "agent": "coach"
+       },
+       {
+        "message_id": "29deffa7102409e1",
+        "agent": "coach"
+       },
+       {
+        "message_id": "b6cffb2999b78b8f",
+        "agent": "vehicle_engineer"
+       },
+       {
+        "message_id": "17de3fc72c75dba2",
+        "agent": "strategist"
+       },
+       {
+        "message_id": "011efe3a879ed20c",
+        "agent": "coach"
+       }
+      ],
+      "spans": [
+       {
+        "kind": "llm",
+        "call": 1,
+        "name": "kimi-k3",
+        "start_wall": 1793408012889,
+        "end_wall": 1793408017055,
+        "ok": true,
+        "latency_ms": 4165.3,
+        "error": null,
+        "tool_calls": [
+         "get_recent_detector_events",
+         "get_stint_history"
+        ]
+       },
+       {
+        "kind": "tool",
+        "name": "get_recent_detector_events",
+        "start_wall": 1793408017054.86,
+        "end_wall": 1793408017056,
+        "latency_ms": 1.14,
+        "ok": true,
+        "args": {
+         "limit": 30
+        },
+        "result": {
+         "type": "object",
+         "keys": [
+          "requested_types",
+          "returned",
+          "available",
+          "events"
+         ],
+         "size": 4
+        }
+       },
+       {
+        "kind": "tool",
+        "name": "get_stint_history",
+        "start_wall": 1793408017055.85,
+        "end_wall": 1793408017056,
+        "latency_ms": 0.15,
+        "ok": true,
+        "args": {},
+        "result": {
+         "type": "object",
+         "keys": [
+          "current_stint",
+          "stint_start_lap",
+          "laps_on_tyres",
+          "stints"
+         ],
+         "size": 4
+        }
+       },
+       {
+        "kind": "llm",
+        "call": 2,
+        "name": "kimi-k3",
+        "start_wall": 1793408017056,
+        "end_wall": 1793408019810,
+        "ok": true,
+        "latency_ms": 2753.57,
+        "error": null,
+        "tool_calls": [
+         "get_corner_detail"
+        ]
+       },
+       {
+        "kind": "tool",
+        "name": "get_corner_detail",
+        "start_wall": 1793408019809.62,
+        "end_wall": 1793408020094,
+        "latency_ms": 284.38,
+        "ok": true,
+        "args": {
+         "corner": "C09"
+        },
+        "result": {
+         "type": "object",
+         "keys": [
+          "requested_lap_dist_pct",
+          "live",
+          "telemetry"
+         ],
+         "size": 3
+        }
+       },
+       {
+        "kind": "llm",
+        "call": 3,
+        "name": "kimi-k3",
+        "start_wall": 1793408020095,
+        "end_wall": 1793408032474,
+        "ok": true,
+        "latency_ms": 12379.39,
+        "error": null,
+        "tool_calls": []
+       }
+      ],
+      "validations": [
+       {
+        "ok": true,
+        "unsupported": [],
+        "repaired": false,
+        "word_count": 24
+       }
+      ],
+      "outcome": "radio",
+      "message_id": "2a0fa73977d7a046",
+      "latency_ms": 19586.13,
+      "turns": 3,
+      "seqs": [
+       222,
+       223,
+       227,
+       228,
+       229,
+       230,
+       235,
+       236,
+       237,
+       243,
+       244,
+       245
+      ]
+     },
+     {
+      "run_id": "spotter-3",
+      "agent": "spotter",
+      "event_key": "incident",
+      "session_time": 1573.2833333337214,
+      "tick": 273634,
+      "start_wall": 1793408013189,
+      "end_wall": 1793408026884,
+      "trigger": "incident",
+      "model": "kimi-k3",
+      "context_radio": [
+       {
+        "message_id": "62ad6f237fb2df99",
+        "agent": "coach"
+       },
+       {
+        "message_id": "29deffa7102409e1",
+        "agent": "coach"
+       },
+       {
+        "message_id": "b6cffb2999b78b8f",
+        "agent": "vehicle_engineer"
+       },
+       {
+        "message_id": "17de3fc72c75dba2",
+        "agent": "strategist"
+       },
+       {
+        "message_id": "011efe3a879ed20c",
+        "agent": "coach"
+       }
+      ],
+      "spans": [
+       {
+        "kind": "llm",
+        "call": 1,
+        "name": "kimi-k3",
+        "start_wall": 1793408013189,
+        "end_wall": 1793408017368,
+        "ok": true,
+        "latency_ms": 4178.91,
+        "error": null,
+        "tool_calls": [
+         "get_standings_around_player",
+         "get_recent_detector_events"
+        ]
+       },
+       {
+        "kind": "tool",
+        "name": "get_standings_around_player",
+        "start_wall": 1793408017367.94,
+        "end_wall": 1793408017368,
+        "latency_ms": 0.06,
+        "ok": true,
+        "args": {
+         "window": 3
+        },
+        "result": {
+         "type": "object",
+         "keys": [
+          "gap_basis",
+          "reference_lap_time_s",
+          "player_position",
+          "field_size",
+          "cars",
+          "unavailable"
+         ],
+         "size": 6
+        }
+       },
+       {
+        "kind": "tool",
+        "name": "get_recent_detector_events",
+        "start_wall": 1793408017368.3,
+        "end_wall": 1793408017369,
+        "latency_ms": 0.7,
+        "ok": true,
+        "args": {
+         "limit": 20
+        },
+        "result": {
+         "type": "object",
+         "keys": [
+          "requested_types",
+          "returned",
+          "available",
+          "events"
+         ],
+         "size": 4
+        }
+       },
+       {
+        "kind": "llm",
+        "call": 2,
+        "name": "kimi-k3",
+        "start_wall": 1793408017369,
+        "end_wall": 1793408026884,
+        "ok": true,
+        "latency_ms": 9515.02,
+        "error": null,
+        "tool_calls": []
+       }
+      ],
+      "validations": [
+       {
+        "ok": true,
+        "unsupported": [],
+        "repaired": false,
+        "word_count": 16
+       }
+      ],
+      "outcome": "radio",
+      "message_id": "30c70b64f9cf5931",
+      "latency_ms": 13695.82,
+      "turns": 2,
+      "seqs": [
+       225,
+       226,
+       231,
+       232,
+       233,
+       234,
+       238,
+       239,
+       240
+      ]
+     },
+     {
+      "run_id": "strategist-5",
+      "agent": "strategist",
+      "event_key": "pit_window_closing",
+      "session_time": 1662.6833333336401,
+      "tick": 278998,
+      "start_wall": 1793408057889,
+      "end_wall": 1793408085165,
+      "trigger": "pit_window_closing",
+      "model": "kimi-k3",
+      "context_radio": [
+       {
+        "message_id": "b6cffb2999b78b8f",
+        "agent": "vehicle_engineer"
+       },
+       {
+        "message_id": "17de3fc72c75dba2",
+        "agent": "strategist"
+       },
+       {
+        "message_id": "011efe3a879ed20c",
+        "agent": "coach"
+       },
+       {
+        "message_id": "30c70b64f9cf5931",
+        "agent": "spotter"
+       },
+       {
+        "message_id": "2a0fa73977d7a046",
+        "agent": "coach"
+       }
+      ],
+      "spans": [
+       {
+        "kind": "llm",
+        "call": 1,
+        "name": "kimi-k3",
+        "start_wall": 1793408057889,
+        "end_wall": 1793408069712,
+        "ok": true,
+        "latency_ms": 11822.75,
+        "error": null,
+        "tool_calls": [
+         "get_fuel_projection",
+         "simulate_pit_outcome"
+        ]
+       },
+       {
+        "kind": "tool",
+        "name": "get_fuel_projection",
+        "start_wall": 1793408069711.9,
+        "end_wall": 1793408069712,
+        "latency_ms": 0.1,
+        "ok": true,
+        "args": {},
+        "result": {
+         "type": "object",
+         "keys": [
+          "level_l",
+          "capacity_l",
+          "per_lap_l",
+          "per_lap_std_l",
+          "samples",
+          "laps_remaining",
+          "laps_to_finish",
+          "fuel_to_finish_l",
+          "margin_l",
+          "margin_laps",
+          "pit_window_earliest_lap",
+          "pit_window_latest_lap"
+         ],
+         "size": 14
+        }
+       },
+       {
+        "kind": "tool",
+        "name": "simulate_pit_outcome",
+        "start_wall": 1793408069711.8,
+        "end_wall": 1793408069712,
+        "latency_ms": 0.2,
+        "ok": true,
+        "args": {},
+        "result": {
+         "type": "object",
+         "keys": [
+          "grounded",
+          "reason",
+          "stop_lap",
+          "current_lap",
+          "laps_before_stop",
+          "under_yellow",
+          "pit_lane_loss_s",
+          "effective_loss_s",
+          "position_before",
+          "rejoin_position",
+          "positions_lost",
+          "cars_clearing"
+         ],
+         "size": 19
+        }
+       },
+       {
+        "kind": "llm",
+        "call": 2,
+        "name": "kimi-k3",
+        "start_wall": 1793408069713,
+        "end_wall": 1793408085164,
+        "ok": true,
+        "latency_ms": 15451.84,
+        "error": null,
+        "tool_calls": []
+       }
+      ],
+      "validations": [
+       {
+        "ok": true,
+        "unsupported": [],
+        "repaired": false,
+        "word_count": 13
+       }
+      ],
+      "outcome": "radio",
+      "message_id": "5290d97018fd71e5",
+      "latency_ms": 27276.23,
+      "turns": 2,
+      "seqs": [
+       250,
+       251,
+       252,
+       253,
+       254,
+       255,
+       259,
+       260,
+       261
+      ]
+     },
+     {
+      "run_id": "coach-7",
+      "agent": "coach",
+      "event_key": "offtrack",
+      "session_time": 1714.3333333335931,
+      "tick": 282097,
+      "start_wall": 1793408083714,
+      "end_wall": 1793408121298,
+      "trigger": "offtrack",
+      "model": "kimi-k3",
+      "context_radio": [
+       {
+        "message_id": "b6cffb2999b78b8f",
+        "agent": "vehicle_engineer"
+       },
+       {
+        "message_id": "17de3fc72c75dba2",
+        "agent": "strategist"
+       },
+       {
+        "message_id": "011efe3a879ed20c",
+        "agent": "coach"
+       },
+       {
+        "message_id": "30c70b64f9cf5931",
+        "agent": "spotter"
+       },
+       {
+        "message_id": "2a0fa73977d7a046",
+        "agent": "coach"
+       }
+      ],
+      "spans": [
+       {
+        "kind": "llm",
+        "call": 1,
+        "name": "kimi-k3",
+        "start_wall": 1793408083715,
+        "end_wall": 1793408105882,
+        "ok": true,
+        "latency_ms": 22167.62,
+        "error": null,
+        "tool_calls": [
+         "get_corner_detail",
+         "get_recent_detector_events"
+        ]
+       },
+       {
+        "kind": "tool",
+        "name": "get_corner_detail",
+        "start_wall": 1793408105882.55,
+        "end_wall": 1793408106186,
+        "latency_ms": 303.45,
+        "ok": true,
+        "args": {
+         "corner": "C09"
+        },
+        "result": {
+         "type": "object",
+         "keys": [
+          "requested_lap_dist_pct",
+          "live",
+          "telemetry"
+         ],
+         "size": 3
+        }
+       },
+       {
+        "kind": "tool",
+        "name": "get_recent_detector_events",
+        "start_wall": 1793408106185.58,
+        "end_wall": 1793408106186,
+        "latency_ms": 0.42,
+        "ok": true,
+        "args": {
+         "limit": 30,
+         "types": "[\"offtrack\",\"recurring_issue\",\"lockup\",\"incident\"]"
+        },
+        "result": {
+         "type": "object",
+         "keys": [
+          "requested_types",
+          "returned",
+          "available",
+          "events"
+         ],
+         "size": 4
+        }
+       },
+       {
+        "kind": "llm",
+        "call": 2,
+        "name": "kimi-k3",
+        "start_wall": 1793408106186,
+        "end_wall": 1793408121298,
+        "ok": true,
+        "latency_ms": 15110.98,
+        "error": null,
+        "tool_calls": []
+       }
+      ],
+      "validations": [
+       {
+        "ok": true,
+        "unsupported": [],
+        "repaired": false,
+        "word_count": 21
+       }
+      ],
+      "outcome": "radio",
+      "message_id": "59073e74dd981620",
+      "latency_ms": 37584.09,
+      "turns": 2,
+      "seqs": [
+       257,
+       258,
+       271,
+       272,
+       273,
+       274,
+       288,
+       289,
+       290
+      ]
+     },
+     {
+      "run_id": "strategist-6",
+      "agent": "strategist",
+      "event_key": "fuel_critical",
+      "session_time": 1731.6833333335774,
+      "tick": 283138,
+      "start_wall": 1793408092389,
+      "end_wall": 1793408108965,
+      "trigger": "fuel_critical",
+      "model": "kimi-k3",
+      "context_radio": [
+       {
+        "message_id": "17de3fc72c75dba2",
+        "agent": "strategist"
+       },
+       {
+        "message_id": "011efe3a879ed20c",
+        "agent": "coach"
+       },
+       {
+        "message_id": "30c70b64f9cf5931",
+        "agent": "spotter"
+       },
+       {
+        "message_id": "2a0fa73977d7a046",
+        "agent": "coach"
+       },
+       {
+        "message_id": "5290d97018fd71e5",
+        "agent": "strategist"
+       }
+      ],
+      "spans": [
+       {
+        "kind": "llm",
+        "call": 1,
+        "name": "kimi-k3",
+        "start_wall": 1793408092390,
+        "end_wall": 1793408095808,
+        "ok": true,
+        "latency_ms": 3417.72,
+        "error": null,
+        "tool_calls": [
+         "get_fuel_projection",
+         "simulate_pit_outcome"
+        ]
+       },
+       {
+        "kind": "tool",
+        "name": "get_fuel_projection",
+        "start_wall": 1793408095807.9,
+        "end_wall": 1793408095808,
+        "latency_ms": 0.1,
+        "ok": true,
+        "args": {},
+        "result": {
+         "type": "object",
+         "keys": [
+          "level_l",
+          "capacity_l",
+          "per_lap_l",
+          "per_lap_std_l",
+          "samples",
+          "laps_remaining",
+          "laps_to_finish",
+          "fuel_to_finish_l",
+          "margin_l",
+          "margin_laps",
+          "pit_window_earliest_lap",
+          "pit_window_latest_lap"
+         ],
+         "size": 14
+        }
+       },
+       {
+        "kind": "tool",
+        "name": "simulate_pit_outcome",
+        "start_wall": 1793408095807.81,
+        "end_wall": 1793408095808,
+        "latency_ms": 0.19,
+        "ok": true,
+        "args": {},
+        "result": {
+         "type": "object",
+         "keys": [
+          "grounded",
+          "reason",
+          "stop_lap",
+          "current_lap",
+          "laps_before_stop",
+          "under_yellow",
+          "pit_lane_loss_s",
+          "effective_loss_s",
+          "position_before",
+          "rejoin_position",
+          "positions_lost",
+          "cars_clearing"
+         ],
+         "size": 19
+        }
+       },
+       {
+        "kind": "llm",
+        "call": 2,
+        "name": "kimi-k3",
+        "start_wall": 1793408095808,
+        "end_wall": 1793408108965,
+        "ok": true,
+        "latency_ms": 13156.55,
+        "error": null,
+        "tool_calls": []
+       }
+      ],
+      "validations": [
+       {
+        "ok": true,
+        "unsupported": [],
+        "repaired": false,
+        "word_count": 20
+       }
+      ],
+      "outcome": "radio",
+      "message_id": "1ad8db2c9a3564b8",
+      "latency_ms": 16576.29,
+      "turns": 2,
+      "seqs": [
+       265,
+       266,
+       267,
+       268,
+       269,
+       270,
+       275,
+       276,
+       277
+      ]
+     },
+     {
+      "run_id": "spotter-4",
+      "agent": "spotter",
+      "event_key": "incident",
+      "session_time": 1770.633333333542,
+      "tick": 285475,
+      "start_wall": 1793408111864,
+      "end_wall": 1793408126305,
+      "trigger": "incident",
+      "model": "kimi-k3",
+      "context_radio": [
+       {
+        "message_id": "011efe3a879ed20c",
+        "agent": "coach"
+       },
+       {
+        "message_id": "30c70b64f9cf5931",
+        "agent": "spotter"
+       },
+       {
+        "message_id": "2a0fa73977d7a046",
+        "agent": "coach"
+       },
+       {
+        "message_id": "5290d97018fd71e5",
+        "agent": "strategist"
+       },
+       {
+        "message_id": "1ad8db2c9a3564b8",
+        "agent": "strategist"
+       }
+      ],
+      "spans": [
+       {
+        "kind": "llm",
+        "call": 1,
+        "name": "kimi-k3",
+        "start_wall": 1793408111865,
+        "end_wall": 1793408116095,
+        "ok": true,
+        "latency_ms": 4230.25,
+        "error": null,
+        "tool_calls": [
+         "get_recent_detector_events"
+        ]
+       },
+       {
+        "kind": "tool",
+        "name": "get_recent_detector_events",
+        "start_wall": 1793408116095.48,
+        "end_wall": 1793408116096,
+        "latency_ms": 0.52,
+        "ok": true,
+        "args": {
+         "limit": 10,
+         "types": "[\"incident\",\"offtrack\"]"
+        },
+        "result": {
+         "type": "object",
+         "keys": [
+          "requested_types",
+          "returned",
+          "available",
+          "events"
+         ],
+         "size": 4
+        }
+       },
+       {
+        "kind": "llm",
+        "call": 2,
+        "name": "kimi-k3",
+        "start_wall": 1793408116096,
+        "end_wall": 1793408126305,
+        "ok": true,
+        "latency_ms": 10208.94,
+        "error": null,
+        "tool_calls": []
+       }
+      ],
+      "validations": [
+       {
+        "ok": true,
+        "unsupported": [],
+        "repaired": false,
+        "word_count": 14
+       }
+      ],
+      "outcome": "radio",
+      "message_id": "bb87c377cb01c210",
+      "latency_ms": 14440.97,
+      "turns": 2,
+      "seqs": [
+       282,
+       283,
+       284,
+       285,
+       286,
+       300,
+       301,
+       302
+      ]
+     },
+     {
+      "run_id": "vehicle_engineer-4",
+      "agent": "vehicle_engineer",
+      "event_key": "pit_entry",
+      "session_time": 1787.6166666668598,
+      "tick": 286494,
+      "start_wall": 1793408121298,
+      "end_wall": 1793408163096,
+      "trigger": "pit_entry",
+      "model": "kimi-k3",
+      "context_radio": [
+       {
+        "message_id": "011efe3a879ed20c",
+        "agent": "coach"
+       },
+       {
+        "message_id": "30c70b64f9cf5931",
+        "agent": "spotter"
+       },
+       {
+        "message_id": "2a0fa73977d7a046",
+        "agent": "coach"
+       },
+       {
+        "message_id": "5290d97018fd71e5",
+        "agent": "strategist"
+       },
+       {
+        "message_id": "1ad8db2c9a3564b8",
+        "agent": "strategist"
+       }
+      ],
+      "spans": [
+       {
+        "kind": "llm",
+        "call": 1,
+        "name": "kimi-k3",
+        "start_wall": 1793408121299,
+        "end_wall": 1793408125544,
+        "ok": true,
+        "latency_ms": 4244.89,
+        "error": null,
+        "tool_calls": [
+         "get_tyre_trend",
+         "get_recent_detector_events"
+        ]
+       },
+       {
+        "kind": "tool",
+        "name": "get_tyre_trend",
+        "start_wall": 1793408125543.87,
+        "end_wall": 1793408125544,
+        "latency_ms": 0.13,
+        "ok": true,
+        "args": {},
+        "result": {
+         "type": "object",
+         "keys": [
+          "temps_c",
+          "pressures_kpa",
+          "temp_trend_c_per_lap",
+          "pressure_trend_per_lap",
+          "stint_laps",
+          "laps_on_tyres"
+         ],
+         "size": 6
+        }
+       },
+       {
+        "kind": "tool",
+        "name": "get_recent_detector_events",
+        "start_wall": 1793408125543.96,
+        "end_wall": 1793408125545,
+        "latency_ms": 1.04,
+        "ok": true,
+        "args": {
+         "limit": 30
+        },
+        "result": {
+         "type": "object",
+         "keys": [
+          "requested_types",
+          "returned",
+          "available",
+          "events"
+         ],
+         "size": 4
+        }
+       },
+       {
+        "kind": "llm",
+        "call": 2,
+        "name": "kimi-k3",
+        "start_wall": 1793408125545,
+        "end_wall": 1793408128227,
+        "ok": true,
+        "latency_ms": 2681.82,
+        "error": null,
+        "tool_calls": [
+         "get_car_health"
+        ]
+       },
+       {
+        "kind": "tool",
+        "name": "get_car_health",
+        "start_wall": 1793408128226.86,
+        "end_wall": 1793408128227,
+        "latency_ms": 0.14,
+        "ok": true,
+        "args": {},
+        "result": {
+         "type": "object",
+         "keys": [
+          "oil_temp",
+          "water_temp",
+          "oil_pressure",
+          "fuel_pressure",
+          "voltage",
+          "tow_time",
+          "engine_warnings",
+          "thresholds",
+          "lap"
+         ],
+         "size": 9
+        }
+       },
+       {
+        "kind": "llm",
+        "call": 3,
+        "name": "kimi-k3",
+        "start_wall": 1793408128227,
+        "end_wall": 1793408144444,
+        "ok": true,
+        "latency_ms": 16216.36,
+        "error": null,
+        "tool_calls": []
+       },
+       {
+        "kind": "llm",
+        "call": 4,
+        "name": "kimi-k3",
+        "start_wall": 1793408144444,
+        "end_wall": 1793408163095,
+        "ok": true,
+        "latency_ms": 18650.52,
+        "error": null,
+        "tool_calls": []
+       }
+      ],
+      "validations": [
+       {
+        "ok": false,
+        "unsupported": [
+         "+16"
+        ],
+        "repaired": false,
+        "word_count": 23
+       },
+       {
+        "ok": true,
+        "unsupported": [],
+        "repaired": true,
+        "word_count": 24
+       }
+      ],
+      "outcome": "radio",
+      "message_id": "994c5115a365d927",
+      "latency_ms": 41797.34,
+      "turns": 4,
+      "seqs": [
+       292,
+       293,
+       296,
+       297,
+       298,
+       299,
+       304,
+       305,
+       306,
+       311,
+       312,
+       313,
+       317,
+       318,
+       319
+      ]
+     },
+     {
+      "run_id": "strategist-7",
+      "agent": "strategist",
+      "event_key": "fuel_margin_low",
+      "session_time": 1854.6833333334655,
+      "tick": 290518,
+      "start_wall": 1793408153889,
+      "end_wall": 1793408196619,
+      "trigger": "fuel_margin_low",
+      "model": "kimi-k3",
+      "context_radio": [
+       {
+        "message_id": "2a0fa73977d7a046",
+        "agent": "coach"
+       },
+       {
+        "message_id": "5290d97018fd71e5",
+        "agent": "strategist"
+       },
+       {
+        "message_id": "1ad8db2c9a3564b8",
+        "agent": "strategist"
+       },
+       {
+        "message_id": "59073e74dd981620",
+        "agent": "coach"
+       },
+       {
+        "message_id": "bb87c377cb01c210",
+        "agent": "spotter"
+       }
+      ],
+      "spans": [
+       {
+        "kind": "llm",
+        "call": 1,
+        "name": "kimi-k3",
+        "start_wall": 1793408153890,
+        "end_wall": 1793408166618,
+        "ok": true,
+        "latency_ms": 12728.81,
+        "error": null,
+        "tool_calls": [
+         "get_fuel_projection",
+         "get_standings_around_player"
+        ]
+       },
+       {
+        "kind": "tool",
+        "name": "get_fuel_projection",
+        "start_wall": 1793408166618.87,
+        "end_wall": 1793408166619,
+        "latency_ms": 0.13,
+        "ok": true,
+        "args": {},
+        "result": {
+         "type": "object",
+         "keys": [
+          "level_l",
+          "capacity_l",
+          "per_lap_l",
+          "per_lap_std_l",
+          "samples",
+          "laps_remaining",
+          "laps_to_finish",
+          "fuel_to_finish_l",
+          "margin_l",
+          "margin_laps",
+          "pit_window_earliest_lap",
+          "pit_window_latest_lap"
+         ],
+         "size": 14
+        }
+       },
+       {
+        "kind": "tool",
+        "name": "get_standings_around_player",
+        "start_wall": 1793408166618.94,
+        "end_wall": 1793408166619,
+        "latency_ms": 0.06,
+        "ok": true,
+        "args": {
+         "window": 3
+        },
+        "result": {
+         "type": "object",
+         "keys": [
+          "gap_basis",
+          "reference_lap_time_s",
+          "player_position",
+          "field_size",
+          "cars",
+          "unavailable"
+         ],
+         "size": 6
+        }
+       },
+       {
+        "kind": "llm",
+        "call": 2,
+        "name": "kimi-k3",
+        "start_wall": 1793408166619,
+        "end_wall": 1793408176397,
+        "ok": true,
+        "latency_ms": 9777.85,
+        "error": null,
+        "tool_calls": [
+         "simulate_pit_outcome"
+        ]
+       },
+       {
+        "kind": "tool",
+        "name": "simulate_pit_outcome",
+        "start_wall": 1793408176396.63,
+        "end_wall": 1793408176397,
+        "latency_ms": 0.37,
+        "ok": true,
+        "args": {
+         "stop_lap": 13
+        },
+        "result": {
+         "type": "object",
+         "keys": [
+          "grounded",
+          "reason",
+          "stop_lap",
+          "current_lap",
+          "laps_before_stop",
+          "under_yellow",
+          "pit_lane_loss_s",
+          "effective_loss_s",
+          "position_before",
+          "rejoin_position",
+          "positions_lost",
+          "cars_clearing"
+         ],
+         "size": 19
+        }
+       },
+       {
+        "kind": "llm",
+        "call": 3,
+        "name": "kimi-k3",
+        "start_wall": 1793408176397,
+        "end_wall": 1793408196618,
+        "ok": true,
+        "latency_ms": 20220.9,
+        "error": null,
+        "tool_calls": []
+       }
+      ],
+      "validations": [
+       {
+        "ok": true,
+        "unsupported": [],
+        "repaired": false,
+        "word_count": 17
+       }
+      ],
+      "outcome": "radio",
+      "message_id": "657c825d1d556951",
+      "latency_ms": 42730.12,
+      "turns": 3,
+      "seqs": [
+       315,
+       316,
+       322,
+       323,
+       324,
+       325,
+       331,
+       332,
+       333,
+       338,
+       339,
+       340
+      ]
+     },
+     {
+      "run_id": "coach-8",
+      "agent": "coach",
+      "event_key": "recurring_issue",
+      "session_time": 1883.4333333334394,
+      "tick": 292243,
+      "start_wall": 1793408168264,
+      "end_wall": 1793408202248,
+      "trigger": "recurring_issue",
+      "model": "kimi-k3",
+      "context_radio": [
+       {
+        "message_id": "5290d97018fd71e5",
+        "agent": "strategist"
+       },
+       {
+        "message_id": "1ad8db2c9a3564b8",
+        "agent": "strategist"
+       },
+       {
+        "message_id": "59073e74dd981620",
+        "agent": "coach"
+       },
+       {
+        "message_id": "bb87c377cb01c210",
+        "agent": "spotter"
+       },
+       {
+        "message_id": "994c5115a365d927",
+        "agent": "vehicle_engineer"
+       }
+      ],
+      "spans": [
+       {
+        "kind": "llm",
+        "call": 1,
+        "name": "kimi-k3",
+        "start_wall": 1793408168265,
+        "end_wall": 1793408181175,
+        "ok": true,
+        "latency_ms": 12910.08,
+        "error": null,
+        "tool_calls": [
+         "get_corner_detail",
+         "get_recent_detector_events"
+        ]
+       },
+       {
+        "kind": "tool",
+        "name": "get_corner_detail",
+        "start_wall": 1793408181175.26,
+        "end_wall": 1793408181442,
+        "latency_ms": 266.74,
+        "ok": true,
+        "args": {
+         "corner": "C09"
+        },
+        "result": {
+         "type": "object",
+         "keys": [
+          "requested_lap_dist_pct",
+          "live",
+          "telemetry"
+         ],
+         "size": 3
+        }
+       },
+       {
+        "kind": "tool",
+        "name": "get_recent_detector_events",
+        "start_wall": 1793408181442.5,
+        "end_wall": 1793408181443,
+        "latency_ms": 0.5,
+        "ok": true,
+        "args": {
+         "limit": 20,
+         "types": "[\"offtrack\",\"incident\",\"recurring_issue\"]"
+        },
+        "result": {
+         "type": "object",
+         "keys": [
+          "requested_types",
+          "returned",
+          "available",
+          "events"
+         ],
+         "size": 4
+        }
+       },
+       {
+        "kind": "llm",
+        "call": 2,
+        "name": "kimi-k3",
+        "start_wall": 1793408181443,
+        "end_wall": 1793408202247,
+        "ok": true,
+        "latency_ms": 20804.78,
+        "error": null,
+        "tool_calls": []
+       }
+      ],
+      "validations": [
+       {
+        "ok": true,
+        "unsupported": [],
+        "repaired": false,
+        "word_count": 22
+       }
+      ],
+      "outcome": "radio",
+      "message_id": "2bbc0ca378114bd7",
+      "latency_ms": 33984.14,
+      "turns": 2,
+      "seqs": [
+       329,
+       330,
+       334,
+       335,
+       336,
+       337,
+       351,
+       352,
+       353
+      ]
+     },
+     {
+      "run_id": "vehicle_engineer-5",
+      "agent": "vehicle_engineer",
+      "event_key": "recurring_issue",
+      "session_time": 1883.4333333334394,
+      "tick": 292243,
+      "start_wall": 1793408196620,
+      "end_wall": 1793408211070,
+      "trigger": "recurring_issue",
+      "model": "kimi-k3",
+      "context_radio": [
+       {
+        "message_id": "5290d97018fd71e5",
+        "agent": "strategist"
+       },
+       {
+        "message_id": "1ad8db2c9a3564b8",
+        "agent": "strategist"
+       },
+       {
+        "message_id": "59073e74dd981620",
+        "agent": "coach"
+       },
+       {
+        "message_id": "bb87c377cb01c210",
+        "agent": "spotter"
+       },
+       {
+        "message_id": "994c5115a365d927",
+        "agent": "vehicle_engineer"
+       }
+      ],
+      "spans": [
+       {
+        "kind": "llm",
+        "call": 1,
+        "name": "kimi-k3",
+        "start_wall": 1793408196620,
+        "end_wall": 1793408200558,
+        "ok": true,
+        "latency_ms": 3937.17,
+        "error": null,
+        "tool_calls": [
+         "get_corner_detail",
+         "get_tyre_trend",
+         "get_car_health"
+        ]
+       },
+       {
+        "kind": "tool",
+        "name": "get_corner_detail",
+        "start_wall": 1793408200557.56,
+        "end_wall": 1793408200815,
+        "latency_ms": 257.44,
+        "ok": true,
+        "args": {
+         "corner": "C09"
+        },
+        "result": {
+         "type": "object",
+         "keys": [
+          "requested_lap_dist_pct",
+          "live",
+          "telemetry"
+         ],
+         "size": 3
+        }
+       },
+       {
+        "kind": "tool",
+        "name": "get_tyre_trend",
+        "start_wall": 1793408200814.92,
+        "end_wall": 1793408200815,
+        "latency_ms": 0.08,
+        "ok": true,
+        "args": {},
+        "result": {
+         "type": "object",
+         "keys": [
+          "temps_c",
+          "pressures_kpa",
+          "temp_trend_c_per_lap",
+          "pressure_trend_per_lap",
+          "stint_laps",
+          "laps_on_tyres",
+          "unavailable"
+         ],
+         "size": 7
+        }
+       },
+       {
+        "kind": "tool",
+        "name": "get_car_health",
+        "start_wall": 1793408200815.92,
+        "end_wall": 1793408200816,
+        "latency_ms": 0.08,
+        "ok": true,
+        "args": {},
+        "result": {
+         "type": "object",
+         "keys": [
+          "oil_temp",
+          "water_temp",
+          "oil_pressure",
+          "fuel_pressure",
+          "voltage",
+          "tow_time",
+          "engine_warnings",
+          "thresholds",
+          "lap"
+         ],
+         "size": 9
+        }
+       },
+       {
+        "kind": "llm",
+        "call": 2,
+        "name": "kimi-k3",
+        "start_wall": 1793408200816,
+        "end_wall": 1793408211069,
+        "ok": true,
+        "latency_ms": 10253.57,
+        "error": null,
+        "tool_calls": []
+       }
+      ],
+      "validations": [
+       {
+        "ok": true,
+        "unsupported": [],
+        "repaired": false,
+        "word_count": 16
+       }
+      ],
+      "outcome": "radio",
+      "message_id": "bcb46eae45f561c5",
+      "latency_ms": 14450.62,
+      "turns": 2,
+      "seqs": [
+       342,
+       343,
+       346,
+       347,
+       348,
+       349,
+       350,
+       357,
+       358,
+       359
+      ]
+     },
+     {
+      "run_id": "coach-9",
+      "agent": "coach",
+      "event_key": "offtrack",
+      "session_time": 2080.100000000365,
+      "tick": 304043,
+      "start_wall": 1793408266597,
+      "end_wall": 1793408284176,
+      "trigger": "offtrack",
+      "model": "kimi-k3",
+      "context_radio": [
+       {
+        "message_id": "bb87c377cb01c210",
+        "agent": "spotter"
+       },
+       {
+        "message_id": "994c5115a365d927",
+        "agent": "vehicle_engineer"
+       },
+       {
+        "message_id": "657c825d1d556951",
+        "agent": "strategist"
+       },
+       {
+        "message_id": "2bbc0ca378114bd7",
+        "agent": "coach"
+       },
+       {
+        "message_id": "bcb46eae45f561c5",
+        "agent": "vehicle_engineer"
+       }
+      ],
+      "spans": [
+       {
+        "kind": "llm",
+        "call": 1,
+        "name": "kimi-k3",
+        "start_wall": 1793408266598,
+        "end_wall": 1793408272476,
+        "ok": true,
+        "latency_ms": 5878.49,
+        "error": null,
+        "tool_calls": [
+         "get_corner_detail",
+         "get_recent_detector_events",
+         "get_stint_history"
+        ]
+       },
+       {
+        "kind": "tool",
+        "name": "get_corner_detail",
+        "start_wall": 1793408272476.26,
+        "end_wall": 1793408272742,
+        "latency_ms": 265.74,
+        "ok": true,
+        "args": {
+         "corner": "C09"
+        },
+        "result": {
+         "type": "object",
+         "keys": [
+          "requested_lap_dist_pct",
+          "live",
+          "telemetry"
+         ],
+         "size": 3
+        }
+       },
+       {
+        "kind": "tool",
+        "name": "get_recent_detector_events",
+        "start_wall": 1793408272742.44,
+        "end_wall": 1793408272743,
+        "latency_ms": 0.56,
+        "ok": true,
+        "args": {
+         "limit": 30,
+         "types": "[\"recurring_issue\",\"offtrack\",\"incident\",\"lockup\"]"
+        },
+        "result": {
+         "type": "object",
+         "keys": [
+          "requested_types",
+          "returned",
+          "available",
+          "events"
+         ],
+         "size": 4
+        }
+       },
+       {
+        "kind": "tool",
+        "name": "get_stint_history",
+        "start_wall": 1793408272742.8,
+        "end_wall": 1793408272743,
+        "latency_ms": 0.2,
+        "ok": true,
+        "args": {},
+        "result": {
+         "type": "object",
+         "keys": [
+          "current_stint",
+          "stint_start_lap",
+          "laps_on_tyres",
+          "stints"
+         ],
+         "size": 4
+        }
+       },
+       {
+        "kind": "llm",
+        "call": 2,
+        "name": "kimi-k3",
+        "start_wall": 1793408272743,
+        "end_wall": 1793408284176,
+        "ok": true,
+        "latency_ms": 11432.64,
+        "error": null,
+        "tool_calls": []
+       }
+      ],
+      "validations": [
+       {
+        "ok": true,
+        "unsupported": [],
+        "repaired": false,
+        "word_count": 21
+       }
+      ],
+      "outcome": "radio",
+      "message_id": "9c0c1866bac0f894",
+      "latency_ms": 17579.37,
+      "turns": 2,
+      "seqs": [
+       363,
+       364,
+       372,
+       373,
+       374,
+       375,
+       376,
+       383,
+       384,
+       385
+      ]
+     },
+     {
+      "run_id": "spotter-5",
+      "agent": "spotter",
+      "event_key": "incident",
+      "session_time": 2080.4833333337033,
+      "tick": 304066,
+      "start_wall": 1793408266789,
+      "end_wall": 1793408283189,
+      "trigger": "incident",
+      "model": "kimi-k3",
+      "context_radio": [
+       {
+        "message_id": "bb87c377cb01c210",
+        "agent": "spotter"
+       },
+       {
+        "message_id": "994c5115a365d927",
+        "agent": "vehicle_engineer"
+       },
+       {
+        "message_id": "657c825d1d556951",
+        "agent": "strategist"
+       },
+       {
+        "message_id": "2bbc0ca378114bd7",
+        "agent": "coach"
+       },
+       {
+        "message_id": "bcb46eae45f561c5",
+        "agent": "vehicle_engineer"
+       }
+      ],
+      "spans": [
+       {
+        "kind": "llm",
+        "call": 1,
+        "name": "kimi-k3",
+        "start_wall": 1793408266790,
+        "end_wall": 1793408271828,
+        "ok": true,
+        "latency_ms": 5038.02,
+        "error": null,
+        "tool_calls": [
+         "get_standings_around_player",
+         "get_recent_detector_events"
+        ]
+       },
+       {
+        "kind": "tool",
+        "name": "get_standings_around_player",
+        "start_wall": 1793408271827.93,
+        "end_wall": 1793408271828,
+        "latency_ms": 0.07,
+        "ok": true,
+        "args": {
+         "window": 3
+        },
+        "result": {
+         "type": "object",
+         "keys": [
+          "gap_basis",
+          "reference_lap_time_s",
+          "player_position",
+          "field_size",
+          "cars",
+          "unavailable"
+         ],
+         "size": 6
+        }
+       },
+       {
+        "kind": "tool",
+        "name": "get_recent_detector_events",
+        "start_wall": 1793408271828.49,
+        "end_wall": 1793408271829,
+        "latency_ms": 0.51,
+        "ok": true,
+        "args": {
+         "limit": 20,
+         "types": "[\"incident\",\"offtrack\"]"
+        },
+        "result": {
+         "type": "object",
+         "keys": [
+          "requested_types",
+          "returned",
+          "available",
+          "events"
+         ],
+         "size": 4
+        }
+       },
+       {
+        "kind": "llm",
+        "call": 2,
+        "name": "kimi-k3",
+        "start_wall": 1793408271829,
+        "end_wall": 1793408283189,
+        "ok": true,
+        "latency_ms": 11360.16,
+        "error": null,
+        "tool_calls": []
+       }
+      ],
+      "validations": [
+       {
+        "ok": true,
+        "unsupported": [],
+        "repaired": false,
+        "word_count": 14
+       }
+      ],
+      "outcome": "radio",
+      "message_id": "d6b5c4ef97cfa8ad",
+      "latency_ms": 16400.1,
+      "turns": 2,
+      "seqs": [
+       366,
+       367,
+       368,
+       369,
+       370,
+       371,
+       378,
+       379,
+       380
+      ]
+     },
+     {
+      "run_id": "coach-10",
+      "agent": "coach",
+      "event_key": "offtrack",
+      "session_time": 2342.53333333704,
+      "tick": 319789,
+      "start_wall": 1793408397814,
+      "end_wall": 1793408446525,
+      "trigger": "offtrack",
+      "model": "kimi-k3",
+      "context_radio": [
+       {
+        "message_id": "657c825d1d556951",
+        "agent": "strategist"
+       },
+       {
+        "message_id": "2bbc0ca378114bd7",
+        "agent": "coach"
+       },
+       {
+        "message_id": "bcb46eae45f561c5",
+        "agent": "vehicle_engineer"
+       },
+       {
+        "message_id": "d6b5c4ef97cfa8ad",
+        "agent": "spotter"
+       },
+       {
+        "message_id": "9c0c1866bac0f894",
+        "agent": "coach"
+       }
+      ],
+      "spans": [
+       {
+        "kind": "llm",
+        "call": 1,
+        "name": "kimi-k3",
+        "start_wall": 1793408397814,
+        "end_wall": 1793408401393,
+        "ok": true,
+        "latency_ms": 3578.75,
+        "error": null,
+        "tool_calls": [
+         "get_recent_detector_events",
+         "get_corner_detail"
+        ]
+       },
+       {
+        "kind": "tool",
+        "name": "get_recent_detector_events",
+        "start_wall": 1793408401392.83,
+        "end_wall": 1793408401394,
+        "latency_ms": 1.17,
+        "ok": true,
+        "args": {
+         "limit": 30
+        },
+        "result": {
+         "type": "object",
+         "keys": [
+          "requested_types",
+          "returned",
+          "available",
+          "events"
+         ],
+         "size": 4
+        }
+       },
+       {
+        "kind": "tool",
+        "name": "get_corner_detail",
+        "start_wall": 1793408401394.62,
+        "end_wall": 1793408401677,
+        "latency_ms": 282.38,
+        "ok": true,
+        "args": {
+         "corner": "C09"
+        },
+        "result": {
+         "type": "object",
+         "keys": [
+          "requested_lap_dist_pct",
+          "live",
+          "telemetry"
+         ],
+         "size": 3
+        }
+       },
+       {
+        "kind": "llm",
+        "call": 2,
+        "name": "kimi-k3",
+        "start_wall": 1793408401677,
+        "end_wall": 1793408407970,
+        "ok": true,
+        "latency_ms": 6293.05,
+        "error": null,
+        "tool_calls": [
+         "get_corner_detail"
+        ]
+       },
+       {
+        "kind": "tool",
+        "name": "get_corner_detail",
+        "start_wall": 1793408407970.15,
+        "end_wall": 1793408408218,
+        "latency_ms": 247.85,
+        "ok": true,
+        "args": {
+         "lap_dist_pct": 0.718
+        },
+        "result": {
+         "type": "object",
+         "keys": [
+          "requested_lap_dist_pct",
+          "live",
+          "telemetry"
+         ],
+         "size": 3
+        }
+       },
+       {
+        "kind": "llm",
+        "call": 3,
+        "name": "kimi-k3",
+        "start_wall": 1793408408218,
+        "end_wall": 1793408429540,
+        "ok": true,
+        "latency_ms": 21322.1,
+        "error": null,
+        "tool_calls": []
+       },
+       {
+        "kind": "llm",
+        "call": 4,
+        "name": "kimi-k3",
+        "start_wall": 1793408429541,
+        "end_wall": 1793408446525,
+        "ok": true,
+        "latency_ms": 16983.15,
+        "error": null,
+        "tool_calls": []
+       }
+      ],
+      "validations": [
+       {
+        "ok": false,
+        "unsupported": [
+         "71.8",
+         "48"
+        ],
+        "repaired": false,
+        "word_count": 26
+       },
+       {
+        "ok": true,
+        "unsupported": [],
+        "repaired": true,
+        "word_count": 23
+       }
+      ],
+      "outcome": "radio",
+      "message_id": "5e4e45d245ba3c4f",
+      "latency_ms": 48711.52,
+      "turns": 4,
+      "seqs": [
+       390,
+       391,
+       392,
+       393,
+       394,
+       395,
+       396,
+       397,
+       398,
+       401,
+       402,
+       403,
+       404,
+       405,
+       406
+      ]
+     },
+     {
+      "run_id": "spotter-6",
+      "agent": "spotter",
+      "event_key": "incident",
+      "session_time": 2483.683333338837,
+      "tick": 328258,
+      "start_wall": 1793408468389,
+      "end_wall": 1793408502111,
+      "trigger": "incident",
+      "model": "kimi-k3",
+      "context_radio": [
+       {
+        "message_id": "2bbc0ca378114bd7",
+        "agent": "coach"
+       },
+       {
+        "message_id": "bcb46eae45f561c5",
+        "agent": "vehicle_engineer"
+       },
+       {
+        "message_id": "d6b5c4ef97cfa8ad",
+        "agent": "spotter"
+       },
+       {
+        "message_id": "9c0c1866bac0f894",
+        "agent": "coach"
+       },
+       {
+        "message_id": "5e4e45d245ba3c4f",
+        "agent": "coach"
+       }
+      ],
+      "spans": [
+       {
+        "kind": "llm",
+        "call": 1,
+        "name": "kimi-k3",
+        "start_wall": 1793408468390,
+        "end_wall": 1793408494645,
+        "ok": true,
+        "latency_ms": 26255.11,
+        "error": null,
+        "tool_calls": [
+         "get_recent_detector_events",
+         "get_standings_around_player"
+        ]
+       },
+       {
+        "kind": "tool",
+        "name": "get_recent_detector_events",
+        "start_wall": 1793408494645.09,
+        "end_wall": 1793408494646,
+        "latency_ms": 0.91,
+        "ok": true,
+        "args": {
+         "limit": 20
+        },
+        "result": {
+         "type": "object",
+         "keys": [
+          "requested_types",
+          "returned",
+          "available",
+          "events"
+         ],
+         "size": 4
+        }
+       },
+       {
+        "kind": "tool",
+        "name": "get_standings_around_player",
+        "start_wall": 1793408494645.97,
+        "end_wall": 1793408494646,
+        "latency_ms": 0.03,
+        "ok": true,
+        "args": {
+         "window": 3
+        },
+        "result": {
+         "type": "object",
+         "keys": [
+          "gap_basis",
+          "reference_lap_time_s",
+          "player_position",
+          "field_size",
+          "cars",
+          "unavailable"
+         ],
+         "size": 6
+        }
+       },
+       {
+        "kind": "llm",
+        "call": 2,
+        "name": "kimi-k3",
+        "start_wall": 1793408494646,
+        "end_wall": 1793408502111,
+        "ok": true,
+        "latency_ms": 7464.85,
+        "error": null,
+        "tool_calls": []
+       }
+      ],
+      "validations": [
+       {
+        "ok": true,
+        "unsupported": [],
+        "repaired": false,
+        "word_count": 14
+       }
+      ],
+      "outcome": "radio",
+      "message_id": "16bd4fccd2879ffb",
+      "latency_ms": 33722.24,
+      "turns": 2,
+      "seqs": [
+       411,
+       412,
+       436,
+       437,
+       438,
+       439,
+       440,
+       441,
+       442
+      ]
+     },
+     {
+      "run_id": "strategist-8",
+      "agent": "strategist",
+      "event_key": "pit_window_closing",
+      "session_time": 2490.6833333389263,
+      "tick": 328678,
+      "start_wall": 1793408471889,
+      "end_wall": 1793408487821,
+      "trigger": "pit_window_closing",
+      "model": "kimi-k3",
+      "context_radio": [
+       {
+        "message_id": "2bbc0ca378114bd7",
+        "agent": "coach"
+       },
+       {
+        "message_id": "bcb46eae45f561c5",
+        "agent": "vehicle_engineer"
+       },
+       {
+        "message_id": "d6b5c4ef97cfa8ad",
+        "agent": "spotter"
+       },
+       {
+        "message_id": "9c0c1866bac0f894",
+        "agent": "coach"
+       },
+       {
+        "message_id": "5e4e45d245ba3c4f",
+        "agent": "coach"
+       }
+      ],
+      "spans": [
+       {
+        "kind": "llm",
+        "call": 1,
+        "name": "kimi-k3",
+        "start_wall": 1793408471890,
+        "end_wall": 1793408475373,
+        "ok": true,
+        "latency_ms": 3482.76,
+        "error": null,
+        "tool_calls": [
+         "get_fuel_projection",
+         "simulate_pit_outcome"
+        ]
+       },
+       {
+        "kind": "tool",
+        "name": "get_fuel_projection",
+        "start_wall": 1793408475372.9,
+        "end_wall": 1793408475373,
+        "latency_ms": 0.1,
+        "ok": true,
+        "args": {},
+        "result": {
+         "type": "object",
+         "keys": [
+          "level_l",
+          "capacity_l",
+          "per_lap_l",
+          "per_lap_std_l",
+          "samples",
+          "laps_remaining",
+          "laps_to_finish",
+          "fuel_to_finish_l",
+          "margin_l",
+          "margin_laps",
+          "pit_window_earliest_lap",
+          "pit_window_latest_lap"
+         ],
+         "size": 14
+        }
+       },
+       {
+        "kind": "tool",
+        "name": "simulate_pit_outcome",
+        "start_wall": 1793408475373.75,
+        "end_wall": 1793408475374,
+        "latency_ms": 0.25,
+        "ok": true,
+        "args": {
+         "stop_lap": 17
+        },
+        "result": {
+         "type": "object",
+         "keys": [
+          "grounded",
+          "reason",
+          "stop_lap",
+          "current_lap",
+          "laps_before_stop",
+          "under_yellow",
+          "pit_lane_loss_s",
+          "effective_loss_s",
+          "position_before",
+          "rejoin_position",
+          "positions_lost",
+          "cars_clearing"
+         ],
+         "size": 19
+        }
+       },
+       {
+        "kind": "llm",
+        "call": 2,
+        "name": "kimi-k3",
+        "start_wall": 1793408475374,
+        "end_wall": 1793408487819,
+        "ok": true,
+        "latency_ms": 12445.86,
+        "error": null,
+        "tool_calls": []
+       }
+      ],
+      "validations": [
+       {
+        "ok": true,
+        "unsupported": [],
+        "repaired": false,
+        "word_count": 10
+       }
+      ],
+      "outcome": "radio",
+      "message_id": "f055c9daa2807663",
+      "latency_ms": 15931.54,
+      "turns": 2,
+      "seqs": [
+       416,
+       417,
+       418,
+       419,
+       420,
+       421,
+       425,
+       426,
+       427
+      ]
+     },
+     {
+      "run_id": "strategist-9",
+      "agent": "strategist",
+      "event_key": "fuel_critical",
+      "session_time": 2499.683333339041,
+      "tick": 329218,
+      "start_wall": 1793408487821,
+      "end_wall": 1793408503200,
+      "trigger": "fuel_critical",
+      "model": "kimi-k3",
+      "context_radio": [
+       {
+        "message_id": "2bbc0ca378114bd7",
+        "agent": "coach"
+       },
+       {
+        "message_id": "bcb46eae45f561c5",
+        "agent": "vehicle_engineer"
+       },
+       {
+        "message_id": "d6b5c4ef97cfa8ad",
+        "agent": "spotter"
+       },
+       {
+        "message_id": "9c0c1866bac0f894",
+        "agent": "coach"
+       },
+       {
+        "message_id": "5e4e45d245ba3c4f",
+        "agent": "coach"
+       }
+      ],
+      "spans": [
+       {
+        "kind": "llm",
+        "call": 1,
+        "name": "kimi-k3",
+        "start_wall": 1793408487822,
+        "end_wall": 1793408492995,
+        "ok": true,
+        "latency_ms": 5173.18,
+        "error": null,
+        "tool_calls": [
+         "get_fuel_projection",
+         "simulate_pit_outcome"
+        ]
+       },
+       {
+        "kind": "tool",
+        "name": "get_fuel_projection",
+        "start_wall": 1793408492994.8,
+        "end_wall": 1793408492995,
+        "latency_ms": 0.2,
+        "ok": true,
+        "args": {},
+        "result": {
+         "type": "object",
+         "keys": [
+          "level_l",
+          "capacity_l",
+          "per_lap_l",
+          "per_lap_std_l",
+          "samples",
+          "laps_remaining",
+          "laps_to_finish",
+          "fuel_to_finish_l",
+          "margin_l",
+          "margin_laps",
+          "pit_window_earliest_lap",
+          "pit_window_latest_lap"
+         ],
+         "size": 14
+        }
+       },
+       {
+        "kind": "tool",
+        "name": "simulate_pit_outcome",
+        "start_wall": 1793408492995.58,
+        "end_wall": 1793408492996,
+        "latency_ms": 0.42,
+        "ok": true,
+        "args": {},
+        "result": {
+         "type": "object",
+         "keys": [
+          "grounded",
+          "reason",
+          "stop_lap",
+          "current_lap",
+          "laps_before_stop",
+          "under_yellow",
+          "pit_lane_loss_s",
+          "effective_loss_s",
+          "position_before",
+          "rejoin_position",
+          "positions_lost",
+          "cars_clearing"
+         ],
+         "size": 19
+        }
+       },
+       {
+        "kind": "llm",
+        "call": 2,
+        "name": "kimi-k3",
+        "start_wall": 1793408492996,
+        "end_wall": 1793408503200,
+        "ok": true,
+        "latency_ms": 10203.59,
+        "error": null,
+        "tool_calls": []
+       }
+      ],
+      "validations": [
+       {
+        "ok": true,
+        "unsupported": [],
+        "repaired": false,
+        "word_count": 19
+       }
+      ],
+      "outcome": "radio",
+      "message_id": "42f7fa2c9dfac7c1",
+      "latency_ms": 15379.41,
+      "turns": 2,
+      "seqs": [
+       429,
+       430,
+       432,
+       433,
+       434,
+       435,
+       445,
+       446,
+       447
+      ]
+     }
+    ],
+    "radio": {
+     "queued": 30,
+     "aired": 30,
+     "superseded": 0
+    },
+    "dispatch": {
+     "events": 72,
+     "routed": 34,
+     "blocked": 0,
+     "cooldown": 5,
+     "superseded": 4
+    },
+    "llm": {
+     "calls": 75,
+     "inflight": 0,
+     "errors": 0,
+     "latency_total": 816778.73
+    },
+    "tools": {
+     "calls": 68,
+     "errors": 0,
+     "by_name": {
+      "get_car_health": 4,
+      "get_recent_detector_events": 19,
+      "get_fuel_projection": 9,
+      "simulate_pit_outcome": 9,
+      "get_corner_detail": 13,
+      "get_tyre_trend": 4,
+      "get_setup_snapshot": 1,
+      "get_standings_around_player": 6,
+      "get_stint_history": 3
+     }
+    },
+    "validator": {
+     "checks": 35,
+     "failed": 7,
+     "repaired": 5
+    },
+    "last_blocked": null
+   }
+  },
+  {
+   "name": "reduce up to 600 s",
+   "module": "activity",
+   "fn": "reduce",
+   "args": [
+    {
+     "$input": "activity"
+    },
+    600
+   ],
+   "expect": {
+    "last_seq": 118,
+    "agents": {
+     "strategist": {
+      "name": "strategist",
+      "status": "idle",
+      "run_id": null,
+      "since": 570.933333334633,
+      "detail": "",
+      "runs": 3,
+      "calls": 6,
+      "tools": 6,
+      "refused": 0,
+      "errors": 0,
+      "last_outcome": "radio",
+      "last_latency_ms": 14670.96,
+      "skipped": "cooldown"
+     },
+     "vehicle_engineer": {
+      "name": "vehicle_engineer",
+      "status": "idle",
+      "run_id": null,
+      "since": 371.5500000014809,
+      "detail": "",
+      "runs": 2,
+      "calls": 7,
+      "tools": 4,
+      "refused": 1,
+      "errors": 0,
+      "last_outcome": "radio",
+      "last_latency_ms": 21110.97,
+      "skipped": null
+     },
+     "spotter": {
+      "name": "spotter",
+      "status": "idle",
+      "run_id": null,
+      "since": 570.933333334633,
+      "detail": "",
+      "runs": 2,
+      "calls": 5,
+      "tools": 4,
+      "refused": 1,
+      "errors": 0,
+      "last_outcome": "refused",
+      "last_latency_ms": 10975.13,
+      "skipped": null
+     },
+     "coach": {
+      "name": "coach",
+      "status": "idle",
+      "run_id": null,
+      "since": 367.71666666815105,
+      "detail": "",
+      "runs": 1,
+      "calls": 2,
+      "tools": 2,
+      "refused": 0,
+      "errors": 0,
+      "last_outcome": "radio",
+      "last_latency_ms": 18088.51,
+      "skipped": null
+     }
+    },
+    "runs": [
+     {
+      "run_id": "vehicle_engineer-1",
+      "agent": "vehicle_engineer",
+      "event_key": "car_health_warning",
+      "session_time": 22.683333334823445,
+      "tick": 180599,
+      "start_wall": 1793407238047,
+      "end_wall": 1793407296523,
+      "trigger": "car_health_warning",
+      "model": "kimi-k3",
+      "context_radio": [],
+      "spans": [
+       {
+        "kind": "llm",
+        "call": 1,
+        "name": "kimi-k3",
+        "start_wall": 1793407238048,
+        "end_wall": 1793407254110,
+        "ok": true,
+        "latency_ms": 16061.44,
+        "error": null,
+        "tool_calls": [
+         "get_car_health"
+        ]
+       },
+       {
+        "kind": "tool",
+        "name": "get_car_health",
+        "start_wall": 1793407254109.86,
+        "end_wall": 1793407254110,
+        "latency_ms": 0.14,
+        "ok": true,
+        "args": {},
+        "result": {
+         "type": "object",
+         "keys": [
+          "oil_temp",
+          "water_temp",
+          "oil_pressure",
+          "fuel_pressure",
+          "voltage",
+          "tow_time",
+          "engine_warnings",
+          "thresholds",
+          "lap"
+         ],
+         "size": 9
+        }
+       },
+       {
+        "kind": "llm",
+        "call": 2,
+        "name": "kimi-k3",
+        "start_wall": 1793407254110,
+        "end_wall": 1793407264446,
+        "ok": true,
+        "latency_ms": 10335.88,
+        "error": null,
+        "tool_calls": [
+         "get_recent_detector_events"
+        ]
+       },
+       {
+        "kind": "tool",
+        "name": "get_recent_detector_events",
+        "start_wall": 1793407264445.79,
+        "end_wall": 1793407264446,
+        "latency_ms": 0.21,
+        "ok": true,
+        "args": {
+         "limit": 10,
+         "types": "[\"car_health_warning\"]"
+        },
+        "result": {
+         "type": "object",
+         "keys": [
+          "requested_types",
+          "returned",
+          "available",
+          "events"
+         ],
+         "size": 4
+        }
+       },
+       {
+        "kind": "llm",
+        "call": 3,
+        "name": "kimi-k3",
+        "start_wall": 1793407264446,
+        "end_wall": 1793407279973,
+        "ok": true,
+        "latency_ms": 15526.73,
+        "error": null,
+        "tool_calls": []
+       },
+       {
+        "kind": "llm",
+        "call": 4,
+        "name": "kimi-k3",
+        "start_wall": 1793407279974,
+        "end_wall": 1793407296521,
+        "ok": true,
+        "latency_ms": 16547.69,
+        "error": null,
+        "tool_calls": []
+       }
+      ],
+      "validations": [
+       {
+        "ok": false,
+        "unsupported": [
+         "4.66"
+        ],
+        "repaired": false,
+        "word_count": 27
+       },
+       {
+        "ok": false,
+        "unsupported": [
+         "4.6610630306531675"
+        ],
+        "repaired": true,
+        "word_count": 26
+       }
+      ],
+      "outcome": "refused",
+      "message_id": "46b4373ed7ff0038",
+      "latency_ms": 58475.14,
+      "turns": 4,
+      "seqs": [
+       2,
+       3,
+       5,
+       6,
+       7,
+       9,
+       10,
+       11,
+       13,
+       14,
+       15,
+       16,
+       17,
+       18
+      ]
+     },
+     {
+      "run_id": "strategist-1",
+      "agent": "strategist",
+      "event_key": "fuel_margin_low",
+      "session_time": 229.68333333489838,
+      "tick": 193018,
+      "start_wall": 1793407341390,
+      "end_wall": 1793407385423,
+      "trigger": "fuel_margin_low",
+      "model": "kimi-k3",
+      "context_radio": [
+       {
+        "message_id": "46b4373ed7ff0038",
+        "agent": "vehicle_engineer"
+       }
+      ],
+      "spans": [
+       {
+        "kind": "llm",
+        "call": 1,
+        "name": "kimi-k3",
+        "start_wall": 1793407341391,
+        "end_wall": 1793407351978,
+        "ok": true,
+        "latency_ms": 10587.17,
+        "error": null,
+        "tool_calls": [
+         "get_fuel_projection",
+         "simulate_pit_outcome"
+        ]
+       },
+       {
+        "kind": "tool",
+        "name": "get_fuel_projection",
+        "start_wall": 1793407351978.81,
+        "end_wall": 1793407351979,
+        "latency_ms": 0.19,
+        "ok": true,
+        "args": {},
+        "result": {
+         "type": "object",
+         "keys": [
+          "level_l",
+          "capacity_l",
+          "per_lap_l",
+          "per_lap_std_l",
+          "samples",
+          "laps_remaining",
+          "laps_to_finish",
+          "fuel_to_finish_l",
+          "margin_l",
+          "margin_laps",
+          "pit_window_earliest_lap",
+          "pit_window_latest_lap"
+         ],
+         "size": 14
+        }
+       },
+       {
+        "kind": "tool",
+        "name": "simulate_pit_outcome",
+        "start_wall": 1793407351978.65,
+        "end_wall": 1793407351979,
+        "latency_ms": 0.35,
+        "ok": true,
+        "args": {
+         "stop_lap": 2
+        },
+        "result": {
+         "type": "object",
+         "keys": [
+          "grounded",
+          "reason",
+          "stop_lap",
+          "current_lap",
+          "laps_before_stop",
+          "under_yellow",
+          "pit_lane_loss_s",
+          "effective_loss_s",
+          "position_before",
+          "rejoin_position",
+          "positions_lost",
+          "cars_clearing"
+         ],
+         "size": 19
+        }
+       },
+       {
+        "kind": "llm",
+        "call": 2,
+        "name": "kimi-k3",
+        "start_wall": 1793407351979,
+        "end_wall": 1793407385423,
+        "ok": true,
+        "latency_ms": 33443.67,
+        "error": null,
+        "tool_calls": []
+       }
+      ],
+      "validations": [
+       {
+        "ok": true,
+        "unsupported": [],
+        "repaired": false,
+        "word_count": 23
+       }
+      ],
+      "outcome": "radio",
+      "message_id": "fd8c4e03a6c93cb1",
+      "latency_ms": 44033.41,
+      "turns": 2,
+      "seqs": [
+       27,
+       28,
+       29,
+       30,
+       31,
+       32,
+       33,
+       34,
+       35
+      ]
+     },
+     {
+      "run_id": "coach-1",
+      "agent": "coach",
+      "event_key": "offtrack",
+      "session_time": 367.71666666815105,
+      "tick": 201300,
+      "start_wall": 1793407410406,
+      "end_wall": 1793407438299,
+      "trigger": "offtrack",
+      "model": "kimi-k3",
+      "context_radio": [
+       {
+        "message_id": "46b4373ed7ff0038",
+        "agent": "vehicle_engineer"
+       },
+       {
+        "message_id": "fd8c4e03a6c93cb1",
+        "agent": "strategist"
+       }
+      ],
+      "spans": [
+       {
+        "kind": "llm",
+        "call": 1,
+        "name": "kimi-k3",
+        "start_wall": 1793407410407,
+        "end_wall": 1793407419943,
+        "ok": true,
+        "latency_ms": 9535.85,
+        "error": null,
+        "tool_calls": [
+         "get_recent_detector_events",
+         "get_corner_detail"
+        ]
+       },
+       {
+        "kind": "tool",
+        "name": "get_recent_detector_events",
+        "start_wall": 1793407419942.59,
+        "end_wall": 1793407419943,
+        "latency_ms": 0.41,
+        "ok": true,
+        "args": {
+         "limit": 20
+        },
+        "result": {
+         "type": "object",
+         "keys": [
+          "requested_types",
+          "returned",
+          "available",
+          "events"
+         ],
+         "size": 4
+        }
+       },
+       {
+        "kind": "tool",
+        "name": "get_corner_detail",
+        "start_wall": 1793407419943.52,
+        "end_wall": 1793407420210,
+        "latency_ms": 266.48,
+        "ok": true,
+        "args": {
+         "lap_dist_pct": 0.9794633984565735
+        },
+        "result": {
+         "type": "object",
+         "keys": [
+          "requested_lap_dist_pct",
+          "live",
+          "telemetry"
+         ],
+         "size": 3
+        }
+       },
+       {
+        "kind": "llm",
+        "call": 2,
+        "name": "kimi-k3",
+        "start_wall": 1793407420210,
+        "end_wall": 1793407438299,
+        "ok": true,
+        "latency_ms": 18088.51,
+        "error": null,
+        "tool_calls": []
+       }
+      ],
+      "validations": [
+       {
+        "ok": true,
+        "unsupported": [],
+        "repaired": false,
+        "word_count": 20
+       }
+      ],
+      "outcome": "radio",
+      "message_id": "386c95aadfe737d5",
+      "latency_ms": 27893.27,
+      "turns": 2,
+      "seqs": [
+       39,
+       40,
+       47,
+       48,
+       49,
+       50,
+       57,
+       58,
+       59
+      ]
+     },
+     {
+      "run_id": "vehicle_engineer-2",
+      "agent": "vehicle_engineer",
+      "event_key": "tyre_out_of_band",
+      "session_time": 371.5500000014809,
+      "tick": 201530,
+      "start_wall": 1793407412765,
+      "end_wall": 1793407459158,
+      "trigger": "tyre_out_of_band",
+      "model": "kimi-k3",
+      "context_radio": [
+       {
+        "message_id": "46b4373ed7ff0038",
+        "agent": "vehicle_engineer"
+       },
+       {
+        "message_id": "fd8c4e03a6c93cb1",
+        "agent": "strategist"
+       }
+      ],
+      "spans": [
+       {
+        "kind": "llm",
+        "call": 1,
+        "name": "kimi-k3",
+        "start_wall": 1793407412766,
+        "end_wall": 1793407428380,
+        "ok": true,
+        "latency_ms": 15614.31,
+        "error": null,
+        "tool_calls": [
+         "get_tyre_trend"
+        ]
+       },
+       {
+        "kind": "tool",
+        "name": "get_tyre_trend",
+        "start_wall": 1793407428379.87,
+        "end_wall": 1793407428380,
+        "latency_ms": 0.13,
+        "ok": true,
+        "args": {},
+        "result": {
+         "type": "object",
+         "keys": [
+          "temps_c",
+          "pressures_kpa",
+          "temp_trend_c_per_lap",
+          "pressure_trend_per_lap",
+          "stint_laps",
+          "laps_on_tyres"
+         ],
+         "size": 6
+        }
+       },
+       {
+        "kind": "llm",
+        "call": 2,
+        "name": "kimi-k3",
+        "start_wall": 1793407428380,
+        "end_wall": 1793407438046,
+        "ok": true,
+        "latency_ms": 9665.09,
+        "error": null,
+        "tool_calls": [
+         "get_setup_snapshot"
+        ]
+       },
+       {
+        "kind": "tool",
+        "name": "get_setup_snapshot",
+        "start_wall": 1793407438045.4,
+        "end_wall": 1793407438046,
+        "latency_ms": 0.6,
+        "ok": true,
+        "args": {},
+        "result": {
+         "type": "object",
+         "keys": [
+          "available",
+          "car_id",
+          "track_name",
+          "lap_length_m",
+          "car",
+          "setup",
+          "update_count"
+         ],
+         "size": 7
+        }
+       },
+       {
+        "kind": "llm",
+        "call": 3,
+        "name": "kimi-k3",
+        "start_wall": 1793407438046,
+        "end_wall": 1793407459157,
+        "ok": true,
+        "latency_ms": 21110.97,
+        "error": null,
+        "tool_calls": []
+       }
+      ],
+      "validations": [
+       {
+        "ok": true,
+        "unsupported": [],
+        "repaired": false,
+        "word_count": 25
+       }
+      ],
+      "outcome": "radio",
+      "message_id": "11e83fdbc2e0e577",
+      "latency_ms": 46392.97,
+      "turns": 3,
+      "seqs": [
+       45,
+       46,
+       51,
+       52,
+       53,
+       54,
+       55,
+       56,
+       62,
+       63,
+       64
+      ]
+     },
+     {
+      "run_id": "strategist-2",
+      "agent": "strategist",
+      "event_key": "flag_change:yellow",
+      "session_time": 500.81666666803,
+      "tick": 209286,
+      "start_wall": 1793407476955,
+      "end_wall": 1793407505009,
+      "trigger": "flag_change",
+      "model": "kimi-k3",
+      "context_radio": [
+       {
+        "message_id": "46b4373ed7ff0038",
+        "agent": "vehicle_engineer"
+       },
+       {
+        "message_id": "fd8c4e03a6c93cb1",
+        "agent": "strategist"
+       },
+       {
+        "message_id": "386c95aadfe737d5",
+        "agent": "coach"
+       },
+       {
+        "message_id": "11e83fdbc2e0e577",
+        "agent": "vehicle_engineer"
+       }
+      ],
+      "spans": [
+       {
+        "kind": "llm",
+        "call": 1,
+        "name": "kimi-k3",
+        "start_wall": 1793407476956,
+        "end_wall": 1793407485141,
+        "ok": true,
+        "latency_ms": 8184.86,
+        "error": null,
+        "tool_calls": [
+         "simulate_pit_outcome",
+         "get_fuel_projection"
+        ]
+       },
+       {
+        "kind": "tool",
+        "name": "simulate_pit_outcome",
+        "start_wall": 1793407485141.77,
+        "end_wall": 1793407485142,
+        "latency_ms": 0.23,
+        "ok": true,
+        "args": {
+         "under_yellow": true
+        },
+        "result": {
+         "type": "object",
+         "keys": [
+          "grounded",
+          "reason",
+          "stop_lap",
+          "current_lap",
+          "laps_before_stop",
+          "under_yellow",
+          "pit_lane_loss_s",
+          "effective_loss_s",
+          "position_before",
+          "rejoin_position",
+          "positions_lost",
+          "cars_clearing"
+         ],
+         "size": 19
+        }
+       },
+       {
+        "kind": "tool",
+        "name": "get_fuel_projection",
+        "start_wall": 1793407485141.94,
+        "end_wall": 1793407485142,
+        "latency_ms": 0.06,
+        "ok": true,
+        "args": {},
+        "result": {
+         "type": "object",
+         "keys": [
+          "level_l",
+          "capacity_l",
+          "per_lap_l",
+          "per_lap_std_l",
+          "samples",
+          "laps_remaining",
+          "laps_to_finish",
+          "fuel_to_finish_l",
+          "margin_l",
+          "margin_laps",
+          "pit_window_earliest_lap",
+          "pit_window_latest_lap"
+         ],
+         "size": 14
+        }
+       },
+       {
+        "kind": "llm",
+        "call": 2,
+        "name": "kimi-k3",
+        "start_wall": 1793407485142,
+        "end_wall": 1793407505009,
+        "ok": true,
+        "latency_ms": 19866.99,
+        "error": null,
+        "tool_calls": []
+       }
+      ],
+      "validations": [
+       {
+        "ok": true,
+        "unsupported": [],
+        "repaired": false,
+        "word_count": 22
+       }
+      ],
+      "outcome": "radio",
+      "message_id": "13dfdf18da914f37",
+      "latency_ms": 28054.23,
+      "turns": 2,
+      "seqs": [
+       68,
+       69,
+       80,
+       81,
+       82,
+       83,
+       89,
+       90,
+       91
+      ]
+     },
+     {
+      "run_id": "spotter-1",
+      "agent": "spotter",
+      "event_key": "flag_change:yellow",
+      "session_time": 500.81666666803,
+      "tick": 209286,
+      "start_wall": 1793407476960,
+      "end_wall": 1793407489407,
+      "trigger": "flag_change",
+      "model": "kimi-k3",
+      "context_radio": [
+       {
+        "message_id": "46b4373ed7ff0038",
+        "agent": "vehicle_engineer"
+       },
+       {
+        "message_id": "fd8c4e03a6c93cb1",
+        "agent": "strategist"
+       },
+       {
+        "message_id": "386c95aadfe737d5",
+        "agent": "coach"
+       },
+       {
+        "message_id": "11e83fdbc2e0e577",
+        "agent": "vehicle_engineer"
+       }
+      ],
+      "spans": [
+       {
+        "kind": "llm",
+        "call": 1,
+        "name": "kimi-k3",
+        "start_wall": 1793407476960,
+        "end_wall": 1793407480210,
+        "ok": true,
+        "latency_ms": 3249.93,
+        "error": null,
+        "tool_calls": [
+         "get_standings_around_player",
+         "get_recent_detector_events"
+        ]
+       },
+       {
+        "kind": "tool",
+        "name": "get_standings_around_player",
+        "start_wall": 1793407480209.91,
+        "end_wall": 1793407480210,
+        "latency_ms": 0.09,
+        "ok": true,
+        "args": {
+         "window": 3
+        },
+        "result": {
+         "type": "object",
+         "keys": [
+          "gap_basis",
+          "reference_lap_time_s",
+          "player_position",
+          "field_size",
+          "cars",
+          "unavailable"
+         ],
+         "size": 6
+        }
+       },
+       {
+        "kind": "tool",
+        "name": "get_recent_detector_events",
+        "start_wall": 1793407480210.16,
+        "end_wall": 1793407480211,
+        "latency_ms": 0.84,
+        "ok": true,
+        "args": {
+         "limit": 20
+        },
+        "result": {
+         "type": "object",
+         "keys": [
+          "requested_types",
+          "returned",
+          "available",
+          "events"
+         ],
+         "size": 4
+        }
+       },
+       {
+        "kind": "llm",
+        "call": 2,
+        "name": "kimi-k3",
+        "start_wall": 1793407480211,
+        "end_wall": 1793407489406,
+        "ok": true,
+        "latency_ms": 9195.32,
+        "error": null,
+        "tool_calls": []
+       }
+      ],
+      "validations": [
+       {
+        "ok": true,
+        "unsupported": [],
+        "repaired": false,
+        "word_count": 14
+       }
+      ],
+      "outcome": "radio",
+      "message_id": "0ae796b2c8f8348c",
+      "latency_ms": 12447.16,
+      "turns": 2,
+      "seqs": [
+       70,
+       71,
+       72,
+       73,
+       74,
+       75,
+       84,
+       85,
+       86
+      ]
+     },
+     {
+      "run_id": "strategist-3",
+      "agent": "strategist",
+      "event_key": "flag_change:yellow",
+      "session_time": 570.933333334633,
+      "tick": 213493,
+      "start_wall": 1793407512014,
+      "end_wall": 1793407531278,
+      "trigger": "flag_change",
+      "model": "kimi-k3",
+      "context_radio": [
+       {
+        "message_id": "fd8c4e03a6c93cb1",
+        "agent": "strategist"
+       },
+       {
+        "message_id": "386c95aadfe737d5",
+        "agent": "coach"
+       },
+       {
+        "message_id": "11e83fdbc2e0e577",
+        "agent": "vehicle_engineer"
+       },
+       {
+        "message_id": "0ae796b2c8f8348c",
+        "agent": "spotter"
+       },
+       {
+        "message_id": "13dfdf18da914f37",
+        "agent": "strategist"
+       }
+      ],
+      "spans": [
+       {
+        "kind": "llm",
+        "call": 1,
+        "name": "kimi-k3",
+        "start_wall": 1793407512015,
+        "end_wall": 1793407516605,
+        "ok": true,
+        "latency_ms": 4590.47,
+        "error": null,
+        "tool_calls": [
+         "get_fuel_projection",
+         "simulate_pit_outcome"
+        ]
+       },
+       {
+        "kind": "tool",
+        "name": "get_fuel_projection",
+        "start_wall": 1793407516604.84,
+        "end_wall": 1793407516605,
+        "latency_ms": 0.16,
+        "ok": true,
+        "args": {},
+        "result": {
+         "type": "object",
+         "keys": [
+          "level_l",
+          "capacity_l",
+          "per_lap_l",
+          "per_lap_std_l",
+          "samples",
+          "laps_remaining",
+          "laps_to_finish",
+          "fuel_to_finish_l",
+          "margin_l",
+          "margin_laps",
+          "pit_window_earliest_lap",
+          "pit_window_latest_lap"
+         ],
+         "size": 14
+        }
+       },
+       {
+        "kind": "tool",
+        "name": "simulate_pit_outcome",
+        "start_wall": 1793407516605.75,
+        "end_wall": 1793407516606,
+        "latency_ms": 0.25,
+        "ok": true,
+        "args": {
+         "under_yellow": true
+        },
+        "result": {
+         "type": "object",
+         "keys": [
+          "grounded",
+          "reason",
+          "stop_lap",
+          "current_lap",
+          "laps_before_stop",
+          "under_yellow",
+          "pit_lane_loss_s",
+          "effective_loss_s",
+          "position_before",
+          "rejoin_position",
+          "positions_lost",
+          "cars_clearing"
+         ],
+         "size": 19
+        }
+       },
+       {
+        "kind": "llm",
+        "call": 2,
+        "name": "kimi-k3",
+        "start_wall": 1793407516606,
+        "end_wall": 1793407531277,
+        "ok": true,
+        "latency_ms": 14670.96,
+        "error": null,
+        "tool_calls": []
+       }
+      ],
+      "validations": [
+       {
+        "ok": true,
+        "unsupported": [],
+        "repaired": false,
+        "word_count": 22
+       }
+      ],
+      "outcome": "radio",
+      "message_id": "a1d5fc09a0fc72d6",
+      "latency_ms": 19263.53,
+      "turns": 2,
+      "seqs": [
+       95,
+       96,
+       100,
+       101,
+       102,
+       103,
+       111,
+       112,
+       113
+      ]
+     },
+     {
+      "run_id": "spotter-2",
+      "agent": "spotter",
+      "event_key": "flag_change:yellow",
+      "session_time": 570.933333334633,
+      "tick": 213493,
+      "start_wall": 1793407512018,
+      "end_wall": 1793407541698,
+      "trigger": "flag_change",
+      "model": "kimi-k3",
+      "context_radio": [
+       {
+        "message_id": "fd8c4e03a6c93cb1",
+        "agent": "strategist"
+       },
+       {
+        "message_id": "386c95aadfe737d5",
+        "agent": "coach"
+       },
+       {
+        "message_id": "11e83fdbc2e0e577",
+        "agent": "vehicle_engineer"
+       },
+       {
+        "message_id": "0ae796b2c8f8348c",
+        "agent": "spotter"
+       },
+       {
+        "message_id": "13dfdf18da914f37",
+        "agent": "strategist"
+       }
+      ],
+      "spans": [
+       {
+        "kind": "llm",
+        "call": 1,
+        "name": "kimi-k3",
+        "start_wall": 1793407512018,
+        "end_wall": 1793407520970,
+        "ok": true,
+        "latency_ms": 8951.64,
+        "error": null,
+        "tool_calls": [
+         "get_recent_detector_events",
+         "get_standings_around_player"
+        ]
+       },
+       {
+        "kind": "tool",
+        "name": "get_recent_detector_events",
+        "start_wall": 1793407520969.28,
+        "end_wall": 1793407520970,
+        "latency_ms": 0.72,
+        "ok": true,
+        "args": {
+         "limit": 20
+        },
+        "result": {
+         "type": "object",
+         "keys": [
+          "requested_types",
+          "returned",
+          "available",
+          "events"
+         ],
+         "size": 4
+        }
+       },
+       {
+        "kind": "tool",
+        "name": "get_standings_around_player",
+        "start_wall": 1793407520970.96,
+        "end_wall": 1793407520971,
+        "latency_ms": 0.04,
+        "ok": true,
+        "args": {
+         "window": 3
+        },
+        "result": {
+         "type": "object",
+         "keys": [
+          "gap_basis",
+          "reference_lap_time_s",
+          "player_position",
+          "field_size",
+          "cars",
+          "unavailable"
+         ],
+         "size": 6
+        }
+       },
+       {
+        "kind": "llm",
+        "call": 2,
+        "name": "kimi-k3",
+        "start_wall": 1793407520971,
+        "end_wall": 1793407530722,
+        "ok": true,
+        "latency_ms": 9751.87,
+        "error": null,
+        "tool_calls": []
+       },
+       {
+        "kind": "llm",
+        "call": 3,
+        "name": "kimi-k3",
+        "start_wall": 1793407530723,
+        "end_wall": 1793407541698,
+        "ok": true,
+        "latency_ms": 10975.13,
+        "error": null,
+        "tool_calls": []
+       }
+      ],
+      "validations": [
+       {
+        "ok": false,
+        "unsupported": [
+         "10"
+        ],
+        "repaired": false,
+        "word_count": 14
+       },
+       {
+        "ok": false,
+        "unsupported": [
+         "10"
+        ],
+        "repaired": true,
+        "word_count": 10
+       }
+      ],
+      "outcome": "refused",
+      "message_id": "a3de5cb0a803154c",
+      "latency_ms": 29680.77,
+      "turns": 3,
+      "seqs": [
+       97,
+       98,
+       104,
+       105,
+       106,
+       107,
+       108,
+       109,
+       110,
+       116,
+       117,
+       118
+      ]
+     }
+    ],
+    "radio": {
+     "queued": 6,
+     "aired": 6,
+     "superseded": 0
+    },
+    "dispatch": {
+     "events": 21,
+     "routed": 9,
+     "blocked": 0,
+     "cooldown": 2,
+     "superseded": 1
+    },
+    "llm": {
+     "calls": 20,
+     "inflight": 0,
+     "errors": 0,
+     "latency_total": 265954.48
+    },
+    "tools": {
+     "calls": 16,
+     "errors": 0,
+     "by_name": {
+      "get_car_health": 1,
+      "get_recent_detector_events": 4,
+      "get_fuel_projection": 3,
+      "simulate_pit_outcome": 3,
+      "get_corner_detail": 1,
+      "get_tyre_trend": 1,
+      "get_setup_snapshot": 1,
+      "get_standings_around_player": 2
+     }
+    },
+    "validator": {
+     "checks": 10,
+     "failed": 4,
+     "repaired": 2
+    },
+    "last_blocked": null
+   }
+  },
+  {
+   "name": "reduce the journal slice",
+   "module": "activity",
+   "fn": "reduce",
+   "args": [
+    {
+     "$input": "journal"
+    }
+   ],
+   "expect": {
+    "last_seq": 754,
+    "agents": {
+     "strategist": {
+      "name": "strategist",
+      "status": "idle",
+      "run_id": null,
+      "since": 570.933333334633,
+      "detail": "",
+      "runs": 3,
+      "calls": 6,
+      "tools": 6,
+      "refused": 0,
+      "errors": 0,
+      "last_outcome": "radio",
+      "last_latency_ms": 14670.96,
+      "skipped": "cooldown"
+     },
+     "vehicle_engineer": {
+      "name": "vehicle_engineer",
+      "status": "idle",
+      "run_id": null,
+      "since": 371.5500000014809,
+      "detail": "",
+      "runs": 2,
+      "calls": 7,
+      "tools": 4,
+      "refused": 1,
+      "errors": 0,
+      "last_outcome": "radio",
+      "last_latency_ms": 21110.97,
+      "skipped": null
+     },
+     "spotter": {
+      "name": "spotter",
+      "status": "idle",
+      "run_id": null,
+      "since": 570.933333334633,
+      "detail": "",
+      "runs": 2,
+      "calls": 5,
+      "tools": 4,
+      "refused": 1,
+      "errors": 0,
+      "last_outcome": "refused",
+      "last_latency_ms": 10975.13,
+      "skipped": null
+     },
+     "coach": {
+      "name": "coach",
+      "status": "idle",
+      "run_id": null,
+      "since": 367.71666666815105,
+      "detail": "",
+      "runs": 1,
+      "calls": 2,
+      "tools": 2,
+      "refused": 0,
+      "errors": 0,
+      "last_outcome": "radio",
+      "last_latency_ms": 18088.51,
+      "skipped": null
+     }
+    },
+    "runs": [
+     {
+      "run_id": "vehicle_engineer-1",
+      "agent": "vehicle_engineer",
+      "event_key": "car_health_warning",
+      "session_time": 22.683333334823445,
+      "tick": 180599,
+      "start_wall": 1793407238047,
+      "end_wall": 1793407296523,
+      "trigger": "car_health_warning",
+      "model": "kimi-k3",
+      "context_radio": [],
+      "spans": [
+       {
+        "kind": "llm",
+        "call": 1,
+        "name": "kimi-k3",
+        "start_wall": 1793407238048,
+        "end_wall": 1793407254110,
+        "ok": true,
+        "latency_ms": 16061.44,
+        "error": null,
+        "tool_calls": [
+         "get_car_health"
+        ]
+       },
+       {
+        "kind": "tool",
+        "name": "get_car_health",
+        "start_wall": 1793407254109.86,
+        "end_wall": 1793407254110,
+        "latency_ms": 0.14,
+        "ok": true,
+        "args": {},
+        "result": {
+         "type": "object",
+         "keys": [
+          "oil_temp",
+          "water_temp",
+          "oil_pressure",
+          "fuel_pressure",
+          "voltage",
+          "tow_time",
+          "engine_warnings",
+          "thresholds",
+          "lap"
+         ],
+         "size": 9
+        }
+       },
+       {
+        "kind": "llm",
+        "call": 2,
+        "name": "kimi-k3",
+        "start_wall": 1793407254110,
+        "end_wall": 1793407264446,
+        "ok": true,
+        "latency_ms": 10335.88,
+        "error": null,
+        "tool_calls": [
+         "get_recent_detector_events"
+        ]
+       },
+       {
+        "kind": "tool",
+        "name": "get_recent_detector_events",
+        "start_wall": 1793407264445.79,
+        "end_wall": 1793407264446,
+        "latency_ms": 0.21,
+        "ok": true,
+        "args": {
+         "limit": 10,
+         "types": "[\"car_health_warning\"]"
+        },
+        "result": {
+         "type": "object",
+         "keys": [
+          "requested_types",
+          "returned",
+          "available",
+          "events"
+         ],
+         "size": 4
+        }
+       },
+       {
+        "kind": "llm",
+        "call": 3,
+        "name": "kimi-k3",
+        "start_wall": 1793407264446,
+        "end_wall": 1793407279973,
+        "ok": true,
+        "latency_ms": 15526.73,
+        "error": null,
+        "tool_calls": []
+       },
+       {
+        "kind": "llm",
+        "call": 4,
+        "name": "kimi-k3",
+        "start_wall": 1793407279974,
+        "end_wall": 1793407296521,
+        "ok": true,
+        "latency_ms": 16547.69,
+        "error": null,
+        "tool_calls": []
+       }
+      ],
+      "validations": [
+       {
+        "ok": false,
+        "unsupported": [
+         "4.66"
+        ],
+        "repaired": false,
+        "word_count": 27
+       },
+       {
+        "ok": false,
+        "unsupported": [
+         "4.6610630306531675"
+        ],
+        "repaired": true,
+        "word_count": 26
+       }
+      ],
+      "outcome": "refused",
+      "message_id": "46b4373ed7ff0038",
+      "latency_ms": 58475.14,
+      "turns": 4,
+      "seqs": [
+       5,
+       6,
+       40,
+       41,
+       42,
+       66,
+       67,
+       68,
+       102,
+       103,
+       104,
+       138,
+       139,
+       140
+      ]
+     },
+     {
+      "run_id": "strategist-1",
+      "agent": "strategist",
+      "event_key": "fuel_margin_low",
+      "session_time": 229.68333333489838,
+      "tick": 193018,
+      "start_wall": 1793407341390,
+      "end_wall": 1793407385423,
+      "trigger": "fuel_margin_low",
+      "model": "kimi-k3",
+      "context_radio": [
+       {
+        "message_id": "46b4373ed7ff0038",
+        "agent": "vehicle_engineer"
+       }
+      ],
+      "spans": [
+       {
+        "kind": "llm",
+        "call": 1,
+        "name": "kimi-k3",
+        "start_wall": 1793407341391,
+        "end_wall": 1793407351978,
+        "ok": true,
+        "latency_ms": 10587.17,
+        "error": null,
+        "tool_calls": [
+         "get_fuel_projection",
+         "simulate_pit_outcome"
+        ]
+       },
+       {
+        "kind": "tool",
+        "name": "get_fuel_projection",
+        "start_wall": 1793407351978.81,
+        "end_wall": 1793407351979,
+        "latency_ms": 0.19,
+        "ok": true,
+        "args": {},
+        "result": {
+         "type": "object",
+         "keys": [
+          "level_l",
+          "capacity_l",
+          "per_lap_l",
+          "per_lap_std_l",
+          "samples",
+          "laps_remaining",
+          "laps_to_finish",
+          "fuel_to_finish_l",
+          "margin_l",
+          "margin_laps",
+          "pit_window_earliest_lap",
+          "pit_window_latest_lap"
+         ],
+         "size": 14
+        }
+       },
+       {
+        "kind": "tool",
+        "name": "simulate_pit_outcome",
+        "start_wall": 1793407351978.65,
+        "end_wall": 1793407351979,
+        "latency_ms": 0.35,
+        "ok": true,
+        "args": {
+         "stop_lap": 2
+        },
+        "result": {
+         "type": "object",
+         "keys": [
+          "grounded",
+          "reason",
+          "stop_lap",
+          "current_lap",
+          "laps_before_stop",
+          "under_yellow",
+          "pit_lane_loss_s",
+          "effective_loss_s",
+          "position_before",
+          "rejoin_position",
+          "positions_lost",
+          "cars_clearing"
+         ],
+         "size": 19
+        }
+       },
+       {
+        "kind": "llm",
+        "call": 2,
+        "name": "kimi-k3",
+        "start_wall": 1793407351979,
+        "end_wall": 1793407385423,
+        "ok": true,
+        "latency_ms": 33443.67,
+        "error": null,
+        "tool_calls": []
+       }
+      ],
+      "validations": [
+       {
+        "ok": true,
+        "unsupported": [],
+        "repaired": false,
+        "word_count": 23
+       }
+      ],
+      "outcome": "radio",
+      "message_id": "fd8c4e03a6c93cb1",
+      "latency_ms": 44033.41,
+      "turns": 2,
+      "seqs": [
+       246,
+       247,
+       269,
+       270,
+       271,
+       272,
+       339,
+       340,
+       341
+      ]
+     },
+     {
+      "run_id": "coach-1",
+      "agent": "coach",
+      "event_key": "offtrack",
+      "session_time": 367.71666666815105,
+      "tick": 201300,
+      "start_wall": 1793407410406,
+      "end_wall": 1793407438299,
+      "trigger": "offtrack",
+      "model": "kimi-k3",
+      "context_radio": [
+       {
+        "message_id": "46b4373ed7ff0038",
+        "agent": "vehicle_engineer"
+       },
+       {
+        "message_id": "fd8c4e03a6c93cb1",
+        "agent": "strategist"
+       }
+      ],
+      "spans": [
+       {
+        "kind": "llm",
+        "call": 1,
+        "name": "kimi-k3",
+        "start_wall": 1793407410407,
+        "end_wall": 1793407419943,
+        "ok": true,
+        "latency_ms": 9535.85,
+        "error": null,
+        "tool_calls": [
+         "get_recent_detector_events",
+         "get_corner_detail"
+        ]
+       },
+       {
+        "kind": "tool",
+        "name": "get_recent_detector_events",
+        "start_wall": 1793407419942.59,
+        "end_wall": 1793407419943,
+        "latency_ms": 0.41,
+        "ok": true,
+        "args": {
+         "limit": 20
+        },
+        "result": {
+         "type": "object",
+         "keys": [
+          "requested_types",
+          "returned",
+          "available",
+          "events"
+         ],
+         "size": 4
+        }
+       },
+       {
+        "kind": "tool",
+        "name": "get_corner_detail",
+        "start_wall": 1793407419943.52,
+        "end_wall": 1793407420210,
+        "latency_ms": 266.48,
+        "ok": true,
+        "args": {
+         "lap_dist_pct": 0.9794633984565735
+        },
+        "result": {
+         "type": "object",
+         "keys": [
+          "requested_lap_dist_pct",
+          "live",
+          "telemetry"
+         ],
+         "size": 3
+        }
+       },
+       {
+        "kind": "llm",
+        "call": 2,
+        "name": "kimi-k3",
+        "start_wall": 1793407420210,
+        "end_wall": 1793407438299,
+        "ok": true,
+        "latency_ms": 18088.51,
+        "error": null,
+        "tool_calls": []
+       }
+      ],
+      "validations": [
+       {
+        "ok": true,
+        "unsupported": [],
+        "repaired": false,
+        "word_count": 20
+       }
+      ],
+      "outcome": "radio",
+      "message_id": "386c95aadfe737d5",
+      "latency_ms": 27893.27,
+      "turns": 2,
+      "seqs": [
+       396,
+       397,
+       427,
+       428,
+       430,
+       431,
+       474,
+       475,
+       476
+      ]
+     },
+     {
+      "run_id": "vehicle_engineer-2",
+      "agent": "vehicle_engineer",
+      "event_key": "tyre_out_of_band",
+      "session_time": 371.5500000014809,
+      "tick": 201530,
+      "start_wall": 1793407412765,
+      "end_wall": 1793407459158,
+      "trigger": "tyre_out_of_band",
+      "model": "kimi-k3",
+      "context_radio": [
+       {
+        "message_id": "46b4373ed7ff0038",
+        "agent": "vehicle_engineer"
+       },
+       {
+        "message_id": "fd8c4e03a6c93cb1",
+        "agent": "strategist"
+       }
+      ],
+      "spans": [
+       {
+        "kind": "llm",
+        "call": 1,
+        "name": "kimi-k3",
+        "start_wall": 1793407412766,
+        "end_wall": 1793407428380,
+        "ok": true,
+        "latency_ms": 15614.31,
+        "error": null,
+        "tool_calls": [
+         "get_tyre_trend"
+        ]
+       },
+       {
+        "kind": "tool",
+        "name": "get_tyre_trend",
+        "start_wall": 1793407428379.87,
+        "end_wall": 1793407428380,
+        "latency_ms": 0.13,
+        "ok": true,
+        "args": {},
+        "result": {
+         "type": "object",
+         "keys": [
+          "temps_c",
+          "pressures_kpa",
+          "temp_trend_c_per_lap",
+          "pressure_trend_per_lap",
+          "stint_laps",
+          "laps_on_tyres"
+         ],
+         "size": 6
+        }
+       },
+       {
+        "kind": "llm",
+        "call": 2,
+        "name": "kimi-k3",
+        "start_wall": 1793407428380,
+        "end_wall": 1793407438046,
+        "ok": true,
+        "latency_ms": 9665.09,
+        "error": null,
+        "tool_calls": [
+         "get_setup_snapshot"
+        ]
+       },
+       {
+        "kind": "tool",
+        "name": "get_setup_snapshot",
+        "start_wall": 1793407438045.4,
+        "end_wall": 1793407438046,
+        "latency_ms": 0.6,
+        "ok": true,
+        "args": {},
+        "result": {
+         "type": "object",
+         "keys": [
+          "available",
+          "car_id",
+          "track_name",
+          "lap_length_m",
+          "car",
+          "setup",
+          "update_count"
+         ],
+         "size": 7
+        }
+       },
+       {
+        "kind": "llm",
+        "call": 3,
+        "name": "kimi-k3",
+        "start_wall": 1793407438046,
+        "end_wall": 1793407459157,
+        "ok": true,
+        "latency_ms": 21110.97,
+        "error": null,
+        "tool_calls": []
+       }
+      ],
+      "validations": [
+       {
+        "ok": true,
+        "unsupported": [],
+        "repaired": false,
+        "word_count": 25
+       }
+      ],
+      "outcome": "radio",
+      "message_id": "11e83fdbc2e0e577",
+      "latency_ms": 46392.97,
+      "turns": 3,
+      "seqs": [
+       411,
+       412,
+       448,
+       449,
+       450,
+       470,
+       471,
+       472,
+       521,
+       522,
+       523
+      ]
+     },
+     {
+      "run_id": "strategist-2",
+      "agent": "strategist",
+      "event_key": "flag_change:yellow",
+      "session_time": 500.81666666803,
+      "tick": 209286,
+      "start_wall": 1793407476955,
+      "end_wall": 1793407505009,
+      "trigger": "flag_change",
+      "model": "kimi-k3",
+      "context_radio": [
+       {
+        "message_id": "46b4373ed7ff0038",
+        "agent": "vehicle_engineer"
+       },
+       {
+        "message_id": "fd8c4e03a6c93cb1",
+        "agent": "strategist"
+       },
+       {
+        "message_id": "386c95aadfe737d5",
+        "agent": "coach"
+       },
+       {
+        "message_id": "11e83fdbc2e0e577",
+        "agent": "vehicle_engineer"
+       }
+      ],
+      "spans": [
+       {
+        "kind": "llm",
+        "call": 1,
+        "name": "kimi-k3",
+        "start_wall": 1793407476956,
+        "end_wall": 1793407485141,
+        "ok": true,
+        "latency_ms": 8184.86,
+        "error": null,
+        "tool_calls": [
+         "simulate_pit_outcome",
+         "get_fuel_projection"
+        ]
+       },
+       {
+        "kind": "tool",
+        "name": "simulate_pit_outcome",
+        "start_wall": 1793407485141.77,
+        "end_wall": 1793407485142,
+        "latency_ms": 0.23,
+        "ok": true,
+        "args": {
+         "under_yellow": true
+        },
+        "result": {
+         "type": "object",
+         "keys": [
+          "grounded",
+          "reason",
+          "stop_lap",
+          "current_lap",
+          "laps_before_stop",
+          "under_yellow",
+          "pit_lane_loss_s",
+          "effective_loss_s",
+          "position_before",
+          "rejoin_position",
+          "positions_lost",
+          "cars_clearing"
+         ],
+         "size": 19
+        }
+       },
+       {
+        "kind": "tool",
+        "name": "get_fuel_projection",
+        "start_wall": 1793407485141.94,
+        "end_wall": 1793407485142,
+        "latency_ms": 0.06,
+        "ok": true,
+        "args": {},
+        "result": {
+         "type": "object",
+         "keys": [
+          "level_l",
+          "capacity_l",
+          "per_lap_l",
+          "per_lap_std_l",
+          "samples",
+          "laps_remaining",
+          "laps_to_finish",
+          "fuel_to_finish_l",
+          "margin_l",
+          "margin_laps",
+          "pit_window_earliest_lap",
+          "pit_window_latest_lap"
+         ],
+         "size": 14
+        }
+       },
+       {
+        "kind": "llm",
+        "call": 2,
+        "name": "kimi-k3",
+        "start_wall": 1793407485142,
+        "end_wall": 1793407505009,
+        "ok": true,
+        "latency_ms": 19866.99,
+        "error": null,
+        "tool_calls": []
+       }
+      ],
+      "validations": [
+       {
+        "ok": true,
+        "unsupported": [],
+        "repaired": false,
+        "word_count": 22
+       }
+      ],
+      "outcome": "radio",
+      "message_id": "13dfdf18da914f37",
+      "latency_ms": 28054.23,
+      "turns": 2,
+      "seqs": [
+       564,
+       565,
+       596,
+       597,
+       598,
+       599,
+       645,
+       646,
+       647
+      ]
+     },
+     {
+      "run_id": "spotter-1",
+      "agent": "spotter",
+      "event_key": "flag_change:yellow",
+      "session_time": 500.81666666803,
+      "tick": 209286,
+      "start_wall": 1793407476960,
+      "end_wall": 1793407489407,
+      "trigger": "flag_change",
+      "model": "kimi-k3",
+      "context_radio": [
+       {
+        "message_id": "46b4373ed7ff0038",
+        "agent": "vehicle_engineer"
+       },
+       {
+        "message_id": "fd8c4e03a6c93cb1",
+        "agent": "strategist"
+       },
+       {
+        "message_id": "386c95aadfe737d5",
+        "agent": "coach"
+       },
+       {
+        "message_id": "11e83fdbc2e0e577",
+        "agent": "vehicle_engineer"
+       }
+      ],
+      "spans": [
+       {
+        "kind": "llm",
+        "call": 1,
+        "name": "kimi-k3",
+        "start_wall": 1793407476960,
+        "end_wall": 1793407480210,
+        "ok": true,
+        "latency_ms": 3249.93,
+        "error": null,
+        "tool_calls": [
+         "get_standings_around_player",
+         "get_recent_detector_events"
+        ]
+       },
+       {
+        "kind": "tool",
+        "name": "get_standings_around_player",
+        "start_wall": 1793407480209.91,
+        "end_wall": 1793407480210,
+        "latency_ms": 0.09,
+        "ok": true,
+        "args": {
+         "window": 3
+        },
+        "result": {
+         "type": "object",
+         "keys": [
+          "gap_basis",
+          "reference_lap_time_s",
+          "player_position",
+          "field_size",
+          "cars",
+          "unavailable"
+         ],
+         "size": 6
+        }
+       },
+       {
+        "kind": "tool",
+        "name": "get_recent_detector_events",
+        "start_wall": 1793407480210.16,
+        "end_wall": 1793407480211,
+        "latency_ms": 0.84,
+        "ok": true,
+        "args": {
+         "limit": 20
+        },
+        "result": {
+         "type": "object",
+         "keys": [
+          "requested_types",
+          "returned",
+          "available",
+          "events"
+         ],
+         "size": 4
+        }
+       },
+       {
+        "kind": "llm",
+        "call": 2,
+        "name": "kimi-k3",
+        "start_wall": 1793407480211,
+        "end_wall": 1793407489406,
+        "ok": true,
+        "latency_ms": 9195.32,
+        "error": null,
+        "tool_calls": []
+       }
+      ],
+      "validations": [
+       {
+        "ok": true,
+        "unsupported": [],
+        "repaired": false,
+        "word_count": 14
+       }
+      ],
+      "outcome": "radio",
+      "message_id": "0ae796b2c8f8348c",
+      "latency_ms": 12447.16,
+      "turns": 2,
+      "seqs": [
+       566,
+       567,
+       574,
+       575,
+       576,
+       577,
+       609,
+       610,
+       611
+      ]
+     },
+     {
+      "run_id": "strategist-3",
+      "agent": "strategist",
+      "event_key": "flag_change:yellow",
+      "session_time": 570.933333334633,
+      "tick": 213493,
+      "start_wall": 1793407512014,
+      "end_wall": 1793407531278,
+      "trigger": "flag_change",
+      "model": "kimi-k3",
+      "context_radio": [
+       {
+        "message_id": "fd8c4e03a6c93cb1",
+        "agent": "strategist"
+       },
+       {
+        "message_id": "386c95aadfe737d5",
+        "agent": "coach"
+       },
+       {
+        "message_id": "11e83fdbc2e0e577",
+        "agent": "vehicle_engineer"
+       },
+       {
+        "message_id": "0ae796b2c8f8348c",
+        "agent": "spotter"
+       },
+       {
+        "message_id": "13dfdf18da914f37",
+        "agent": "strategist"
+       }
+      ],
+      "spans": [
+       {
+        "kind": "llm",
+        "call": 1,
+        "name": "kimi-k3",
+        "start_wall": 1793407512015,
+        "end_wall": 1793407516605,
+        "ok": true,
+        "latency_ms": 4590.47,
+        "error": null,
+        "tool_calls": [
+         "get_fuel_projection",
+         "simulate_pit_outcome"
+        ]
+       },
+       {
+        "kind": "tool",
+        "name": "get_fuel_projection",
+        "start_wall": 1793407516604.84,
+        "end_wall": 1793407516605,
+        "latency_ms": 0.16,
+        "ok": true,
+        "args": {},
+        "result": {
+         "type": "object",
+         "keys": [
+          "level_l",
+          "capacity_l",
+          "per_lap_l",
+          "per_lap_std_l",
+          "samples",
+          "laps_remaining",
+          "laps_to_finish",
+          "fuel_to_finish_l",
+          "margin_l",
+          "margin_laps",
+          "pit_window_earliest_lap",
+          "pit_window_latest_lap"
+         ],
+         "size": 14
+        }
+       },
+       {
+        "kind": "tool",
+        "name": "simulate_pit_outcome",
+        "start_wall": 1793407516605.75,
+        "end_wall": 1793407516606,
+        "latency_ms": 0.25,
+        "ok": true,
+        "args": {
+         "under_yellow": true
+        },
+        "result": {
+         "type": "object",
+         "keys": [
+          "grounded",
+          "reason",
+          "stop_lap",
+          "current_lap",
+          "laps_before_stop",
+          "under_yellow",
+          "pit_lane_loss_s",
+          "effective_loss_s",
+          "position_before",
+          "rejoin_position",
+          "positions_lost",
+          "cars_clearing"
+         ],
+         "size": 19
+        }
+       },
+       {
+        "kind": "llm",
+        "call": 2,
+        "name": "kimi-k3",
+        "start_wall": 1793407516606,
+        "end_wall": 1793407531277,
+        "ok": true,
+        "latency_ms": 14670.96,
+        "error": null,
+        "tool_calls": []
+       }
+      ],
+      "validations": [
+       {
+        "ok": true,
+        "unsupported": [],
+        "repaired": false,
+        "word_count": 22
+       }
+      ],
+      "outcome": "radio",
+      "message_id": "a1d5fc09a0fc72d6",
+      "latency_ms": 19263.53,
+      "turns": 2,
+      "seqs": [
+       667,
+       668,
+       682,
+       683,
+       684,
+       685,
+       722,
+       723,
+       724
+      ]
+     },
+     {
+      "run_id": "spotter-2",
+      "agent": "spotter",
+      "event_key": "flag_change:yellow",
+      "session_time": 570.933333334633,
+      "tick": 213493,
+      "start_wall": 1793407512018,
+      "end_wall": 1793407541698,
+      "trigger": "flag_change",
+      "model": "kimi-k3",
+      "context_radio": [
+       {
+        "message_id": "fd8c4e03a6c93cb1",
+        "agent": "strategist"
+       },
+       {
+        "message_id": "386c95aadfe737d5",
+        "agent": "coach"
+       },
+       {
+        "message_id": "11e83fdbc2e0e577",
+        "agent": "vehicle_engineer"
+       },
+       {
+        "message_id": "0ae796b2c8f8348c",
+        "agent": "spotter"
+       },
+       {
+        "message_id": "13dfdf18da914f37",
+        "agent": "strategist"
+       }
+      ],
+      "spans": [
+       {
+        "kind": "llm",
+        "call": 1,
+        "name": "kimi-k3",
+        "start_wall": 1793407512018,
+        "end_wall": 1793407520970,
+        "ok": true,
+        "latency_ms": 8951.64,
+        "error": null,
+        "tool_calls": [
+         "get_recent_detector_events",
+         "get_standings_around_player"
+        ]
+       },
+       {
+        "kind": "tool",
+        "name": "get_recent_detector_events",
+        "start_wall": 1793407520969.28,
+        "end_wall": 1793407520970,
+        "latency_ms": 0.72,
+        "ok": true,
+        "args": {
+         "limit": 20
+        },
+        "result": {
+         "type": "object",
+         "keys": [
+          "requested_types",
+          "returned",
+          "available",
+          "events"
+         ],
+         "size": 4
+        }
+       },
+       {
+        "kind": "tool",
+        "name": "get_standings_around_player",
+        "start_wall": 1793407520970.96,
+        "end_wall": 1793407520971,
+        "latency_ms": 0.04,
+        "ok": true,
+        "args": {
+         "window": 3
+        },
+        "result": {
+         "type": "object",
+         "keys": [
+          "gap_basis",
+          "reference_lap_time_s",
+          "player_position",
+          "field_size",
+          "cars",
+          "unavailable"
+         ],
+         "size": 6
+        }
+       },
+       {
+        "kind": "llm",
+        "call": 2,
+        "name": "kimi-k3",
+        "start_wall": 1793407520971,
+        "end_wall": 1793407530722,
+        "ok": true,
+        "latency_ms": 9751.87,
+        "error": null,
+        "tool_calls": []
+       },
+       {
+        "kind": "llm",
+        "call": 3,
+        "name": "kimi-k3",
+        "start_wall": 1793407530723,
+        "end_wall": 1793407541698,
+        "ok": true,
+        "latency_ms": 10975.13,
+        "error": null,
+        "tool_calls": []
+       }
+      ],
+      "validations": [
+       {
+        "ok": false,
+        "unsupported": [
+         "10"
+        ],
+        "repaired": false,
+        "word_count": 14
+       },
+       {
+        "ok": false,
+        "unsupported": [
+         "10"
+        ],
+        "repaired": true,
+        "word_count": 10
+       }
+      ],
+      "outcome": "refused",
+      "message_id": "a3de5cb0a803154c",
+      "latency_ms": 29680.77,
+      "turns": 3,
+      "seqs": [
+       669,
+       670,
+       695,
+       696,
+       697,
+       698,
+       718,
+       719,
+       720,
+       749,
+       750,
+       751
+      ]
+     }
+    ],
+    "radio": {
+     "queued": 6,
+     "aired": 6,
+     "superseded": 0
+    },
+    "dispatch": {
+     "events": 21,
+     "routed": 9,
+     "blocked": 0,
+     "cooldown": 2,
+     "superseded": 1
+    },
+    "llm": {
+     "calls": 20,
+     "inflight": 0,
+     "errors": 0,
+     "latency_total": 265954.48
+    },
+    "tools": {
+     "calls": 16,
+     "errors": 0,
+     "by_name": {
+      "get_car_health": 1,
+      "get_recent_detector_events": 4,
+      "get_fuel_projection": 3,
+      "simulate_pit_outcome": 3,
+      "get_corner_detail": 1,
+      "get_tyre_trend": 1,
+      "get_setup_snapshot": 1,
+      "get_standings_around_player": 2
+     }
+    },
+    "validator": {
+     "checks": 10,
+     "failed": 4,
+     "repaired": 2
+    },
+    "last_blocked": null
+   }
+  },
+  {
+   "name": "recentRuns",
+   "module": "activity",
+   "fn": "recentRuns",
+   "args": [
+    {
+     "$model": {
+      "$input": "activity"
+     }
+    },
+    5
+   ],
+   "expect": [
+    {
+     "run_id": "strategist-9",
+     "agent": "strategist",
+     "event_key": "fuel_critical",
+     "session_time": 2499.683333339041,
+     "tick": 329218,
+     "start_wall": 1793408487821,
+     "end_wall": 1793408503200,
+     "trigger": "fuel_critical",
+     "model": "kimi-k3",
+     "context_radio": [
+      {
+       "message_id": "2bbc0ca378114bd7",
+       "agent": "coach"
+      },
+      {
+       "message_id": "bcb46eae45f561c5",
+       "agent": "vehicle_engineer"
+      },
+      {
+       "message_id": "d6b5c4ef97cfa8ad",
+       "agent": "spotter"
+      },
+      {
+       "message_id": "9c0c1866bac0f894",
+       "agent": "coach"
+      },
+      {
+       "message_id": "5e4e45d245ba3c4f",
+       "agent": "coach"
+      }
+     ],
+     "spans": [
+      {
+       "kind": "llm",
+       "call": 1,
+       "name": "kimi-k3",
+       "start_wall": 1793408487822,
+       "end_wall": 1793408492995,
+       "ok": true,
+       "latency_ms": 5173.18,
+       "error": null,
+       "tool_calls": [
+        "get_fuel_projection",
+        "simulate_pit_outcome"
+       ]
+      },
+      {
+       "kind": "tool",
+       "name": "get_fuel_projection",
+       "start_wall": 1793408492994.8,
+       "end_wall": 1793408492995,
+       "latency_ms": 0.2,
+       "ok": true,
+       "args": {},
+       "result": {
+        "type": "object",
+        "keys": [
+         "level_l",
+         "capacity_l",
+         "per_lap_l",
+         "per_lap_std_l",
+         "samples",
+         "laps_remaining",
+         "laps_to_finish",
+         "fuel_to_finish_l",
+         "margin_l",
+         "margin_laps",
+         "pit_window_earliest_lap",
+         "pit_window_latest_lap"
+        ],
+        "size": 14
+       }
+      },
+      {
+       "kind": "tool",
+       "name": "simulate_pit_outcome",
+       "start_wall": 1793408492995.58,
+       "end_wall": 1793408492996,
+       "latency_ms": 0.42,
+       "ok": true,
+       "args": {},
+       "result": {
+        "type": "object",
+        "keys": [
+         "grounded",
+         "reason",
+         "stop_lap",
+         "current_lap",
+         "laps_before_stop",
+         "under_yellow",
+         "pit_lane_loss_s",
+         "effective_loss_s",
+         "position_before",
+         "rejoin_position",
+         "positions_lost",
+         "cars_clearing"
+        ],
+        "size": 19
+       }
+      },
+      {
+       "kind": "llm",
+       "call": 2,
+       "name": "kimi-k3",
+       "start_wall": 1793408492996,
+       "end_wall": 1793408503200,
+       "ok": true,
+       "latency_ms": 10203.59,
+       "error": null,
+       "tool_calls": []
+      }
+     ],
+     "validations": [
+      {
+       "ok": true,
+       "unsupported": [],
+       "repaired": false,
+       "word_count": 19
+      }
+     ],
+     "outcome": "radio",
+     "message_id": "42f7fa2c9dfac7c1",
+     "latency_ms": 15379.41,
+     "turns": 2,
+     "seqs": [
+      429,
+      430,
+      432,
+      433,
+      434,
+      435,
+      445,
+      446,
+      447
+     ]
+    },
+    {
+     "run_id": "strategist-8",
+     "agent": "strategist",
+     "event_key": "pit_window_closing",
+     "session_time": 2490.6833333389263,
+     "tick": 328678,
+     "start_wall": 1793408471889,
+     "end_wall": 1793408487821,
+     "trigger": "pit_window_closing",
+     "model": "kimi-k3",
+     "context_radio": [
+      {
+       "message_id": "2bbc0ca378114bd7",
+       "agent": "coach"
+      },
+      {
+       "message_id": "bcb46eae45f561c5",
+       "agent": "vehicle_engineer"
+      },
+      {
+       "message_id": "d6b5c4ef97cfa8ad",
+       "agent": "spotter"
+      },
+      {
+       "message_id": "9c0c1866bac0f894",
+       "agent": "coach"
+      },
+      {
+       "message_id": "5e4e45d245ba3c4f",
+       "agent": "coach"
+      }
+     ],
+     "spans": [
+      {
+       "kind": "llm",
+       "call": 1,
+       "name": "kimi-k3",
+       "start_wall": 1793408471890,
+       "end_wall": 1793408475373,
+       "ok": true,
+       "latency_ms": 3482.76,
+       "error": null,
+       "tool_calls": [
+        "get_fuel_projection",
+        "simulate_pit_outcome"
+       ]
+      },
+      {
+       "kind": "tool",
+       "name": "get_fuel_projection",
+       "start_wall": 1793408475372.9,
+       "end_wall": 1793408475373,
+       "latency_ms": 0.1,
+       "ok": true,
+       "args": {},
+       "result": {
+        "type": "object",
+        "keys": [
+         "level_l",
+         "capacity_l",
+         "per_lap_l",
+         "per_lap_std_l",
+         "samples",
+         "laps_remaining",
+         "laps_to_finish",
+         "fuel_to_finish_l",
+         "margin_l",
+         "margin_laps",
+         "pit_window_earliest_lap",
+         "pit_window_latest_lap"
+        ],
+        "size": 14
+       }
+      },
+      {
+       "kind": "tool",
+       "name": "simulate_pit_outcome",
+       "start_wall": 1793408475373.75,
+       "end_wall": 1793408475374,
+       "latency_ms": 0.25,
+       "ok": true,
+       "args": {
+        "stop_lap": 17
+       },
+       "result": {
+        "type": "object",
+        "keys": [
+         "grounded",
+         "reason",
+         "stop_lap",
+         "current_lap",
+         "laps_before_stop",
+         "under_yellow",
+         "pit_lane_loss_s",
+         "effective_loss_s",
+         "position_before",
+         "rejoin_position",
+         "positions_lost",
+         "cars_clearing"
+        ],
+        "size": 19
+       }
+      },
+      {
+       "kind": "llm",
+       "call": 2,
+       "name": "kimi-k3",
+       "start_wall": 1793408475374,
+       "end_wall": 1793408487819,
+       "ok": true,
+       "latency_ms": 12445.86,
+       "error": null,
+       "tool_calls": []
+      }
+     ],
+     "validations": [
+      {
+       "ok": true,
+       "unsupported": [],
+       "repaired": false,
+       "word_count": 10
+      }
+     ],
+     "outcome": "radio",
+     "message_id": "f055c9daa2807663",
+     "latency_ms": 15931.54,
+     "turns": 2,
+     "seqs": [
+      416,
+      417,
+      418,
+      419,
+      420,
+      421,
+      425,
+      426,
+      427
+     ]
+    },
+    {
+     "run_id": "spotter-6",
+     "agent": "spotter",
+     "event_key": "incident",
+     "session_time": 2483.683333338837,
+     "tick": 328258,
+     "start_wall": 1793408468389,
+     "end_wall": 1793408502111,
+     "trigger": "incident",
+     "model": "kimi-k3",
+     "context_radio": [
+      {
+       "message_id": "2bbc0ca378114bd7",
+       "agent": "coach"
+      },
+      {
+       "message_id": "bcb46eae45f561c5",
+       "agent": "vehicle_engineer"
+      },
+      {
+       "message_id": "d6b5c4ef97cfa8ad",
+       "agent": "spotter"
+      },
+      {
+       "message_id": "9c0c1866bac0f894",
+       "agent": "coach"
+      },
+      {
+       "message_id": "5e4e45d245ba3c4f",
+       "agent": "coach"
+      }
+     ],
+     "spans": [
+      {
+       "kind": "llm",
+       "call": 1,
+       "name": "kimi-k3",
+       "start_wall": 1793408468390,
+       "end_wall": 1793408494645,
+       "ok": true,
+       "latency_ms": 26255.11,
+       "error": null,
+       "tool_calls": [
+        "get_recent_detector_events",
+        "get_standings_around_player"
+       ]
+      },
+      {
+       "kind": "tool",
+       "name": "get_recent_detector_events",
+       "start_wall": 1793408494645.09,
+       "end_wall": 1793408494646,
+       "latency_ms": 0.91,
+       "ok": true,
+       "args": {
+        "limit": 20
+       },
+       "result": {
+        "type": "object",
+        "keys": [
+         "requested_types",
+         "returned",
+         "available",
+         "events"
+        ],
+        "size": 4
+       }
+      },
+      {
+       "kind": "tool",
+       "name": "get_standings_around_player",
+       "start_wall": 1793408494645.97,
+       "end_wall": 1793408494646,
+       "latency_ms": 0.03,
+       "ok": true,
+       "args": {
+        "window": 3
+       },
+       "result": {
+        "type": "object",
+        "keys": [
+         "gap_basis",
+         "reference_lap_time_s",
+         "player_position",
+         "field_size",
+         "cars",
+         "unavailable"
+        ],
+        "size": 6
+       }
+      },
+      {
+       "kind": "llm",
+       "call": 2,
+       "name": "kimi-k3",
+       "start_wall": 1793408494646,
+       "end_wall": 1793408502111,
+       "ok": true,
+       "latency_ms": 7464.85,
+       "error": null,
+       "tool_calls": []
+      }
+     ],
+     "validations": [
+      {
+       "ok": true,
+       "unsupported": [],
+       "repaired": false,
+       "word_count": 14
+      }
+     ],
+     "outcome": "radio",
+     "message_id": "16bd4fccd2879ffb",
+     "latency_ms": 33722.24,
+     "turns": 2,
+     "seqs": [
+      411,
+      412,
+      436,
+      437,
+      438,
+      439,
+      440,
+      441,
+      442
+     ]
+    },
+    {
+     "run_id": "coach-10",
+     "agent": "coach",
+     "event_key": "offtrack",
+     "session_time": 2342.53333333704,
+     "tick": 319789,
+     "start_wall": 1793408397814,
+     "end_wall": 1793408446525,
+     "trigger": "offtrack",
+     "model": "kimi-k3",
+     "context_radio": [
+      {
+       "message_id": "657c825d1d556951",
+       "agent": "strategist"
+      },
+      {
+       "message_id": "2bbc0ca378114bd7",
+       "agent": "coach"
+      },
+      {
+       "message_id": "bcb46eae45f561c5",
+       "agent": "vehicle_engineer"
+      },
+      {
+       "message_id": "d6b5c4ef97cfa8ad",
+       "agent": "spotter"
+      },
+      {
+       "message_id": "9c0c1866bac0f894",
+       "agent": "coach"
+      }
+     ],
+     "spans": [
+      {
+       "kind": "llm",
+       "call": 1,
+       "name": "kimi-k3",
+       "start_wall": 1793408397814,
+       "end_wall": 1793408401393,
+       "ok": true,
+       "latency_ms": 3578.75,
+       "error": null,
+       "tool_calls": [
+        "get_recent_detector_events",
+        "get_corner_detail"
+       ]
+      },
+      {
+       "kind": "tool",
+       "name": "get_recent_detector_events",
+       "start_wall": 1793408401392.83,
+       "end_wall": 1793408401394,
+       "latency_ms": 1.17,
+       "ok": true,
+       "args": {
+        "limit": 30
+       },
+       "result": {
+        "type": "object",
+        "keys": [
+         "requested_types",
+         "returned",
+         "available",
+         "events"
+        ],
+        "size": 4
+       }
+      },
+      {
+       "kind": "tool",
+       "name": "get_corner_detail",
+       "start_wall": 1793408401394.62,
+       "end_wall": 1793408401677,
+       "latency_ms": 282.38,
+       "ok": true,
+       "args": {
+        "corner": "C09"
+       },
+       "result": {
+        "type": "object",
+        "keys": [
+         "requested_lap_dist_pct",
+         "live",
+         "telemetry"
+        ],
+        "size": 3
+       }
+      },
+      {
+       "kind": "llm",
+       "call": 2,
+       "name": "kimi-k3",
+       "start_wall": 1793408401677,
+       "end_wall": 1793408407970,
+       "ok": true,
+       "latency_ms": 6293.05,
+       "error": null,
+       "tool_calls": [
+        "get_corner_detail"
+       ]
+      },
+      {
+       "kind": "tool",
+       "name": "get_corner_detail",
+       "start_wall": 1793408407970.15,
+       "end_wall": 1793408408218,
+       "latency_ms": 247.85,
+       "ok": true,
+       "args": {
+        "lap_dist_pct": 0.718
+       },
+       "result": {
+        "type": "object",
+        "keys": [
+         "requested_lap_dist_pct",
+         "live",
+         "telemetry"
+        ],
+        "size": 3
+       }
+      },
+      {
+       "kind": "llm",
+       "call": 3,
+       "name": "kimi-k3",
+       "start_wall": 1793408408218,
+       "end_wall": 1793408429540,
+       "ok": true,
+       "latency_ms": 21322.1,
+       "error": null,
+       "tool_calls": []
+      },
+      {
+       "kind": "llm",
+       "call": 4,
+       "name": "kimi-k3",
+       "start_wall": 1793408429541,
+       "end_wall": 1793408446525,
+       "ok": true,
+       "latency_ms": 16983.15,
+       "error": null,
+       "tool_calls": []
+      }
+     ],
+     "validations": [
+      {
+       "ok": false,
+       "unsupported": [
+        "71.8",
+        "48"
+       ],
+       "repaired": false,
+       "word_count": 26
+      },
+      {
+       "ok": true,
+       "unsupported": [],
+       "repaired": true,
+       "word_count": 23
+      }
+     ],
+     "outcome": "radio",
+     "message_id": "5e4e45d245ba3c4f",
+     "latency_ms": 48711.52,
+     "turns": 4,
+     "seqs": [
+      390,
+      391,
+      392,
+      393,
+      394,
+      395,
+      396,
+      397,
+      398,
+      401,
+      402,
+      403,
+      404,
+      405,
+      406
+     ]
+    },
+    {
+     "run_id": "spotter-5",
+     "agent": "spotter",
+     "event_key": "incident",
+     "session_time": 2080.4833333337033,
+     "tick": 304066,
+     "start_wall": 1793408266789,
+     "end_wall": 1793408283189,
+     "trigger": "incident",
+     "model": "kimi-k3",
+     "context_radio": [
+      {
+       "message_id": "bb87c377cb01c210",
+       "agent": "spotter"
+      },
+      {
+       "message_id": "994c5115a365d927",
+       "agent": "vehicle_engineer"
+      },
+      {
+       "message_id": "657c825d1d556951",
+       "agent": "strategist"
+      },
+      {
+       "message_id": "2bbc0ca378114bd7",
+       "agent": "coach"
+      },
+      {
+       "message_id": "bcb46eae45f561c5",
+       "agent": "vehicle_engineer"
+      }
+     ],
+     "spans": [
+      {
+       "kind": "llm",
+       "call": 1,
+       "name": "kimi-k3",
+       "start_wall": 1793408266790,
+       "end_wall": 1793408271828,
+       "ok": true,
+       "latency_ms": 5038.02,
+       "error": null,
+       "tool_calls": [
+        "get_standings_around_player",
+        "get_recent_detector_events"
+       ]
+      },
+      {
+       "kind": "tool",
+       "name": "get_standings_around_player",
+       "start_wall": 1793408271827.93,
+       "end_wall": 1793408271828,
+       "latency_ms": 0.07,
+       "ok": true,
+       "args": {
+        "window": 3
+       },
+       "result": {
+        "type": "object",
+        "keys": [
+         "gap_basis",
+         "reference_lap_time_s",
+         "player_position",
+         "field_size",
+         "cars",
+         "unavailable"
+        ],
+        "size": 6
+       }
+      },
+      {
+       "kind": "tool",
+       "name": "get_recent_detector_events",
+       "start_wall": 1793408271828.49,
+       "end_wall": 1793408271829,
+       "latency_ms": 0.51,
+       "ok": true,
+       "args": {
+        "limit": 20,
+        "types": "[\"incident\",\"offtrack\"]"
+       },
+       "result": {
+        "type": "object",
+        "keys": [
+         "requested_types",
+         "returned",
+         "available",
+         "events"
+        ],
+        "size": 4
+       }
+      },
+      {
+       "kind": "llm",
+       "call": 2,
+       "name": "kimi-k3",
+       "start_wall": 1793408271829,
+       "end_wall": 1793408283189,
+       "ok": true,
+       "latency_ms": 11360.16,
+       "error": null,
+       "tool_calls": []
+      }
+     ],
+     "validations": [
+      {
+       "ok": true,
+       "unsupported": [],
+       "repaired": false,
+       "word_count": 14
+      }
+     ],
+     "outcome": "radio",
+     "message_id": "d6b5c4ef97cfa8ad",
+     "latency_ms": 16400.1,
+     "turns": 2,
+     "seqs": [
+      366,
+      367,
+      368,
+      369,
+      370,
+      371,
+      378,
+      379,
+      380
+     ]
+    }
+   ]
+  },
+  {
+   "name": "meanLatency",
+   "module": "activity",
+   "fn": "meanLatency",
+   "args": [
+    {
+     "$model": {
+      "$input": "activity"
+     }
+    }
+   ],
+   "expect": 10890.383066666667
+  },
+  {
+   "name": "meanLatency of nothing",
+   "module": "activity",
+   "fn": "meanLatency",
+   "args": [
+    {
+     "$model": []
+    }
+   ],
+   "expect": null
+  },
+  {
+   "name": "edgesFor dispatch #1",
+   "module": "activity",
+   "fn": "edgesFor",
+   "args": [
+    {
+     "seq": 1,
+     "wall_ms": 1793407238047,
+     "session_time": 22.683333334823445,
+     "tick": 180599,
+     "kind": "dispatch",
+     "agent": null,
+     "run_id": null,
+     "event_key": "car_health_warning",
+     "data": {
+      "event_type": "car_health_warning",
+      "severity": "critical",
+      "accepted": [
+       "vehicle_engineer"
+      ],
+      "skipped": {},
+      "blocked": null
+     }
+    }
+   ],
+   "expect": [
+    {
+     "from": "bus",
+     "to": "orchestrator",
+     "kind": "dispatch",
+     "agent": null
+    },
+    {
+     "from": "orchestrator",
+     "to": "vehicle_engineer",
+     "kind": "dispatch",
+     "agent": "vehicle_engineer"
+    }
+   ]
+  },
+  {
+   "name": "edgesFor run_start #2",
+   "module": "activity",
+   "fn": "edgesFor",
+   "args": [
+    {
+     "seq": 2,
+     "wall_ms": 1793407238047,
+     "session_time": 22.683333334823445,
+     "tick": 180599,
+     "kind": "run_start",
+     "agent": "vehicle_engineer",
+     "run_id": "vehicle_engineer-1",
+     "event_key": "car_health_warning",
+     "data": {
+      "trigger": "car_health_warning",
+      "severity": "critical",
+      "model": "kimi-k3",
+      "context_radio": [],
+      "context_events": 1
+     }
+    }
+   ],
+   "expect": []
+  },
+  {
+   "name": "edgesFor llm_call_start #3",
+   "module": "activity",
+   "fn": "edgesFor",
+   "args": [
+    {
+     "seq": 3,
+     "wall_ms": 1793407238048,
+     "session_time": 22.683333334823445,
+     "tick": 180599,
+     "kind": "llm_call_start",
+     "agent": "vehicle_engineer",
+     "run_id": "vehicle_engineer-1",
+     "event_key": "car_health_warning",
+     "data": {
+      "call": 1,
+      "model": "kimi-k3",
+      "tools_offered": 6,
+      "messages": 1
+     }
+    }
+   ],
+   "expect": [
+    {
+     "from": "vehicle_engineer",
+     "to": "llm",
+     "kind": "llm_call_start",
+     "agent": "vehicle_engineer"
+    }
+   ]
+  },
+  {
+   "name": "edgesFor llm_call_end #5",
+   "module": "activity",
+   "fn": "edgesFor",
+   "args": [
+    {
+     "seq": 5,
+     "wall_ms": 1793407254110,
+     "session_time": 22.683333334823445,
+     "tick": 180599,
+     "kind": "llm_call_end",
+     "agent": "vehicle_engineer",
+     "run_id": "vehicle_engineer-1",
+     "event_key": "car_health_warning",
+     "data": {
+      "call": 1,
+      "model": "kimi-k3",
+      "ok": true,
+      "error": null,
+      "latency_ms": 16061.44,
+      "tool_calls": [
+       "get_car_health"
+      ],
+      "answered": false
+     }
+    }
+   ],
+   "expect": [
+    {
+     "from": "llm",
+     "to": "vehicle_engineer",
+     "kind": "llm_call_end",
+     "agent": "vehicle_engineer",
+     "ok": true
+    }
+   ]
+  },
+  {
+   "name": "edgesFor tool_call #6",
+   "module": "activity",
+   "fn": "edgesFor",
+   "args": [
+    {
+     "seq": 6,
+     "wall_ms": 1793407254110,
+     "session_time": 22.683333334823445,
+     "tick": 180599,
+     "kind": "tool_call",
+     "agent": "vehicle_engineer",
+     "run_id": "vehicle_engineer-1",
+     "event_key": "car_health_warning",
+     "data": {
+      "tool": "get_car_health",
+      "args": {},
+      "ok": true,
+      "result": {
+       "type": "object",
+       "keys": [
+        "oil_temp",
+        "water_temp",
+        "oil_pressure",
+        "fuel_pressure",
+        "voltage",
+        "tow_time",
+        "engine_warnings",
+        "thresholds",
+        "lap"
+       ],
+       "size": 9
+      },
+      "latency_ms": 0.14
+     }
+    }
+   ],
+   "expect": [
+    {
+     "from": "vehicle_engineer",
+     "to": "tools",
+     "kind": "tool_call",
+     "agent": "vehicle_engineer"
+    },
+    {
+     "from": "tools",
+     "to": "vehicle_engineer",
+     "kind": "tool_call",
+     "agent": "vehicle_engineer",
+     "ok": true,
+     "delay": true
+    }
+   ]
+  },
+  {
+   "name": "edgesFor validate #14",
+   "module": "activity",
+   "fn": "edgesFor",
+   "args": [
+    {
+     "seq": 14,
+     "wall_ms": 1793407279973,
+     "session_time": 22.683333334823445,
+     "tick": 180599,
+     "kind": "validate",
+     "agent": "vehicle_engineer",
+     "run_id": "vehicle_engineer-1",
+     "event_key": "car_health_warning",
+     "data": {
+      "ok": false,
+      "unsupported": [
+       "4.66"
+      ],
+      "word_count": 27,
+      "over_word_limit": true,
+      "repaired": false
+     }
+    }
+   ],
+   "expect": [
+    {
+     "from": "vehicle_engineer",
+     "to": "validator",
+     "kind": "validate",
+     "agent": "vehicle_engineer",
+     "ok": false
+    }
+   ]
+  },
+  {
+   "name": "edgesFor run_end #18",
+   "module": "activity",
+   "fn": "edgesFor",
+   "args": [
+    {
+     "seq": 18,
+     "wall_ms": 1793407296523,
+     "session_time": 22.683333334823445,
+     "tick": 180599,
+     "kind": "run_end",
+     "agent": "vehicle_engineer",
+     "run_id": "vehicle_engineer-1",
+     "event_key": "car_health_warning",
+     "data": {
+      "outcome": "refused",
+      "message_id": "46b4373ed7ff0038",
+      "priority": "info",
+      "tools_used": [
+       "get_car_health",
+       "get_recent_detector_events"
+      ],
+      "turns": 4,
+      "latency_ms": 58475.14
+     }
+    }
+   ],
+   "expect": []
+  },
+  {
+   "name": "edgesFor radio_queued #19",
+   "module": "activity",
+   "fn": "edgesFor",
+   "args": [
+    {
+     "seq": 19,
+     "wall_ms": 1793407296523,
+     "session_time": 139.95000000149363,
+     "tick": 187634,
+     "kind": "radio_queued",
+     "agent": "vehicle_engineer",
+     "run_id": null,
+     "event_key": "car_health_warning",
+     "data": {
+      "message_id": "46b4373ed7ff0038",
+      "seq": 1,
+      "priority": "info",
+      "subject": "car_health",
+      "refused": true
+     }
+    }
+   ],
+   "expect": [
+    {
+     "from": "validator",
+     "to": "radio",
+     "kind": "radio_queued",
+     "agent": "vehicle_engineer"
+    }
+   ]
+  },
+  {
+   "name": "edgesFor radio_aired #20",
+   "module": "activity",
+   "fn": "edgesFor",
+   "args": [
+    {
+     "seq": 20,
+     "wall_ms": 1793407296523,
+     "session_time": 139.95000000149363,
+     "tick": 187634,
+     "kind": "radio_aired",
+     "agent": "vehicle_engineer",
+     "run_id": null,
+     "event_key": "car_health_warning",
+     "data": {
+      "message_id": "46b4373ed7ff0038",
+      "seq": 1,
+      "priority": "info",
+      "subject": "car_health",
+      "refused": true
+     }
+    }
+   ],
+   "expect": [
+    {
+     "from": "radio",
+     "to": "driver",
+     "kind": "radio_aired",
+     "agent": "vehicle_engineer"
+    }
+   ]
+  },
+  {
+   "name": "edgesFor inbox_superseded #25",
+   "module": "activity",
+   "fn": "edgesFor",
+   "args": [
+    {
+     "seq": 25,
+     "wall_ms": 1793407341389,
+     "session_time": 229.68333333489838,
+     "tick": 193018,
+     "kind": "inbox_superseded",
+     "agent": "strategist",
+     "run_id": null,
+     "event_key": "fuel_margin_low",
+     "data": {
+      "dropped": "pit_window_open",
+      "kept": "fuel_margin_low"
+     }
+    }
+   ],
+   "expect": []
+  },
+  {
+   "name": "edgesFor run_start #27",
+   "module": "activity",
+   "fn": "edgesFor",
+   "args": [
+    {
+     "seq": 27,
+     "wall_ms": 1793407341390,
+     "session_time": 229.68333333489838,
+     "tick": 193018,
+     "kind": "run_start",
+     "agent": "strategist",
+     "run_id": "strategist-1",
+     "event_key": "fuel_margin_low",
+     "data": {
+      "trigger": "fuel_margin_low",
+      "severity": "advisory",
+      "model": "kimi-k3",
+      "context_radio": [
+       {
+        "message_id": "46b4373ed7ff0038",
+        "agent": "vehicle_engineer"
+       }
+      ],
+      "context_events": 9
+     }
+    }
+   ],
+   "expect": [
+    {
+     "from": "radio",
+     "to": "strategist",
+     "kind": "run_start",
+     "agent": "strategist",
+     "source": "vehicle_engineer",
+     "context": true
+    }
+   ]
+  },
+  {
+   "name": "edgesFor a blocked dispatch",
+   "module": "activity",
+   "fn": "edgesFor",
+   "args": [
+    {
+     "kind": "dispatch",
+     "data": {
+      "blocked": true
+     }
+    }
+   ],
+   "expect": [
+    {
+     "from": "bus",
+     "to": "orchestrator",
+     "kind": "dispatch",
+     "agent": null,
+     "blocked": true
+    }
+   ]
+  },
+  {
+   "name": "edgesFor the driver's own call",
+   "module": "activity",
+   "fn": "edgesFor",
+   "args": [
+    {
+     "kind": "radio_aired",
+     "agent": "driver",
+     "data": {}
+    }
+   ],
+   "expect": [
+    {
+     "from": "driver",
+     "to": "radio",
+     "kind": "radio_aired",
+     "agent": "driver"
+    }
+   ]
+  },
+  {
+   "name": "edgesFor nothing",
+   "module": "activity",
+   "fn": "edgesFor",
+   "args": [
+    null
+   ],
+   "expect": []
+  }
+ ]
+}

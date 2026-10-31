@@ -34,7 +34,9 @@ function journal() {
   let seq = 0;
   const r = (kind, t, extra = {}) => ({
     seq: ++seq,
-    wall_ms: 1000 + seq,
+    // The wall clock runs with the race clock, as in a real journal: the review
+    // puts a run's end on the race clock through it.
+    wall_ms: 1_000_000 + Math.round(t * 1000),
     session_time: t,
     tick: Math.round(t * 60),
     kind,
@@ -111,6 +113,24 @@ test('lanes: laps are spans, flags close at the next change, agent runs span sta
   ok(lanes.coach[0].cls.includes('run-quiet'), 'a refused run is marked quiet');
   eq(lanes.spotter[0].t1, undefined, 'an unfinished run stays a point');
   eq(lanes.radio.map((r) => r.label), ['strategist: Box this lap.']);
+});
+
+test('agent records carry the waking time: run ends and radio go on the race clock', () => {
+  // As recorded: run_end and radio keep the event's session time (500); the clock
+  // records around them (state, radio_aired) say when they really happened.
+  const records = [
+    { seq: 1, kind: 'state', wall_ms: 10_000, session_time: 500, data: {} },
+    { seq: 2, kind: 'run_start', agent: 'strategist', run_id: 'r1', wall_ms: 10_000, session_time: 500, data: {} },
+    { seq: 3, kind: 'run_end', agent: 'strategist', run_id: 'r1', wall_ms: 22_000, session_time: 500, data: { outcome: 'radio', message_id: 'm1' } },
+    { seq: 4, kind: 'radio', agent: 'strategist', wall_ms: 22_000, session_time: 500, data: { agent: 'strategist', message_id: 'm1' } },
+    { seq: 5, kind: 'radio_aired', agent: 'strategist', wall_ms: 23_000, session_time: 513, data: { message_id: 'm1' } },
+    { seq: 6, kind: 'state', wall_ms: 30_000, session_time: 520, data: {} },
+  ];
+  const lanes = laneItems(records, []);
+  eq([lanes.strategist[0].t0, lanes.strategist[0].t1], [500, 512]);
+  eq(lanes.radio[0].t0, 513);
+  eq(radioUpTo(records, 510).length, 0, 'not on air yet');
+  eq(radioUpTo(records, 513).length, 1);
 });
 
 test('audit rows join each run to what it said', () => {
