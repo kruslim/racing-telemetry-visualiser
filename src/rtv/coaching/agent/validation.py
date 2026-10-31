@@ -13,6 +13,8 @@ place — they can never disagree.
 
 from __future__ import annotations
 
+import re
+import unicodedata
 from typing import Any
 
 GAIN_TOL = 0.05  # seconds; how close a claimed time gain must be to the finding
@@ -38,15 +40,61 @@ def corner_map(findings: dict[str, Any]) -> dict[str, dict]:
     return {c["label"]: c for c in findings.get("corners", [])}
 
 
+#: ``T7``, ``T7 La Source``, ``T7 — Campus``, ``T7: Pouhon``, ``Turn 7 (Eau Rouge)``.
+_CITED_RE = re.compile(r"^\s*(?:T|Turn\s*)(\d+)\b[\s\-\u2013\u2014:,(]*(.*?)[\s)]*$", re.I)
+
+
+def name_key(name: str | None) -> str:
+    """A corner name folded for comparison: case, accents and punctuation do not count."""
+    text = unicodedata.normalize("NFKD", name or "")
+    text = "".join(ch for ch in text if not unicodedata.combining(ch))
+    return " ".join(re.sub(r"[^0-9a-z]+", " ", text.casefold()).split())
+
+
+def split_corner(cited: str | None) -> tuple[str | None, str | None]:
+    """``"T7 — Campus"`` -> ``("T7", "Campus")``; ``"T7"`` -> ``("T7", None)``.
+
+    Anything that is not a ``T<n>`` label comes back as ``(cited, None)`` unchanged, so it
+    still fails the lookup as the hallucinated label it is.
+    """
+    if cited is None:
+        return None, None
+    m = _CITED_RE.match(str(cited))
+    if not m:
+        return str(cited), None
+    return f"T{int(m.group(1))}", (m.group(2).strip() or None)
+
+
+def resolve_corner(
+    corners: dict[str, dict], cited: str | None, where: str
+) -> tuple[dict | None, str | None]:
+    """The finding a cited corner refers to, or an issue saying why it refers to none.
+
+    The label decides which corner it is. A name written next to it must be that corner's
+    mapped name: ``T7 Campus`` for a T7 the findings call Pouhon (or leave unnamed) is a
+    made-up name, not a different way of writing T7.
+    """
+    label, name = split_corner(cited)
+    corner = corners.get(label) if label is not None else None
+    if corner is None:
+        return None, f"{where}: corner {cited!r} is not in the findings (hallucinated)."
+    if name is not None and name_key(name) != name_key(corner.get("name")):
+        truth = corner.get("name")
+        said = f"{label} is {truth}" if truth else f"{label} has no mapped name"
+        return None, f"{where}: corner {cited!r} names it {name!r}, but {said}."
+    return corner, None
+
+
 def gain_issue(
     corners: dict[str, dict], corner_label: str, claimed: float, where: str, gain_tol: float
 ) -> str | None:
     """Return an issue message if ``claimed`` gain for ``corner_label`` is unsupported, else None.
 
-    ``where`` labels the source of the claim (e.g. ``priority``) in the message."""
-    c = corners.get(corner_label)
+    ``where`` labels the source of the claim (e.g. ``priority``) in the message. The label may
+    carry the corner's name (``T7 Pouhon``); see :func:`resolve_corner`."""
+    c, issue = resolve_corner(corners, corner_label, where)
     if c is None:
-        return f"{where}: corner {corner_label!r} is not in the findings (hallucinated)."
+        return issue
     truth = c.get("net_dt", 0.0)
     if abs(claimed - truth) <= gain_tol:
         return None
@@ -80,9 +128,9 @@ def check_figures(
     for claim in claims:
         for cit in claim.get("citations", []):
             label = cit.get("corner", "?")
-            corner = corners.get(label)
+            corner, issue = resolve_corner(corners, label, "citation")
             if corner is None:
-                issues.append(f"citation: corner {label!r} is not in the findings (hallucinated).")
+                issues.append(issue or "")
                 continue
             figure = cit.get("figure")
             field = _FIGURE_FIELD.get(figure)

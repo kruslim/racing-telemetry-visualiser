@@ -46,6 +46,11 @@ incidents, pit entry and exit, stints, pit window and fuel margin, rivals, blue 
 recurring issues, tyre bands, car health, traffic, `car_alongside` (iRacing's
 `CarLeftRight` proximity sensor, live only: an `.ibt` does not record it), weather and
 `visual_observation` (published by the vision seam only; the engine never reads it).
+Every event that happened somewhere on the lap (lock-up, wheelspin, off-track, incident,
+recurring issue) carries `payload.place = {label, name, lap_dist_pct, provisional}` in the
+post-race review's corner labels (`T1 La Source`), from the session corner map in
+`RaceState.track` (`rtv.tracks.live`); before two clean laps agree it is the lap-distance
+bucket (`C08`) with `provisional: true`.
 
 **Event bus** (`bus.py`). Thread-safe producer with bounded drop-oldest subscriptions
 (sync `drain()` and asyncio `next_events()`), sync callbacks on the producer thread, and
@@ -1088,7 +1093,9 @@ problem into a one-time notification for the rest of the race.
 | repeats before it is a finding | `RTV_PITWALL_RECURRENCE_MIN` | 3 |
 | lap window they must fall in | `RTV_PITWALL_RECURRENCE_WINDOW_LAPS` | 5 |
 
-**Corner labels are `C00`–`C19`, not circuit corner numbers.** Without a track map
+**Corner labels are `C00`–`C19`, not circuit corner numbers.** (Since E1 these are only
+the counting key and the provisional label; agents cite `payload.place`, see the E1 note at
+the end of the appendix.) Without a track map
 we do not know where T7 is, and naming it would be exactly the unbacked figure the
 rest of this system refuses to produce. The payload carries the lap-fraction range
 so a UI can point at it, and every prompt says so explicitly.
@@ -2992,6 +2999,41 @@ stays as the inner cap. `/pitwall/status` has `calls_by_layer`; `/pitwall/health
 `agents` block now carries `calls_used`, `calls_by_layer`, `max_calls_per_session` and
 `budget_exhausted`. With the agent layer off there is no shared budget and the vision cap
 alone applies. `radio.py` is untouched (B1 owns it).
+
+---
+
+## E1 — live corner labels match the review (2026-10-31)
+
+Plan task E1 (REVIEW.md P2-2). The live pitwall now names places the way the post-race
+review does.
+
+- `rtv.tracks.live.LiveCornerMap` keeps the lap being driven in `floor(LapDistPct * 1500)`
+  bucket means (the store's own resampling) and, at each clean lap, runs Layer 1's apex
+  detector (`rtv.coaching.features.detect_apexes`, the same `_detect_corners`) and the
+  venue name lookup (`TrackReference.name_at` at each apex). The engine feeds it every
+  frame and offers it every completed green, pit-free, timed lap.
+- **Deviation:** the plan said "after one clean lap". Layer 1 numbers corners per lap, and
+  on the real Spa race the start lap has an extra apex (Raidillon) and lap 8 misses
+  Speaker's Corner, so one lap can renumber everything. The map is adopted when two clean
+  laps have the same apexes (each within 2 % of a lap); on Spa that is laps 2 and 5 (3-4
+  ran under yellow), and the result equals the review's corners for its default laps.
+- `RaceState.track = {corner_map_lap, provisional, corners: [{label, name, lap_dist_pct}]}`,
+  a new state section (`get_race_state_slice` lists it), in the coach's and the vehicle
+  engineer's slices.
+- `payload.place = {label, name, lap_dist_pct, provisional}` on `lockup`, `wheelspin`,
+  `offtrack`, `incident` and `recurring_issue` (engine `PLACE_EVENTS`). A place belongs to
+  the nearest apex around the lap. A recurring issue is placed at the middle of its hits.
+  `CornerRecurrence` still counts by bucket, and `payload.corner` stays the bucket.
+- The coach and engineer prompts cite the place ("T1 La Source", or "T4" without a name)
+  and keep "the same corner" for a provisional bucket. `get_corner_detail` accepts `T7` or
+  `T7 Pouhon` and filters live events by the map; its `live` block gains `place`.
+- RTV Desktop's live ticker shows the place (`view_model.place_title`), the same
+  `T1 La Source` text as the review's findings table.
+- Names need `Lat`/`Lon`, which the `.ibt` has; a stream without them gets labels and
+  `name: null`, the same as its own review.
+- The coaching checks (`rtv.coaching.agent.validation.split_corner` / `resolve_corner`)
+  accept `T7 Campus`, `T7 — Campus` or `Turn 7 (Campus)` as T7 when Campus is T7's mapped
+  name, and report any other name as made up; `evals.checks.cross_check` uses them.
 
 ---
 

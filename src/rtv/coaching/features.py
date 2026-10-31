@@ -83,6 +83,21 @@ def _corner_type(min_kmh: float) -> str:
     return "Fast corner"
 
 
+def detect_apexes(speed: np.ndarray, dist: np.ndarray) -> list[int]:
+    """Apex indices on one lap resampled on lap distance, as :meth:`CoachingService.lap_findings`
+    finds them; corner ``i`` is labelled ``T{i + 1}``.
+
+    The live race-state engine calls this on its first clean lap (:mod:`rtv.tracks.live`) so the
+    labels the pitwall cites are the review's labels, from the one heuristic.
+    """
+    speed = np.asarray(speed, dtype=float)
+    dist = np.asarray(dist, dtype=float)
+    lap_length = float(np.nanmax(dist)) if dist.size else 0.0
+    if lap_length <= 0:
+        return []
+    return CoachingService._detect_corners(speed, dist, lap_length / dist.size)
+
+
 class CoachingService:
     """Computes :class:`LapFindings` from stored telemetry. No LLM involved."""
 

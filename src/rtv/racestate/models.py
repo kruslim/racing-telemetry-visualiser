@@ -278,6 +278,27 @@ class EngineMetrics(BaseModel):
     dropped_frames: int = 0
 
 
+class CornerRef(BaseModel):
+    """One corner of the session's own corner map: the review's label and the circuit's name."""
+
+    label: str  # "T7", numbered as the post-race review numbers it
+    name: str | None = None  # "Pouhon"; None where the venue reference maps no name
+    lap_dist_pct: float  # the apex, as a lap-distance fraction
+
+
+class TrackState(BaseModel):
+    """The corner map events are labelled against (:mod:`rtv.tracks.live`).
+
+    Empty and ``provisional`` until the first clean lap: places are then lap-distance buckets
+    (``C09``). Built once from that lap with the review's apex detection, so a live ``T7`` is
+    the review's ``T7``.
+    """
+
+    corner_map_lap: int | None = None
+    provisional: bool = True
+    corners: list[CornerRef] = Field(default_factory=list)
+
+
 class RaceState(BaseModel):
     """The single continuously-updated object the pitwall reasons over."""
 
@@ -299,6 +320,7 @@ class RaceState(BaseModel):
     tyres: TyreState = Field(default_factory=TyreState)
     car_health: CarHealthState = Field(default_factory=CarHealthState)
     conditions: ConditionsState = Field(default_factory=ConditionsState)
+    track: TrackState = Field(default_factory=TrackState)
     capabilities: Capabilities = Field(default_factory=Capabilities)
     metrics: EngineMetrics = Field(default_factory=EngineMetrics)
 
