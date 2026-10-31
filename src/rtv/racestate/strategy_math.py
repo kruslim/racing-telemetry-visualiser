@@ -18,7 +18,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from rtv.racestate.models import CarState, FlagPhase, RaceState
+from rtv.racestate.models import CarState, RaceState
 
 #: Seconds lost relative to staying out, for a green-flag stop. A real number for
 #: a real track would come from measured pit-lane transit; this is the default the
@@ -28,6 +28,17 @@ DEFAULT_PIT_LANE_LOSS_S = 25.0
 #: Under a full-course yellow the field is slowed, so a stop costs less track
 #: position. The discount is an *assumption* and is always reported as one.
 YELLOW_PIT_DISCOUNT = 0.45
+
+#: The SessionFlags bits of a full-course caution. ``yellow`` and ``yellow_waving``
+#: on their own are a local yellow: one sector slows, the field does not, and a
+#: stop costs the full pit-lane loss.
+CAUTION_FLAGS = frozenset({"caution", "caution_waving"})
+
+
+def full_course_caution(state: RaceState) -> bool:
+    """True only under a full-course caution, not a local yellow."""
+    return bool(CAUTION_FLAGS.intersection(state.flags.active))
+
 
 #: Laps of fuel to leave in hand when computing a refuel target.
 DEFAULT_FUEL_RESERVE_LAPS = 0.5
@@ -117,7 +128,7 @@ def simulate_pit_outcome(
     player_state = state.player
     current_lap = player_state.lap
     if under_yellow is None:
-        under_yellow = state.flags.phase is FlagPhase.YELLOW
+        under_yellow = full_course_caution(state)
     if stop_lap is None:
         stop_lap = current_lap
 

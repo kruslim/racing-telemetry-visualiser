@@ -23,8 +23,10 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-#: A bare number, optionally signed/decimal, with thousands separators removed first.
-_NUMBER_RE = re.compile(r"(?<![\w.])[-+]?\d+(?:\.\d+)?")
+#: A bare number, optionally signed/decimal/exponent, with thousands separators removed
+#: first. The exponent matters: a model that echoes a raw ``4.66e-06`` from a tool would
+#: otherwise be scored on the mantissa alone and refused for a figure it never invented.
+_NUMBER_RE = re.compile(r"(?<![\w.])[-+]?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?")
 #: Lap-time notation: 1:32.4 -> 92.4 seconds. Matched before bare numbers so the
 #: minutes and seconds are not scored as two unrelated figures.
 _CLOCK_RE = re.compile(r"(?<![\w.])(\d{1,2}):(\d{1,2}(?:\.\d+)?)")

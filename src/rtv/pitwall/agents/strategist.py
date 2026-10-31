@@ -20,7 +20,7 @@ from pydantic import Field
 from rtv.pitwall import tools as T
 from rtv.pitwall.framework import AgentOutput, AgentSpec, RadioPriority, Trigger
 from rtv.racestate.models import EventType, FlagPhase, RaceEvent, RaceState
-from rtv.racestate.strategy_math import standings_around_player
+from rtv.racestate.strategy_math import CAUTION_FLAGS, standings_around_player
 
 AGENT_NAME = "strategist"
 
@@ -95,12 +95,15 @@ class PitCall(AgentOutput):
 def _yellow_or_red(event: RaceEvent, state: RaceState) -> bool:
     """Only flag changes worth a strategy call.
 
-    Green-to-yellow opens an opportunistic stop; yellow-to-green closes it. A
-    change into white or checkered is not a strategy decision.
+    Green-to-caution opens an opportunistic stop; yellow-to-green closes it. A
+    local yellow, or a change into white or checkered, is not a strategy decision.
     """
     to = event.payload.get("to")
     frm = event.payload.get("from")
-    return to in (FlagPhase.YELLOW.value, FlagPhase.RED.value) or frm in (
+    if to == FlagPhase.YELLOW.value:
+        # A local yellow slows one sector, not the field: no cheap stop in it.
+        return bool(CAUTION_FLAGS.intersection(event.payload.get("active") or ()))
+    return to == FlagPhase.RED.value or frm in (
         FlagPhase.YELLOW.value,
         FlagPhase.RED.value,
     )

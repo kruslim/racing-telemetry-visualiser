@@ -190,8 +190,14 @@ def test_a_traffic_call_is_the_spotters_alone(engine, state):
 
 
 def test_a_caution_wakes_both_the_strategist_and_the_spotter(engine, state):
-    event = _event("flag_change", {"from": "green", "to": "yellow"})
+    event = _event("flag_change", {"from": "green", "to": "yellow", "active": ["caution"]})
     assert _routes(engine, event, state) == {"strategist", "spotter"}
+
+
+def test_a_local_yellow_is_the_spotters_alone(engine, state):
+    """Spa replay: a waving local yellow had the strategist calling a cheap stop."""
+    event = _event("flag_change", {"from": "green", "to": "yellow", "active": ["yellow_waving"]})
+    assert _routes(engine, event, state) == {"spotter"}
 
 
 def test_a_single_lockup_wakes_nobody(engine, state):

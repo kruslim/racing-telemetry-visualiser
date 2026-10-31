@@ -1133,9 +1133,17 @@ class RaceStateEngine:
 
         fuel.laps_remaining = round(level / per_lap, 3)
 
-        # Laps still to run: prefer the sim's own counter, else time / lap time.
+        # Laps still to run: the flags first, then the sim's own counter, else
+        # time / lap time. The flags settle the end of a timed race, where the
+        # clock is useless: iRacing sends -1 once it runs out and then starts a
+        # new countdown, which read as two more laps on the Spa replay's last lap.
         laps_to_finish: float | None = None
-        if state.session.laps_remaining is not None:
+        phase = state.flags.phase
+        if phase is FlagPhase.CHECKERED:
+            laps_to_finish = 0.0
+        elif phase is FlagPhase.WHITE:
+            laps_to_finish = 1.0
+        elif state.session.laps_remaining is not None:
             laps_to_finish = float(state.session.laps_remaining)
         elif state.session.time_remaining and state.player.last_lap_time:
             laps_to_finish = math.ceil(
@@ -1235,9 +1243,13 @@ class RaceStateEngine:
                 )
             )
 
+        # Low fuel that still reaches the flag is not critical: on the last lap
+        # it would have the strategist calling a stop the car doesn't need.
+        reaches_flag = fuel.margin_laps is not None and fuel.margin_laps >= 0
         if (
             fuel.laps_remaining is not None
             and fuel.laps_remaining < self.config.fuel_critical_laps
+            and not reaches_flag
             and not self._fuel_critical_announced
         ):
             self._fuel_critical_announced = True

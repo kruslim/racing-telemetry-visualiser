@@ -275,15 +275,21 @@ async def structured_call(
     """One tool-free question, one structured answer (``None`` if it was invalid).
 
     For the post-session layers (orchestrator, eval judge) that need a typed
-    answer but no tool loop.
+    answer but no tool loop. An invalid payload is asked for once more: on the
+    Spa replay kimi-k3 sent an empty or token-garbled respond call for about one
+    orchestrator specialist in three, and each one was dropped from the plan.
+    These layers run after the session, so the retry costs no race time.
     """
-    response = await provider.complete(
-        agent=agent,
-        model=model,
-        system=system,
-        messages=[{"role": "user", "content": prompt}],
-        tools=(),
-        output_model=output_model,
-        max_tokens=max_tokens,
-    )
-    return response.output
+    for _attempt in range(2):
+        response = await provider.complete(
+            agent=agent,
+            model=model,
+            system=system,
+            messages=[{"role": "user", "content": prompt}],
+            tools=(),
+            output_model=output_model,
+            max_tokens=max_tokens,
+        )
+        if response.output is not None:
+            return response.output
+    return None
