@@ -114,6 +114,21 @@
 
     <div class="right-column">
 
+    <!-- 0. ONBOARD ---------------------------------------------------- -->
+    <section class="panel panel-onboard" id="panel-onboard">
+      <h2>Onboard <span class="sub" data-role="onboard-source">&mdash;</span>
+        <button class="ghost" data-role="onboard-capture">&#9679; Start capture</button></h2>
+      <div class="onboard-frame">
+        <img data-role="onboard-img" alt="live onboard camera" hidden>
+        <video data-role="onboard-video" muted playsinline preload="auto" hidden></video>
+        <div class="muted" data-role="onboard-empty">
+          No onboard video. Start a capture while iRacing runs, or replay a session that has a synced recording.
+        </div>
+      </div>
+      <div class="meta" data-role="onboard-vlm">&mdash;</div>
+      <div class="onboard-notes" data-role="onboard-notes"></div>
+    </section>
+
     <!-- 1. RADIO FEED ------------------------------------------------- -->
     <section class="panel panel-radio" id="panel-radio">
       <h2>Radio</h2>

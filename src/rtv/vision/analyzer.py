@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import time
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
 
@@ -59,6 +59,10 @@ def frame_times(moment: Moment, n: int) -> list[float]:
     return [moment.t_start + i * step for i in range(n)]
 
 
+#: Frames for a live moment: session time in, ``(jpeg, video_time)`` out.
+FrameGrab = Callable[[float], Awaitable[tuple[bytes, float]]]
+
+
 def _brief(moment: Moment) -> str:
     seen: list[str] = []
     for trig in sorted(moment.triggers, key=lambda t: t.session_time):
@@ -95,22 +99,41 @@ class VisionAnalyzer:
     async def analyze_moment(
         self, video: VideoInfo, moment: Moment, analysis_id: str
     ) -> VisualNote:
+        async def from_file(st: float) -> tuple[bytes, float]:
+            vt = video.sync.to_video(st)
+            jpeg = await asyncio.to_thread(
+                self._frames.frame, Path(video.path), vt, width=self.frame_width
+            )
+            return jpeg, vt
+
+        return await self.analyze_frames(
+            moment, analysis_id, session_id=video.session_id, video_id=video.video_id,
+            grab=from_file,
+        )  # fmt: skip
+
+    async def analyze_frames(
+        self,
+        moment: Moment,
+        analysis_id: str,
+        *,
+        session_id: str,
+        video_id: str,
+        grab: FrameGrab,
+    ) -> VisualNote:
+        """Analyse ``moment`` with frames from ``grab`` (a file, or the live ring)."""
         note = VisualNote(
             note_id=f"{analysis_id}:{moment.moment_id}",
             analysis_id=analysis_id,
-            video_id=video.video_id,
+            video_id=video_id,
             moment=moment,
             model=self._model,
         )
-        folder = self._store.frames_dir(video.session_id, analysis_id)
+        folder = self._store.frames_dir(session_id, analysis_id)
         folder.mkdir(parents=True, exist_ok=True)
         content: list[dict[str, Any]] = [{"type": "text", "text": _brief(moment)}]
         try:
             for i, st in enumerate(frame_times(moment, self.frames_per_moment)):
-                vt = video.sync.to_video(st)
-                jpeg = await asyncio.to_thread(
-                    self._frames.frame, Path(video.path), vt, width=self.frame_width
-                )
+                jpeg, vt = await grab(st)
                 name = f"{moment.moment_id}-{i}.jpg"
                 (folder / name).write_bytes(jpeg)
                 note.frames.append(

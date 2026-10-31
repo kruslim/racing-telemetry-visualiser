@@ -138,9 +138,15 @@ def test_staying_out_on_an_open_window_is_outside_the_defensible_band(open_windo
 
 
 def test_an_ungrounded_figure_in_the_spoken_call_is_flagged(open_window):
-    result = _result(open_window.state)
+    # The engine's self-timing (max_update_ms and friends) is wall-clock and is in
+    # the fact set; on a slow runner it can land within tolerance of 41.7. Zero it
+    # so the test checks the race state, not the machine's speed.
+    from rtv.racestate.models import EngineMetrics
+
+    state = open_window.state.model_copy(update={"metrics": EngineMetrics()})
+    result = _result(state)
     result["spoken_text"] = "Box now, take 41.7 litres."
-    score = cross_check(result, open_window.state)
+    score = cross_check(result, state)
     assert score["grounding_ok"] is False
     assert "41.7" in score["ungrounded"]
 
