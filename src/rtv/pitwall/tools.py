@@ -19,6 +19,7 @@ from rtv.pitwall.framework import ToolContext, ToolSpec
 from rtv.racestate import strategy_math as sm
 from rtv.racestate.detectors import DEFAULT_CONFIG, corner_label
 from rtv.racestate.models import RaceState
+from rtv.tracks.live import LiveCornerMap, place_of
 
 log = get_logger("pitwall.tools")
 
@@ -33,6 +34,7 @@ STATE_SECTIONS = (
     "standings",
     "car_health",
     "conditions",
+    "track",
     "capabilities",
 )
 
@@ -191,11 +193,21 @@ def _target_pct(ctx: ToolContext, args: dict[str, Any]) -> float | None:
     wanted = args.get("corner")
     buckets = _buckets(ctx)
     if wanted:
+        # A review label ("T7", "T7 Pouhon") from the session's corner map: its apex.
+        head = str(wanted).split()[0].strip(":-,").upper()
+        for corner in ctx.state.track.corners:
+            if corner.label == head:
+                return corner.lap_dist_pct
         for i in range(buckets):
             mid = (i + 0.5) / buckets
             if corner_label(mid, buckets) == str(wanted):
                 return mid
     payload = ctx.event.payload or {}
+    place = payload.get("place")
+    if isinstance(place, dict) and not place.get("provisional"):
+        found = _target_pct(ctx, {"corner": place.get("label")})
+        if found is not None:
+            return found
     for key in ("lap_dist_pct_from", "lap_dist_pct"):
         if payload.get(key) is not None:
             try:
@@ -207,23 +219,43 @@ def _target_pct(ctx: ToolContext, args: dict[str, Any]) -> float | None:
     return None
 
 
-def _live_corner_events(ctx: ToolContext, pct: float | None) -> dict[str, Any]:
-    """What the deterministic detectors saw at this corner during the session."""
+def _live_corner_events(ctx: ToolContext, pct: float | None, *, by_bucket: bool) -> dict[str, Any]:
+    """What the deterministic detectors saw at this corner during the session.
+
+    ``corner`` is the lap-distance bucket, as it always was. Once the session's corner map
+    exists, ``place`` names the review's corner and events are matched by it (same nearest-apex
+    rule as the engine's event places) unless the caller asked for a bucket by name.
+    """
     buckets = _buckets(ctx)
+    track = ctx.state.track
+    mapped = LiveCornerMap.from_corners(
+        [c.model_dump() for c in track.corners], lap=track.corner_map_lap, buckets=buckets
+    )
+    by_bucket = by_bucket or not mapped.ready
     label = corner_label(pct, buckets) if pct is not None else None
+    here = mapped.place(pct) if pct is not None else None
     rows: list[dict[str, Any]] = []
     for event in ctx.events:
         kind = event.event_type.value
         if kind not in ("lockup", "wheelspin", "offtrack", "recurring_issue"):
             continue
         payload = event.payload or {}
-        where = payload.get("lap_dist_pct")
-        if where is None and payload.get("lap_dist_pct_from") is not None:
-            where = payload["lap_dist_pct_from"]
-        if label is not None and corner_label(where, buckets) != label:
-            continue
+        if pct is not None:
+            if by_bucket:
+                where = payload.get("lap_dist_pct")
+                if where is None and payload.get("lap_dist_pct_from") is not None:
+                    where = payload["lap_dist_pct_from"]
+                if corner_label(where, buckets) != label:
+                    continue
+            else:
+                at = mapped.place(place_of(payload))
+                if at is None or here is None or at["label"] != here["label"]:
+                    continue
         rows.append(_event_row(event))
-    return {"corner": label, "count": len(rows), "events": rows[-12:]}
+    out: dict[str, Any] = {"corner": label, "count": len(rows), "events": rows[-12:]}
+    if here is not None:
+        out["place"] = here
+    return out
 
 
 def _layer1_corner(ctx: ToolContext, pct: float | None) -> dict[str, Any]:
@@ -309,7 +341,9 @@ def _get_corner_detail(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]
     pct = _target_pct(ctx, args)
     out: dict[str, Any] = {
         "requested_lap_dist_pct": None if pct is None else round(pct, 4),
-        "live": _live_corner_events(ctx, pct),
+        "live": _live_corner_events(
+            ctx, pct, by_bucket=str(args.get("corner") or "").strip().upper().startswith("C")
+        ),
         "telemetry": _layer1_corner(ctx, pct),
     }
     if pct is None:
@@ -380,7 +414,10 @@ GET_CORNER_DETAIL = ToolSpec(
         "properties": {
             "corner": {
                 "type": "string",
-                "description": "Corner label from a recurring_issue event, e.g. 'C08'.",
+                "description": (
+                    "The corner's label from an event's place, e.g. 'T7' (or a provisional "
+                    "bucket such as 'C08' before the first clean lap is mapped)."
+                ),
             },
             "lap_dist_pct": {
                 "type": "number",

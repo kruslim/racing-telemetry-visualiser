@@ -23,6 +23,7 @@ from rtv.api.deps import get_coaching, get_repo, get_vision
 from rtv.coaching.agent.contracts import CoachingAnswer
 from rtv.coaching.agent.graph import run_coach
 from rtv.coaching.agent.provider import RepositoryFindingsProvider
+from rtv.coaching.agent.validation import split_corner
 from rtv.coaching.features import CoachingService
 from rtv.coaching.models import AGENT_ROSTER
 from rtv.logging import get_logger
@@ -177,7 +178,7 @@ def _resolve_annotations(findings: dict, answer: CoachingAnswer) -> list[ChatAnn
     out: dict[str, ChatAnnotation] = {}
 
     for p in answer.priorities:
-        corner = corners.get(p.corner)
+        corner = corners.get(split_corner(p.corner)[0])
         if corner is None:
             continue
         dist = float(corner.get("distance", 0.0))
@@ -195,7 +196,7 @@ def _resolve_annotations(findings: dict, answer: CoachingAnswer) -> list[ChatAnn
     for claim in answer.claims:
         if claim.corner in out:
             continue
-        corner = corners.get(claim.corner)
+        corner = corners.get(split_corner(claim.corner)[0])
         if corner is None:
             continue
         dist = float(corner.get("distance", 0.0))

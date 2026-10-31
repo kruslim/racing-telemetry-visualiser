@@ -33,15 +33,24 @@ from rtv.racestate.bus import EventBus
 from rtv.racestate.models import (
     Capabilities,
     CarState,
+    CornerRef,
     EventType,
     FlagPhase,
     RaceEvent,
     RaceState,
     Severity,
+    TrackState,
 )
 from rtv.racestate.strategy_math import lap_left
+from rtv.tracks.live import LiveCornerMap, place_of
+from rtv.tracks.reference import TrackReference
+from rtv.tracks.session import reference_for
 
 log = get_logger("racestate.engine")
+
+#: Events that say where on the lap something happened. Each gets a ``place`` payload entry:
+#: ``{label, name, lap_dist_pct, provisional}`` (see :mod:`rtv.tracks.live`).
+PLACE_EVENTS = frozenset({"lockup", "wheelspin", "offtrack", "incident", "recurring_issue"})
 
 #: Cars with a lap-distance below this are not in the world (iRacing uses -1).
 _INACTIVE_PCT = -0.5
@@ -131,6 +140,8 @@ class RaceStateEngine:
         #: RaceState: it is static per session, so putting it in the 60 Hz object
         #: (and therefore in every agent's citable fact set) would be wasteful.
         self._session_info: dict[str, Any] = {}
+        #: The venue reference resolved from the session info (corner names), if any.
+        self._track_ref: TrackReference | None = None
         self.reset()
 
     # ------------------------------------------------------------------
@@ -180,6 +191,8 @@ class RaceStateEngine:
 
             # vehicle-engineer / spotter triggers
             self._recurrence = det.CornerRecurrence(self.config)
+            # where events happened, in the review's corner labels once a clean lap exists
+            self._places = LiveCornerMap(self._track_ref, buckets=self.config.corner_buckets)
             self._traffic_sample: tuple[float, dict[int, float], str] | None = None
             self._health_latched: str | None = None
             self._tyre_latched: str | None = None
@@ -283,6 +296,9 @@ class RaceStateEngine:
         weekend = info.get("WeekendInfo") or {}
         with self._lock:
             self._session_info = dict(info)
+            self._track_ref = reference_for(info)
+            if not self._places.ready:
+                self._places.reference = self._track_ref
             length = _parse_track_length(weekend.get("TrackLength"))
             if length is not None:
                 self._state.session.lap_length_m = length
@@ -519,6 +535,7 @@ class RaceStateEngine:
         self._window.append(dict(values))
         if len(self._window) > _WINDOW_TRIM_AT:
             del self._window[:-_WINDOW_KEEP]
+        self._places.observe(values)
         state = self._state
         state.version += 1
         state.tick = frame.tick
@@ -551,6 +568,10 @@ class RaceStateEngine:
 
         for event in events:
             event.state_version = state.version
+            if event.event_type.value in PLACE_EVENTS:
+                place = self._places.place(place_of(event.payload))
+                if place is not None:
+                    event.payload["place"] = place
         return events
 
     # ---- section updaters ------------------------------------------------
@@ -1104,6 +1125,12 @@ class RaceStateEngine:
                 )
 
         clean = self._lap_all_green and not self._lap_had_pit
+        if self._places.lap_done(lap, clean=clean and bool(lap_time)):
+            self._state.track = TrackState(
+                corner_map_lap=self._places.lap,
+                provisional=False,
+                corners=[CornerRef(**c) for c in self._places.corners],
+            )
         if clean:
             p.laps_on_tyres += 1
             if lap_time:

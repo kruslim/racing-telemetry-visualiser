@@ -25,6 +25,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
 
+from rtv.coaching.agent.validation import split_corner
+
 # The findings fields a coaching claim is allowed to cite. Each maps to a real number in a
 # ``CornerFinding`` (``models.py``); the validate node checks the value against ground truth.
 CitableFigure = Literal["net_dt", "min_main", "min_ref", "brake_m", "time_loss"]
@@ -79,9 +81,10 @@ class CoachingAnswerPayload(BaseModel):
 
     @model_validator(mode="after")
     def cited_corners_were_examined(self) -> CoachingAnswerPayload:
-        cited = {c.corner for claim in self.claims for c in claim.citations}
-        cited |= {p.corner for p in self.priorities}
-        missing = cited - set(self.corners_examined)
+        # "T7 Pouhon" cites T7: compare labels, whatever name was written beside them.
+        cited = {split_corner(c.corner)[0] for claim in self.claims for c in claim.citations}
+        cited |= {split_corner(p.corner)[0] for p in self.priorities}
+        missing = cited - {split_corner(c)[0] for c in self.corners_examined}
         if missing:
             raise ValueError(f"Cited corners never examined: {sorted(missing)}")
         return self
