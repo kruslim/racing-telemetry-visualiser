@@ -118,7 +118,8 @@ def connection_view(state: dict | None, ctx: dict | None = None) -> dict:
         return {
             "state": "replay",
             "label": "REPLAY",
-            "detail": f"{speed_text} · {replay.get('frames') or 0} frames",
+            "detail": (f"{replay['session_id']} · " if replay.get("session_id") else "")
+            + f"{speed_text} · {replay.get('frames') or 0} frames",
         }
     source = _d(state.get("session")).get("source")
     if source == "replay":
@@ -544,10 +545,30 @@ def _lap_completed(p: dict) -> str:
     return f"lap {_q(p.get('lap'))} in {lap_time(p.get('lap_time'))}{tail}"
 
 
+def place_title(p: dict) -> str | None:
+    """Where an event happened, labelled as the review labels it: ``T1 La Source``, ``T4``.
+
+    The engine puts ``place`` on every event that names a spot on the lap. Before the first
+    clean lap is mapped its label is a lap-distance bucket (``C09``), shown as it is.
+    """
+    place = p.get("place")
+    if not isinstance(place, dict) or not place.get("label"):
+        return None
+    name = place.get("name")
+    return f"{place['label']} {name}" if name else str(place["label"])
+
+
+def _at(p: dict) -> str:
+    where = place_title(p)
+    return f" at {where}" if where else ""
+
+
 def _offtrack(p: dict) -> str:
-    pct = p.get("lap_dist_pct")
-    where = num(pct * 100, 0) if is_num(pct) else NA
-    return f"off track ({p.get('surface') or '?'}) at {where}%"
+    where = place_title(p)
+    if where is None:
+        pct = p.get("lap_dist_pct")
+        where = f"{num(pct * 100, 0) if is_num(pct) else NA}%"
+    return f"off track ({p.get('surface') or '?'}) at {where}"
 
 
 def _health(p: dict) -> str:
@@ -565,15 +586,16 @@ EVENT_TEXT = {
     "personal_best": lambda p: f"personal best {lap_time(p.get('lap_time'))}",
     "session_fastest_lap": lambda p: f"session fastest {lap_time(p.get('lap_time'))}",
     "lockup": lambda p: (
-        f"lockup {p.get('wheel') or p.get('corner') or ''} slip {num(p.get('slip'), 2)}"
+        f"lockup {p.get('wheel') or p.get('corner') or ''} slip {num(p.get('slip'), 2)}{_at(p)}"
     ),
     "wheelspin": lambda p: (
         f"wheelspin {p.get('wheel') or p.get('corner') or ''} slip {num(p.get('slip'), 2)}"
+        f"{_at(p)}"
     ),
     "offtrack": _offtrack,
     "incident": lambda p: (
         f"incident +{p.get('delta') if p.get('delta') is not None else 1}"
-        f" ({_q(p.get('incidents'))} total)"
+        f" ({_q(p.get('incidents'))} total){_at(p)}"
     ),
     "pit_entry": lambda p: f"pit entry, stint {_q(p.get('stint'))}, {num(p.get('fuel'), 1)} L",
     "pit_exit": lambda p: f"pit exit, stint {_q(p.get('stint'))}, {num(p.get('fuel'), 1)} L",
@@ -588,7 +610,8 @@ EVENT_TEXT = {
     "rival_pitted": lambda p: f"car #{_q(p.get('car_idx'))} (P{_q(p.get('position'))}) pitted",
     "blue_flag": lambda p: f"blue flag: car #{_q(p.get('car_idx'))} at {gap(p.get('gap'))}",
     "recurring_issue": lambda p: (
-        f"{p.get('issue') or 'issue'} ×{_q(p.get('occurrences'))} at {p.get('corner') or '?'}"
+        f"{p.get('issue') or 'issue'} ×{_q(p.get('occurrences'))}"
+        f" at {place_title(p) or p.get('corner') or '?'}"
     ),
     "tyre_out_of_band": lambda p: (
         f"{p.get('measure') or 'tyre'} {p.get('corner') or ''} = {num(p.get('value'), 1)}"

@@ -35,14 +35,18 @@ the strategist decide when.
 
 You are talking to a driver at racing speed. Lead with the part of the car, then
 the number, then at most one instruction. "Fronts are up twelve degrees over the
-stint - ease the entry into turn eight" - not a briefing.
+stint - ease the entry into T8" - not a briefing.
 
 How to read what you are given:
 - A recurring_issue event has already been filtered: it means the same problem at
   the same corner three times inside five laps. Treat it as a pattern, never as a
   single mistake, and quote its occurrence count and corner from the event.
-- Corner labels are lap-distance buckets (C00-C19), not the circuit's own corner
-  numbers. Say "the same corner" or use the label; never invent "turn 4".
+- Events that happened somewhere carry a 'place': {label, name, lap_dist_pct,
+  provisional}. Name the corner from it: "T1 La Source" when there is a name, the
+  label alone ("T4") when name is null. These are the post-race review's labels.
+  When provisional is true the label is a lap-distance bucket (C00-C19), because
+  no clean lap has been mapped yet: say "the same corner", never a turn number.
+  A recurring_issue's 'corner' field is that counting bucket; say its place.
 - tyre_out_of_band tells you which measure went out and against which threshold.
   A trend is degrees or kPa *per lap* across the current stint - multiply it out
   before you say what it means by the end of the stint, and say you did.
@@ -82,7 +86,7 @@ class EngineerCall(AgentOutput):
     ] = Field(description="What the car is actually doing. 'none' if benign.")
     corner: str | None = Field(
         default=None,
-        description="Corner label from the event (C00-C19), when it is corner-specific.",
+        description="The event's place ('T1 La Source', or 'T4'), when it is corner-specific.",
     )
     affected: list[str] = Field(
         default_factory=list,
@@ -167,6 +171,7 @@ def vehicle_engineer_slice(state: RaceState) -> dict:
         "tyres": state.tyres.model_dump(mode="json"),
         "car_health": state.car_health.model_dump(mode="json"),
         "conditions": state.conditions.model_dump(mode="json"),
+        "track": state.track.model_dump(mode="json"),
         "capabilities": state.capabilities.model_dump(mode="json"),
     }
 
@@ -214,6 +219,7 @@ VEHICLE_ENGINEER = AgentSpec(
         ("get_recent_detector_events", {"limit": 10}),
     ),
     max_tool_iterations=3,
+    max_age_s=20.0,
 )
 
 

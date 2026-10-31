@@ -33,15 +33,24 @@ from rtv.racestate.bus import EventBus
 from rtv.racestate.models import (
     Capabilities,
     CarState,
+    CornerRef,
     EventType,
     FlagPhase,
     RaceEvent,
     RaceState,
     Severity,
+    TrackState,
 )
 from rtv.racestate.strategy_math import lap_left
+from rtv.tracks.live import LiveCornerMap, place_of
+from rtv.tracks.reference import TrackReference
+from rtv.tracks.session import reference_for
 
 log = get_logger("racestate.engine")
+
+#: Events that say where on the lap something happened. Each gets a ``place`` payload entry:
+#: ``{label, name, lap_dist_pct, provisional}`` (see :mod:`rtv.tracks.live`).
+PLACE_EVENTS = frozenset({"lockup", "wheelspin", "offtrack", "incident", "recurring_issue"})
 
 #: Cars with a lap-distance below this are not in the world (iRacing uses -1).
 _INACTIVE_PCT = -0.5
@@ -131,6 +140,8 @@ class RaceStateEngine:
         #: RaceState: it is static per session, so putting it in the 60 Hz object
         #: (and therefore in every agent's citable fact set) would be wasteful.
         self._session_info: dict[str, Any] = {}
+        #: The venue reference resolved from the session info (corner names), if any.
+        self._track_ref: TrackReference | None = None
         self.reset()
 
     # ------------------------------------------------------------------
@@ -174,10 +185,17 @@ class RaceStateEngine:
 
             # strategy triggers
             self._rival_pit_state: dict[int, bool] = {}
+            # Lap fractions at which any car was seen entering pit road this
+            # session: where the pit entry is (see :attr:`pit_entry_pct`).
+            self._pit_entry_pcts: list[float] = []
 
             # vehicle-engineer / spotter triggers
             self._recurrence = det.CornerRecurrence(self.config)
+            # where events happened, in the review's corner labels once a clean lap exists
+            self._places = LiveCornerMap(self._track_ref, buckets=self.config.corner_buckets)
             self._traffic_sample: tuple[float, dict[int, float], str] | None = None
+            #: Last decoded ``CarLeftRight`` state (``None`` = off or unknown).
+            self._alongside: str | None = None
             self._health_latched: str | None = None
             self._tyre_latched: str | None = None
 
@@ -254,6 +272,7 @@ class RaceStateEngine:
             self._state.stale_reason = None
             self._window.clear()
             self._traffic_sample = None
+            self._alongside = None
         log.info("Race state live again; detector window cleared across the gap.")
 
     @property
@@ -280,6 +299,9 @@ class RaceStateEngine:
         weekend = info.get("WeekendInfo") or {}
         with self._lock:
             self._session_info = dict(info)
+            self._track_ref = reference_for(info)
+            if not self._places.ready:
+                self._places.reference = self._track_ref
             length = _parse_track_length(weekend.get("TrackLength"))
             if length is not None:
                 self._state.session.lap_length_m = length
@@ -374,6 +396,7 @@ class RaceStateEngine:
             pit=has_all(ch.REQUIRED["pit"]),
             incidents=has_all(ch.REQUIRED["incidents"]),
             offtrack=has_all(ch.REQUIRED["offtrack"]),
+            car_alongside=has_all(ch.REQUIRED["car_alongside"]),
             tyres=bool(self._tyre_temp_ch or self._tyre_press_ch),
             car_health=any(n in catalog for n in ch.CAR_HEALTH_ANY),
             conditions=any(n in catalog for n in ch.CONDITIONS_ANY),
@@ -516,6 +539,7 @@ class RaceStateEngine:
         self._window.append(dict(values))
         if len(self._window) > _WINDOW_TRIM_AT:
             del self._window[:-_WINDOW_KEEP]
+        self._places.observe(values)
         state = self._state
         state.version += 1
         state.tick = frame.tick
@@ -548,6 +572,10 @@ class RaceStateEngine:
 
         for event in events:
             event.state_version = state.version
+            if event.event_type.value in PLACE_EVENTS:
+                place = self._places.place(place_of(event.payload))
+                if place is not None:
+                    event.payload["place"] = place
         return events
 
     # ---- section updaters ------------------------------------------------
@@ -790,6 +818,7 @@ class RaceStateEngine:
             self._rival_pit_state[car.idx] = car.on_pit_road
             if was is not False or car.on_pit_road is not True:
                 continue  # not a green->pit edge (or the first sighting)
+            self._note_pit_entry(car.lap_dist_pct)
             if (
                 player_pos is not None
                 and car.position is not None
@@ -879,6 +908,8 @@ class RaceStateEngine:
             self._check_traffic(events)
         if caps.car_health:
             self._check_car_health(events)
+        if caps.car_alongside:
+            self._check_alongside(frame, events)
         self._aggregate_recurrence(events, first_new)
 
     def _aggregate_recurrence(self, events: list[RaceEvent], first_new: int) -> None:
@@ -941,6 +972,19 @@ class RaceStateEngine:
             cooldown=10.0,
         )
 
+    def _check_alongside(self, frame: Frame, events: list[RaceEvent]) -> None:
+        """Every change of the sim's own left/right proximity sensor, every frame.
+
+        Not decimated like the standings: a car alongside is a sub-second fact,
+        and this is one integer compare per tick.
+        """
+        raw = det.as_int(frame.values, ch.CAR_LEFT_RIGHT)
+        self._alongside, payload = det.detect_car_alongside(self._alongside, raw)
+        if payload is None:
+            return
+        severity = Severity.INFO if payload["side"] == "clear" else Severity.ADVISORY
+        events.append(self._event(EventType.CAR_ALONGSIDE, severity, payload))
+
     def _check_car_health(self, events: list[RaceEvent]) -> None:
         """Latched by *measure*: a water-temp warning after an oil one still fires."""
         payload = det.detect_car_health(self._state.car_health, self.config)
@@ -981,6 +1025,27 @@ class RaceStateEngine:
         self._last_fire[name] = now
         events.append(self._event(event_type, severity, payload))
 
+    def _note_pit_entry(self, pct: float | None) -> None:
+        if pct is not None and 0.0 <= pct <= 1.0:
+            self._pit_entry_pcts.append(float(pct))
+            del self._pit_entry_pcts[:-32]
+
+    @property
+    def pit_entry_pct(self) -> float | None:
+        """Where pit road starts, as a lap fraction, once a car has been seen entering it.
+
+        Measured, not configured: the median lap fraction at which any car's
+        ``OnPitRoad`` went true this session. ``None`` before the first entry
+        (an ``.ibt`` has the player's own stops only). The radio uses it to drop
+        a box call once the car has passed the entry (:mod:`rtv.pitwall.validity`).
+        """
+        with self._lock:
+            values = sorted(self._pit_entry_pcts)
+        if not values:
+            return None
+        mid = len(values) // 2
+        return values[mid] if len(values) % 2 else (values[mid - 1] + values[mid]) / 2
+
     def _pit_transitions(self, events: list[RaceEvent]) -> None:
         transition = det.detect_pit_transition(self._window)
         if transition is None:
@@ -988,6 +1053,7 @@ class RaceStateEngine:
         p = self._state.player
         if transition == "entry":
             self._lap_had_pit = True
+            self._note_pit_entry(p.lap_dist_pct)
             events.append(
                 self._event(
                     EventType.PIT_ENTRY,
@@ -1078,6 +1144,12 @@ class RaceStateEngine:
                 )
 
         clean = self._lap_all_green and not self._lap_had_pit
+        if self._places.lap_done(lap, clean=clean and bool(lap_time)):
+            self._state.track = TrackState(
+                corner_map_lap=self._places.lap,
+                provisional=False,
+                corners=[CornerRef(**c) for c in self._places.corners],
+            )
         if clean:
             p.laps_on_tyres += 1
             if lap_time:

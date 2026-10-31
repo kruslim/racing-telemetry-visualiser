@@ -1,0 +1,3736 @@
+{
+ "module": "view_model",
+ "cases": [
+  {
+   "name": "statusView of state_idle",
+   "module": "view_model",
+   "fn": "statusView",
+   "args": [
+    {
+     "$input": "state_idle"
+    }
+   ],
+   "expect": {
+    "session": {
+     "state": "n/a",
+     "source": "live",
+     "track": "n/a",
+     "car": "n/a"
+    },
+    "remaining": {
+     "kind": "unknown",
+     "text": "n/a",
+     "unit": "remaining"
+    },
+    "flag": {
+     "phase": "unknown",
+     "label": "FLAG UNKNOWN",
+     "active": [],
+     "alert": true
+    },
+    "conditions": {
+     "track": null,
+     "air": null,
+     "track_trend": null,
+     "air_trend": null,
+     "available": false
+    },
+    "connection": {
+     "state": "idle",
+     "label": "NO DATA",
+     "detail": "waiting for frames"
+    },
+    "llm": {
+     "available": false,
+     "label": "AI —",
+     "detail": "status unknown",
+     "tone": "muted"
+    }
+   }
+  },
+  {
+   "name": "strategyView of state_idle",
+   "module": "view_model",
+   "fn": "strategyView",
+   "args": [
+    {
+     "$input": "state_idle"
+    }
+   ],
+   "expect": {
+    "available": false,
+    "window": null,
+    "fuel": {
+     "level": null,
+     "capacity": null,
+     "per_lap": null,
+     "per_lap_std": null,
+     "samples": 0,
+     "laps_remaining": null,
+     "laps_to_finish": null,
+     "margin_laps": null,
+     "margin_l": null,
+     "band": "unknown"
+    },
+    "tyres": {
+     "available": false,
+     "stint_laps": 0,
+     "corners": [
+      {
+       "key": "LF",
+       "temp": null,
+       "pressure": null,
+       "temp_trend": null,
+       "pressure_trend": null
+      },
+      {
+       "key": "RF",
+       "temp": null,
+       "pressure": null,
+       "temp_trend": null,
+       "pressure_trend": null
+      },
+      {
+       "key": "LR",
+       "temp": null,
+       "pressure": null,
+       "temp_trend": null,
+       "pressure_trend": null
+      },
+      {
+       "key": "RR",
+       "temp": null,
+       "pressure": null,
+       "temp_trend": null,
+       "pressure_trend": null
+      }
+     ],
+     "imbalance": {
+      "front": null,
+      "rear": null
+     }
+    },
+    "stint": {
+     "number": 1,
+     "laps_on_tyres": 0,
+     "start_lap": null
+    }
+   }
+  },
+  {
+   "name": "tyreView of state_idle",
+   "module": "view_model",
+   "fn": "tyreView",
+   "args": [
+    {
+     "$input": "state_idle"
+    }
+   ],
+   "expect": {
+    "available": false,
+    "stint_laps": 0,
+    "corners": [
+     {
+      "key": "LF",
+      "temp": null,
+      "pressure": null,
+      "temp_trend": null,
+      "pressure_trend": null
+     },
+     {
+      "key": "RF",
+      "temp": null,
+      "pressure": null,
+      "temp_trend": null,
+      "pressure_trend": null
+     },
+     {
+      "key": "LR",
+      "temp": null,
+      "pressure": null,
+      "temp_trend": null,
+      "pressure_trend": null
+     },
+     {
+      "key": "RR",
+      "temp": null,
+      "pressure": null,
+      "temp_trend": null,
+      "pressure_trend": null
+     }
+    ],
+    "imbalance": {
+     "front": null,
+     "rear": null
+    }
+   }
+  },
+  {
+   "name": "towerView of state_idle",
+   "module": "view_model",
+   "fn": "towerView",
+   "args": [
+    {
+     "$input": "state_idle"
+    }
+   ],
+   "expect": {
+    "available": false,
+    "no_field": false,
+    "player": {
+     "position": null,
+     "last_lap": null
+    },
+    "gap_basis": null,
+    "gaps_known": false,
+    "rows": [],
+    "total": 0,
+    "hidden": 0,
+    "expanded": false
+   }
+  },
+  {
+   "name": "statusView of state_running",
+   "module": "view_model",
+   "fn": "statusView",
+   "args": [
+    {
+     "$input": "state_running"
+    }
+   ],
+   "expect": {
+    "session": {
+     "state": "checkered",
+     "source": "replay",
+     "track": "Circuit de Spa-Francorchamps",
+     "car": "176"
+    },
+    "remaining": {
+     "kind": "time",
+     "text": null,
+     "seconds": 154.71901666026497,
+     "unit": "time left"
+    },
+    "flag": {
+     "phase": "checkered",
+     "label": "CHEQUERED FLAG",
+     "active": [
+      "checkered",
+      "servicible",
+      "start_hidden"
+     ],
+     "alert": true
+    },
+    "conditions": {
+     "track": 25.555572509765625,
+     "air": 25.17160415649414,
+     "track_trend": 0.0,
+     "air_trend": -0.00431,
+     "available": true
+    },
+    "connection": {
+     "state": "replay",
+     "label": "REPLAY",
+     "detail": "replayed frames"
+    },
+    "llm": {
+     "available": false,
+     "label": "AI —",
+     "detail": "status unknown",
+     "tone": "muted"
+    }
+   }
+  },
+  {
+   "name": "strategyView of state_running",
+   "module": "view_model",
+   "fn": "strategyView",
+   "args": [
+    {
+     "$input": "state_running"
+    }
+   ],
+   "expect": {
+    "available": true,
+    "window": {
+     "first": 17,
+     "last": 21,
+     "lap": 18,
+     "earliest": 18,
+     "latest": 19,
+     "fuel_limit_lap": 19.294,
+     "finish_lap": 20.0,
+     "open": true,
+     "laps_total": null
+    },
+    "fuel": {
+     "level": 5.137364864349365,
+     "capacity": 104.0,
+     "per_lap": 3.9693,
+     "per_lap_std": 0.0421,
+     "samples": 5,
+     "laps_remaining": 1.294,
+     "laps_to_finish": 2.0,
+     "margin_laps": -0.706,
+     "margin_l": -2.801,
+     "band": "red"
+    },
+    "tyres": {
+     "available": true,
+     "stint_laps": 5,
+     "corners": [
+      {
+       "key": "LF",
+       "temp": 82.30874633789062,
+       "pressure": 185.01513671875,
+       "temp_trend": 0.4596,
+       "pressure_trend": -0.019
+      },
+      {
+       "key": "RF",
+       "temp": 83.7127685546875,
+       "pressure": 184.86190795898438,
+       "temp_trend": 0.4758,
+       "pressure_trend": -0.0328
+      },
+      {
+       "key": "LR",
+       "temp": 80.6229248046875,
+       "pressure": 183.65615844726562,
+       "temp_trend": 0.4342,
+       "pressure_trend": 0.1473
+      },
+      {
+       "key": "RR",
+       "temp": 81.15951538085938,
+       "pressure": 183.77867126464844,
+       "temp_trend": 0.4406,
+       "pressure_trend": 0.1027
+      }
+     ],
+     "imbalance": {
+      "front": -1.404022216796875,
+      "rear": -0.536590576171875
+     }
+    },
+    "stint": {
+     "number": 2,
+     "laps_on_tyres": 2,
+     "start_lap": 13
+    }
+   }
+  },
+  {
+   "name": "tyreView of state_running",
+   "module": "view_model",
+   "fn": "tyreView",
+   "args": [
+    {
+     "$input": "state_running"
+    }
+   ],
+   "expect": {
+    "available": true,
+    "stint_laps": 5,
+    "corners": [
+     {
+      "key": "LF",
+      "temp": 82.30874633789062,
+      "pressure": 185.01513671875,
+      "temp_trend": 0.4596,
+      "pressure_trend": -0.019
+     },
+     {
+      "key": "RF",
+      "temp": 83.7127685546875,
+      "pressure": 184.86190795898438,
+      "temp_trend": 0.4758,
+      "pressure_trend": -0.0328
+     },
+     {
+      "key": "LR",
+      "temp": 80.6229248046875,
+      "pressure": 183.65615844726562,
+      "temp_trend": 0.4342,
+      "pressure_trend": 0.1473
+     },
+     {
+      "key": "RR",
+      "temp": 81.15951538085938,
+      "pressure": 183.77867126464844,
+      "temp_trend": 0.4406,
+      "pressure_trend": 0.1027
+     }
+    ],
+    "imbalance": {
+     "front": -1.404022216796875,
+     "rear": -0.536590576171875
+    }
+   }
+  },
+  {
+   "name": "towerView of state_running",
+   "module": "view_model",
+   "fn": "towerView",
+   "args": [
+    {
+     "$input": "state_running"
+    }
+   ],
+   "expect": {
+    "available": false,
+    "no_field": true,
+    "player": {
+     "position": 5,
+     "last_lap": 140.7218017578125
+    },
+    "gap_basis": null,
+    "gaps_known": false,
+    "rows": [],
+    "total": 0,
+    "hidden": 0,
+    "expanded": false
+   }
+  },
+  {
+   "name": "statusView of state_end",
+   "module": "view_model",
+   "fn": "statusView",
+   "args": [
+    {
+     "$input": "state_end"
+    }
+   ],
+   "expect": {
+    "session": {
+     "state": "checkered",
+     "source": "replay",
+     "track": "Circuit de Spa-Francorchamps",
+     "car": "176"
+    },
+    "remaining": {
+     "kind": "time",
+     "text": null,
+     "seconds": 154.71901666026497,
+     "unit": "time left"
+    },
+    "flag": {
+     "phase": "checkered",
+     "label": "CHEQUERED FLAG",
+     "active": [
+      "checkered",
+      "servicible",
+      "start_hidden"
+     ],
+     "alert": true
+    },
+    "conditions": {
+     "track": 25.555572509765625,
+     "air": 25.17160415649414,
+     "track_trend": 0.0,
+     "air_trend": -0.00431,
+     "available": true
+    },
+    "connection": {
+     "state": "replay",
+     "label": "REPLAY",
+     "detail": "replayed frames"
+    },
+    "llm": {
+     "available": false,
+     "label": "AI —",
+     "detail": "status unknown",
+     "tone": "muted"
+    }
+   }
+  },
+  {
+   "name": "strategyView of state_end",
+   "module": "view_model",
+   "fn": "strategyView",
+   "args": [
+    {
+     "$input": "state_end"
+    }
+   ],
+   "expect": {
+    "available": true,
+    "window": {
+     "first": 17,
+     "last": 21,
+     "lap": 18,
+     "earliest": 18,
+     "latest": 19,
+     "fuel_limit_lap": 19.294,
+     "finish_lap": 20.0,
+     "open": true,
+     "laps_total": null
+    },
+    "fuel": {
+     "level": 5.137364864349365,
+     "capacity": 104.0,
+     "per_lap": 3.9693,
+     "per_lap_std": 0.0421,
+     "samples": 5,
+     "laps_remaining": 1.294,
+     "laps_to_finish": 2.0,
+     "margin_laps": -0.706,
+     "margin_l": -2.801,
+     "band": "red"
+    },
+    "tyres": {
+     "available": true,
+     "stint_laps": 5,
+     "corners": [
+      {
+       "key": "LF",
+       "temp": 82.30874633789062,
+       "pressure": 185.01513671875,
+       "temp_trend": 0.4596,
+       "pressure_trend": -0.019
+      },
+      {
+       "key": "RF",
+       "temp": 83.7127685546875,
+       "pressure": 184.86190795898438,
+       "temp_trend": 0.4758,
+       "pressure_trend": -0.0328
+      },
+      {
+       "key": "LR",
+       "temp": 80.6229248046875,
+       "pressure": 183.65615844726562,
+       "temp_trend": 0.4342,
+       "pressure_trend": 0.1473
+      },
+      {
+       "key": "RR",
+       "temp": 81.15951538085938,
+       "pressure": 183.77867126464844,
+       "temp_trend": 0.4406,
+       "pressure_trend": 0.1027
+      }
+     ],
+     "imbalance": {
+      "front": -1.404022216796875,
+      "rear": -0.536590576171875
+     }
+    },
+    "stint": {
+     "number": 2,
+     "laps_on_tyres": 2,
+     "start_lap": 13
+    }
+   }
+  },
+  {
+   "name": "tyreView of state_end",
+   "module": "view_model",
+   "fn": "tyreView",
+   "args": [
+    {
+     "$input": "state_end"
+    }
+   ],
+   "expect": {
+    "available": true,
+    "stint_laps": 5,
+    "corners": [
+     {
+      "key": "LF",
+      "temp": 82.30874633789062,
+      "pressure": 185.01513671875,
+      "temp_trend": 0.4596,
+      "pressure_trend": -0.019
+     },
+     {
+      "key": "RF",
+      "temp": 83.7127685546875,
+      "pressure": 184.86190795898438,
+      "temp_trend": 0.4758,
+      "pressure_trend": -0.0328
+     },
+     {
+      "key": "LR",
+      "temp": 80.6229248046875,
+      "pressure": 183.65615844726562,
+      "temp_trend": 0.4342,
+      "pressure_trend": 0.1473
+     },
+     {
+      "key": "RR",
+      "temp": 81.15951538085938,
+      "pressure": 183.77867126464844,
+      "temp_trend": 0.4406,
+      "pressure_trend": 0.1027
+     }
+    ],
+    "imbalance": {
+     "front": -1.404022216796875,
+     "rear": -0.536590576171875
+    }
+   }
+  },
+  {
+   "name": "towerView of state_end",
+   "module": "view_model",
+   "fn": "towerView",
+   "args": [
+    {
+     "$input": "state_end"
+    }
+   ],
+   "expect": {
+    "available": false,
+    "no_field": true,
+    "player": {
+     "position": 5,
+     "last_lap": 140.7218017578125
+    },
+    "gap_basis": null,
+    "gaps_known": false,
+    "rows": [],
+    "total": 0,
+    "hidden": 0,
+    "expanded": false
+   }
+  },
+  {
+   "name": "statusView of state_field",
+   "module": "view_model",
+   "fn": "statusView",
+   "args": [
+    {
+     "$input": "state_field"
+    }
+   ],
+   "expect": {
+    "session": {
+     "state": "checkered",
+     "source": "replay",
+     "track": "Circuit de Spa-Francorchamps",
+     "car": "176"
+    },
+    "remaining": {
+     "kind": "time",
+     "text": null,
+     "seconds": 154.71901666026497,
+     "unit": "time left"
+    },
+    "flag": {
+     "phase": "checkered",
+     "label": "CHEQUERED FLAG",
+     "active": [
+      "checkered",
+      "servicible",
+      "start_hidden"
+     ],
+     "alert": true
+    },
+    "conditions": {
+     "track": 25.555572509765625,
+     "air": 25.17160415649414,
+     "track_trend": 0.0,
+     "air_trend": -0.00431,
+     "available": true
+    },
+    "connection": {
+     "state": "replay",
+     "label": "REPLAY",
+     "detail": "replayed frames"
+    },
+    "llm": {
+     "available": false,
+     "label": "AI —",
+     "detail": "status unknown",
+     "tone": "muted"
+    }
+   }
+  },
+  {
+   "name": "strategyView of state_field",
+   "module": "view_model",
+   "fn": "strategyView",
+   "args": [
+    {
+     "$input": "state_field"
+    }
+   ],
+   "expect": {
+    "available": true,
+    "window": {
+     "first": 17,
+     "last": 21,
+     "lap": 18,
+     "earliest": 18,
+     "latest": 19,
+     "fuel_limit_lap": 19.294,
+     "finish_lap": 20.0,
+     "open": true,
+     "laps_total": null
+    },
+    "fuel": {
+     "level": 5.137364864349365,
+     "capacity": 104.0,
+     "per_lap": 3.9693,
+     "per_lap_std": 0.0421,
+     "samples": 5,
+     "laps_remaining": 1.294,
+     "laps_to_finish": 2.0,
+     "margin_laps": -0.706,
+     "margin_l": -2.801,
+     "band": "red"
+    },
+    "tyres": {
+     "available": true,
+     "stint_laps": 5,
+     "corners": [
+      {
+       "key": "LF",
+       "temp": 82.30874633789062,
+       "pressure": 185.01513671875,
+       "temp_trend": 0.4596,
+       "pressure_trend": -0.019
+      },
+      {
+       "key": "RF",
+       "temp": 83.7127685546875,
+       "pressure": 184.86190795898438,
+       "temp_trend": 0.4758,
+       "pressure_trend": -0.0328
+      },
+      {
+       "key": "LR",
+       "temp": 80.6229248046875,
+       "pressure": 183.65615844726562,
+       "temp_trend": 0.4342,
+       "pressure_trend": 0.1473
+      },
+      {
+       "key": "RR",
+       "temp": 81.15951538085938,
+       "pressure": 183.77867126464844,
+       "temp_trend": 0.4406,
+       "pressure_trend": 0.1027
+      }
+     ],
+     "imbalance": {
+      "front": -1.404022216796875,
+      "rear": -0.536590576171875
+     }
+    },
+    "stint": {
+     "number": 2,
+     "laps_on_tyres": 2,
+     "start_lap": 13
+    }
+   }
+  },
+  {
+   "name": "tyreView of state_field",
+   "module": "view_model",
+   "fn": "tyreView",
+   "args": [
+    {
+     "$input": "state_field"
+    }
+   ],
+   "expect": {
+    "available": true,
+    "stint_laps": 5,
+    "corners": [
+     {
+      "key": "LF",
+      "temp": 82.30874633789062,
+      "pressure": 185.01513671875,
+      "temp_trend": 0.4596,
+      "pressure_trend": -0.019
+     },
+     {
+      "key": "RF",
+      "temp": 83.7127685546875,
+      "pressure": 184.86190795898438,
+      "temp_trend": 0.4758,
+      "pressure_trend": -0.0328
+     },
+     {
+      "key": "LR",
+      "temp": 80.6229248046875,
+      "pressure": 183.65615844726562,
+      "temp_trend": 0.4342,
+      "pressure_trend": 0.1473
+     },
+     {
+      "key": "RR",
+      "temp": 81.15951538085938,
+      "pressure": 183.77867126464844,
+      "temp_trend": 0.4406,
+      "pressure_trend": 0.1027
+     }
+    ],
+    "imbalance": {
+     "front": -1.404022216796875,
+     "rear": -0.536590576171875
+    }
+   }
+  },
+  {
+   "name": "towerView of state_field",
+   "module": "view_model",
+   "fn": "towerView",
+   "args": [
+    {
+     "$input": "state_field"
+    }
+   ],
+   "expect": {
+    "available": true,
+    "no_field": false,
+    "player": {
+     "position": 5,
+     "last_lap": 140.7218017578125
+    },
+    "gap_basis": "reference_lap",
+    "gaps_known": true,
+    "rows": [
+     {
+      "idx": 39,
+      "label": "#39",
+      "is_player": false,
+      "position": 2,
+      "lap": 18,
+      "last_lap": 140.8218017578125,
+      "best_lap": null,
+      "gap_to_player": -11.0,
+      "on_pit_road": false,
+      "track_surface": "on_track",
+      "trend": null,
+      "warning": null
+     },
+     {
+      "idx": 38,
+      "label": "#38",
+      "is_player": false,
+      "position": 3,
+      "lap": 18,
+      "last_lap": 140.9218017578125,
+      "best_lap": null,
+      "gap_to_player": -4.2,
+      "on_pit_road": false,
+      "track_surface": "on_track",
+      "trend": null,
+      "warning": null
+     },
+     {
+      "idx": 37,
+      "label": "#37",
+      "is_player": false,
+      "position": 4,
+      "lap": 18,
+      "last_lap": 141.0218017578125,
+      "best_lap": null,
+      "gap_to_player": -1.1,
+      "on_pit_road": false,
+      "track_surface": "on_track",
+      "trend": null,
+      "warning": null
+     },
+     {
+      "idx": 30,
+      "label": "#30",
+      "is_player": true,
+      "position": 5,
+      "lap": 18,
+      "last_lap": 141.1218017578125,
+      "best_lap": 140.61790466308594,
+      "gap_to_player": 0.0,
+      "on_pit_road": false,
+      "track_surface": "on_track",
+      "trend": null,
+      "warning": null
+     },
+     {
+      "idx": 35,
+      "label": "#35",
+      "is_player": false,
+      "position": 6,
+      "lap": 18,
+      "last_lap": 141.2218017578125,
+      "best_lap": null,
+      "gap_to_player": 0.9,
+      "on_pit_road": false,
+      "track_surface": "on_track",
+      "trend": null,
+      "warning": null
+     },
+     {
+      "idx": 34,
+      "label": "#34",
+      "is_player": false,
+      "position": 7,
+      "lap": 18,
+      "last_lap": 141.3218017578125,
+      "best_lap": null,
+      "gap_to_player": 3.3,
+      "on_pit_road": false,
+      "track_surface": "on_track",
+      "trend": null,
+      "warning": null
+     },
+     {
+      "idx": 33,
+      "label": "#33",
+      "is_player": false,
+      "position": 8,
+      "lap": 18,
+      "last_lap": 141.4218017578125,
+      "best_lap": null,
+      "gap_to_player": 7.75,
+      "on_pit_road": false,
+      "track_surface": "on_track",
+      "trend": null,
+      "warning": null
+     }
+    ],
+    "total": 10,
+    "hidden": 3,
+    "expanded": false
+   }
+  },
+  {
+   "name": "statusView with agents on",
+   "module": "view_model",
+   "fn": "statusView",
+   "args": [
+    {
+     "$input": "state_running"
+    },
+    {
+     "$opts": {
+      "socket": true,
+      "pitwall_status": {
+       "$input": "status_on"
+      }
+     }
+    }
+   ],
+   "expect": {
+    "session": {
+     "state": "checkered",
+     "source": "replay",
+     "track": "Circuit de Spa-Francorchamps",
+     "car": "176"
+    },
+    "remaining": {
+     "kind": "time",
+     "text": null,
+     "seconds": 154.71901666026497,
+     "unit": "time left"
+    },
+    "flag": {
+     "phase": "checkered",
+     "label": "CHEQUERED FLAG",
+     "active": [
+      "checkered",
+      "servicible",
+      "start_hidden"
+     ],
+     "alert": true
+    },
+    "conditions": {
+     "track": 25.555572509765625,
+     "air": 25.17160415649414,
+     "track_trend": 0.0,
+     "air_trend": -0.00431,
+     "available": true
+    },
+    "connection": {
+     "state": "replay",
+     "label": "REPLAY",
+     "detail": "replayed frames"
+    },
+    "llm": {
+     "available": true,
+     "label": "AI LIVE",
+     "calls": 75,
+     "max_calls": 400,
+     "detail": "75/400 calls",
+     "tone": "ok"
+    }
+   }
+  },
+  {
+   "name": "connectionView with the socket down",
+   "module": "view_model",
+   "fn": "connectionView",
+   "args": [
+    {
+     "$input": "state_running"
+    },
+    {
+     "$opts": {
+      "socket": false,
+      "socket_detail": "code 1006"
+     }
+    }
+   ],
+   "expect": {
+    "state": "offline",
+    "label": "OFFLINE",
+    "detail": "code 1006"
+   }
+  },
+  {
+   "name": "connectionView while a replay runs",
+   "module": "view_model",
+   "fn": "connectionView",
+   "args": [
+    {
+     "$input": "state_running"
+    },
+    {
+     "$opts": {
+      "socket": true,
+      "replay": {
+       "$input": "replay_running"
+      }
+     }
+    }
+   ],
+   "expect": {
+    "state": "replay",
+    "label": "REPLAY",
+    "detail": "replayed frames"
+   }
+  },
+  {
+   "name": "connectionView of a stale state",
+   "module": "view_model",
+   "fn": "connectionView",
+   "args": [
+    {
+     "stale": true,
+     "stale_reason": "no frames for 3 s"
+    }
+   ],
+   "expect": {
+    "state": "stale",
+    "label": "STALE",
+    "detail": "no frames for 3 s"
+   }
+  },
+  {
+   "name": "connectionView of a live state",
+   "module": "view_model",
+   "fn": "connectionView",
+   "args": [
+    {
+     "session": {
+      "source": "live"
+     },
+     "metrics": {
+      "frames": 1234
+     }
+    }
+   ],
+   "expect": {
+    "state": "live",
+    "label": "LIVE",
+    "detail": "1234 frames"
+   }
+  },
+  {
+   "name": "connectionView of nothing",
+   "module": "view_model",
+   "fn": "connectionView",
+   "args": [
+    null
+   ],
+   "expect": {
+    "state": "idle",
+    "label": "NO DATA",
+    "detail": "waiting for frames"
+   }
+  },
+  {
+   "name": "llmView of nothing",
+   "module": "view_model",
+   "fn": "llmView",
+   "args": [
+    null
+   ],
+   "expect": {
+    "available": false,
+    "label": "AI —",
+    "detail": "status unknown",
+    "tone": "muted"
+   }
+  },
+  {
+   "name": "llmView with agents off",
+   "module": "view_model",
+   "fn": "llmView",
+   "args": [
+    {
+     "$input": "status_idle"
+    }
+   ],
+   "expect": {
+    "available": false,
+    "label": "AI OFF",
+    "detail": "Agent layer not mounted (RTV_PITWALL_AGENTS, the 'ai' extra or KIMI_CODE_API_KEY).",
+    "tone": "muted"
+   }
+  },
+  {
+   "name": "llmView with agents on",
+   "module": "view_model",
+   "fn": "llmView",
+   "args": [
+    {
+     "$input": "status_on"
+    }
+   ],
+   "expect": {
+    "available": true,
+    "label": "AI LIVE",
+    "calls": 75,
+    "max_calls": 400,
+    "detail": "75/400 calls",
+    "tone": "ok"
+   }
+  },
+  {
+   "name": "llmView tripped",
+   "module": "view_model",
+   "fn": "llmView",
+   "args": [
+    {
+     "$input": "status_tripped"
+    }
+   ],
+   "expect": {
+    "available": true,
+    "label": "AI MUTED",
+    "calls": 75,
+    "max_calls": 400,
+    "detail": "75/400 calls · degraded: strategist · budget spent",
+    "tone": "warn"
+   }
+  },
+  {
+   "name": "marginBand red",
+   "module": "view_model",
+   "fn": "marginBand",
+   "args": [
+    -0.706
+   ],
+   "expect": "red"
+  },
+  {
+   "name": "marginBand amber",
+   "module": "view_model",
+   "fn": "marginBand",
+   "args": [
+    0.5
+   ],
+   "expect": "amber"
+  },
+  {
+   "name": "marginBand green",
+   "module": "view_model",
+   "fn": "marginBand",
+   "args": [
+    1.0
+   ],
+   "expect": "green"
+  },
+  {
+   "name": "marginBand unknown",
+   "module": "view_model",
+   "fn": "marginBand",
+   "args": [
+    null
+   ],
+   "expect": "unknown"
+  },
+  {
+   "name": "towerView expanded",
+   "module": "view_model",
+   "fn": "towerView",
+   "args": [
+    {
+     "$input": "state_field"
+    }
+   ],
+   "kwargs": {
+    "expanded": true
+   },
+   "expect": {
+    "available": true,
+    "no_field": false,
+    "player": {
+     "position": 5,
+     "last_lap": 140.7218017578125
+    },
+    "gap_basis": "reference_lap",
+    "gaps_known": true,
+    "rows": [
+     {
+      "idx": 40,
+      "label": "#40",
+      "is_player": false,
+      "position": 1,
+      "lap": 18,
+      "last_lap": 140.7218017578125,
+      "best_lap": null,
+      "gap_to_player": -20.4,
+      "on_pit_road": false,
+      "track_surface": "on_track",
+      "trend": null,
+      "warning": null
+     },
+     {
+      "idx": 39,
+      "label": "#39",
+      "is_player": false,
+      "position": 2,
+      "lap": 18,
+      "last_lap": 140.8218017578125,
+      "best_lap": null,
+      "gap_to_player": -11.0,
+      "on_pit_road": false,
+      "track_surface": "on_track",
+      "trend": null,
+      "warning": null
+     },
+     {
+      "idx": 38,
+      "label": "#38",
+      "is_player": false,
+      "position": 3,
+      "lap": 18,
+      "last_lap": 140.9218017578125,
+      "best_lap": null,
+      "gap_to_player": -4.2,
+      "on_pit_road": false,
+      "track_surface": "on_track",
+      "trend": null,
+      "warning": null
+     },
+     {
+      "idx": 37,
+      "label": "#37",
+      "is_player": false,
+      "position": 4,
+      "lap": 18,
+      "last_lap": 141.0218017578125,
+      "best_lap": null,
+      "gap_to_player": -1.1,
+      "on_pit_road": false,
+      "track_surface": "on_track",
+      "trend": null,
+      "warning": null
+     },
+     {
+      "idx": 30,
+      "label": "#30",
+      "is_player": true,
+      "position": 5,
+      "lap": 18,
+      "last_lap": 141.1218017578125,
+      "best_lap": 140.61790466308594,
+      "gap_to_player": 0.0,
+      "on_pit_road": false,
+      "track_surface": "on_track",
+      "trend": null,
+      "warning": null
+     },
+     {
+      "idx": 35,
+      "label": "#35",
+      "is_player": false,
+      "position": 6,
+      "lap": 18,
+      "last_lap": 141.2218017578125,
+      "best_lap": null,
+      "gap_to_player": 0.9,
+      "on_pit_road": false,
+      "track_surface": "on_track",
+      "trend": null,
+      "warning": null
+     },
+     {
+      "idx": 34,
+      "label": "#34",
+      "is_player": false,
+      "position": 7,
+      "lap": 18,
+      "last_lap": 141.3218017578125,
+      "best_lap": null,
+      "gap_to_player": 3.3,
+      "on_pit_road": false,
+      "track_surface": "on_track",
+      "trend": null,
+      "warning": null
+     },
+     {
+      "idx": 33,
+      "label": "#33",
+      "is_player": false,
+      "position": 8,
+      "lap": 18,
+      "last_lap": 141.4218017578125,
+      "best_lap": null,
+      "gap_to_player": 7.75,
+      "on_pit_road": false,
+      "track_surface": "on_track",
+      "trend": null,
+      "warning": null
+     },
+     {
+      "idx": 32,
+      "label": "#32",
+      "is_player": false,
+      "position": 9,
+      "lap": 18,
+      "last_lap": 141.5218017578125,
+      "best_lap": null,
+      "gap_to_player": 12.0,
+      "on_pit_road": true,
+      "track_surface": "on_track",
+      "trend": null,
+      "warning": null
+     },
+     {
+      "idx": 31,
+      "label": "#31",
+      "is_player": false,
+      "position": 10,
+      "lap": 18,
+      "last_lap": 141.6218017578125,
+      "best_lap": null,
+      "gap_to_player": 30.5,
+      "on_pit_road": false,
+      "track_surface": "on_track",
+      "trend": null,
+      "warning": null
+     }
+    ],
+    "total": 10,
+    "hidden": 0,
+    "expanded": true
+   }
+  },
+  {
+   "name": "towerView with trends and warnings",
+   "module": "view_model",
+   "fn": "towerView",
+   "args": [
+    {
+     "$input": "state_field_later"
+    }
+   ],
+   "kwargs": {
+    "trends": {
+     "$trends": [
+      {
+       "$input": "state_field"
+      },
+      {
+       "$input": "state_field_later"
+      }
+     ]
+    },
+    "warnings": {
+     "$warnings": {
+      "events": [
+       {
+        "event_type": "traffic_close",
+        "session_time": 2556.2166666730686,
+        "payload": {
+         "car_idx": 37,
+         "gap": -0.5,
+         "side": "ahead"
+        }
+       },
+       {
+        "event_type": "blue_flag",
+        "session_time": 2528.2166666730686,
+        "payload": {
+         "car_idx": 34,
+         "gap": 3.3
+        }
+       }
+      ],
+      "clock": 2558.2166666730686
+     }
+    }
+   },
+   "expect": {
+    "available": true,
+    "no_field": false,
+    "player": {
+     "position": 5,
+     "last_lap": 140.7218017578125
+    },
+    "gap_basis": "reference_lap",
+    "gaps_known": true,
+    "rows": [
+     {
+      "idx": 39,
+      "label": "#39",
+      "is_player": false,
+      "position": 2,
+      "lap": 18,
+      "last_lap": 140.8218017578125,
+      "best_lap": null,
+      "gap_to_player": -11.0,
+      "on_pit_road": false,
+      "track_surface": "on_track",
+      "trend": "steady",
+      "warning": null
+     },
+     {
+      "idx": 38,
+      "label": "#38",
+      "is_player": false,
+      "position": 3,
+      "lap": 18,
+      "last_lap": 140.9218017578125,
+      "best_lap": null,
+      "gap_to_player": -4.2,
+      "on_pit_road": false,
+      "track_surface": "on_track",
+      "trend": "steady",
+      "warning": null
+     },
+     {
+      "idx": 37,
+      "label": "#37",
+      "is_player": false,
+      "position": 4,
+      "lap": 18,
+      "last_lap": 141.0218017578125,
+      "best_lap": null,
+      "gap_to_player": -0.5,
+      "on_pit_road": false,
+      "track_surface": "on_track",
+      "trend": "closing",
+      "warning": {
+       "kind": "traffic_close",
+       "at": 2556.2166666730686,
+       "payload": {
+        "car_idx": 37,
+        "gap": -0.5,
+        "side": "ahead"
+       }
+      }
+     },
+     {
+      "idx": 30,
+      "label": "#30",
+      "is_player": true,
+      "position": 5,
+      "lap": 18,
+      "last_lap": 141.1218017578125,
+      "best_lap": 140.61790466308594,
+      "gap_to_player": 0.0,
+      "on_pit_road": false,
+      "track_surface": "on_track",
+      "trend": "steady",
+      "warning": null
+     },
+     {
+      "idx": 35,
+      "label": "#35",
+      "is_player": false,
+      "position": 6,
+      "lap": 18,
+      "last_lap": 141.2218017578125,
+      "best_lap": null,
+      "gap_to_player": 4.5,
+      "on_pit_road": false,
+      "track_surface": "on_track",
+      "trend": "opening",
+      "warning": null
+     },
+     {
+      "idx": 34,
+      "label": "#34",
+      "is_player": false,
+      "position": 7,
+      "lap": 18,
+      "last_lap": 141.3218017578125,
+      "best_lap": null,
+      "gap_to_player": 3.3,
+      "on_pit_road": false,
+      "track_surface": "on_track",
+      "trend": "steady",
+      "warning": null
+     },
+     {
+      "idx": 33,
+      "label": "#33",
+      "is_player": false,
+      "position": 8,
+      "lap": 18,
+      "last_lap": 141.4218017578125,
+      "best_lap": null,
+      "gap_to_player": 7.75,
+      "on_pit_road": false,
+      "track_surface": "on_track",
+      "trend": "steady",
+      "warning": null
+     }
+    ],
+    "total": 10,
+    "hidden": 3,
+    "expanded": false
+   }
+  },
+  {
+   "name": "FuelHistory over the race states",
+   "module": "view_model",
+   "fn": "FuelHistory.points",
+   "args": [
+    [
+     {
+      "$input": "state_idle"
+     },
+     {
+      "$input": "state_running"
+     },
+     {
+      "$input": "state_running"
+     },
+     {
+      "$input": "state_end"
+     }
+    ]
+   ],
+   "expect": [
+    {
+     "lap": 18,
+     "per_lap": 3.9693
+    }
+   ]
+  },
+  {
+   "name": "recommendationView of radio 0 (vehicle_engineer)",
+   "module": "view_model",
+   "fn": "recommendationView",
+   "args": [
+    {
+     "$input": "radio",
+     "index": 0
+    }
+   ],
+   "expect": {
+    "call": "REFUSED",
+    "parts": [],
+    "risks": [],
+    "spoken": "Standby - I can't back that call with data yet.",
+    "grounded": false,
+    "refused": true,
+    "lap": 0
+   }
+  },
+  {
+   "name": "recommendationView of radio 1 (strategist)",
+   "module": "view_model",
+   "fn": "recommendationView",
+   "args": [
+    {
+     "$input": "radio",
+     "index": 1
+    }
+   ],
+   "expect": {
+    "call": "BOX NOW",
+    "parts": [
+     "lap 2",
+     "13.2 L"
+    ],
+    "risks": [
+     "Rejoin position unknown - standings gaps unavailable, so track-position cost of the stop cannot be quoted.",
+     "Fuel consumption is from 1 sample only; the 13.21L add may need revision as more laps are logged.",
+     "Pit-lane loss of 25.0s is a tool assumption, not measured."
+    ],
+    "spoken": "Box this lap, fuel only, 13.2 litres. We're 3 laps short on fuel, stop is mandatory. Rejoin position unknown - no standings data.",
+    "grounded": true,
+    "refused": false,
+    "lap": 2
+   }
+  },
+  {
+   "name": "recommendationView of radio 2 (coach)",
+   "module": "view_model",
+   "fn": "recommendationView",
+   "args": [
+    {
+     "$input": "radio",
+     "index": 2
+    }
+   ],
+   "expect": {
+    "call": "HOLD",
+    "parts": [],
+    "risks": [],
+    "spoken": "Brake earlier into the hairpin — you went in 14 metres late and locked up, that's what put you off.",
+    "grounded": true,
+    "refused": false,
+    "lap": 2
+   }
+  },
+  {
+   "name": "recommendationView of radio 3 (vehicle_engineer)",
+   "module": "view_model",
+   "fn": "recommendationView",
+   "args": [
+    {
+     "$input": "radio",
+     "index": 3
+    }
+   ],
+   "expect": {
+    "call": "HOLD",
+    "parts": [],
+    "risks": [],
+    "spoken": "Pressures are building four kPa per lap across all four tyres - RF is worst. Temps are fine. We'll adjust cold pressures at the stop.",
+    "grounded": true,
+    "refused": false,
+    "lap": 3
+   }
+  },
+  {
+   "name": "recommendationView of radio 4 (spotter)",
+   "module": "view_model",
+   "fn": "recommendationView",
+   "args": [
+    {
+     "$input": "radio",
+     "index": 4
+    }
+   ],
+   "expect": {
+    "call": "HOLD",
+    "parts": [],
+    "risks": [],
+    "spoken": "Yellow, yellow. No gaps, location unknown. Expect slow traffic ahead, be ready to lift.",
+    "grounded": true,
+    "refused": false,
+    "lap": 3
+   }
+  },
+  {
+   "name": "recommendationView of radio 5 (strategist)",
+   "module": "view_model",
+   "fn": "recommendationView",
+   "args": [
+    {
+     "$input": "radio",
+     "index": 5
+    }
+   ],
+   "expect": {
+    "call": "PIT UNDER YELLOW",
+    "parts": [
+     "lap 3",
+     "14.8 L"
+    ],
+    "risks": [
+     "Rejoin position unknown - no standings data, so cars may pass in the pits we cannot account for",
+     "Fuel consumption based on only 2 samples (std 0.1477 L); the 0.5-lap reserve could shrink if consumption rises",
+     "If the yellow ends before we reach pit entry, the stop reverts to full 25.0s loss"
+    ],
+    "spoken": "Box this lap under the yellow, fuel only, 14.8 litres. Stop is mandatory, we're 3 laps short. Rejoin unknown, no standings data.",
+    "grounded": true,
+    "refused": false,
+    "lap": 3
+   }
+  },
+  {
+   "name": "recommendationView of radio 6 (strategist)",
+   "module": "view_model",
+   "fn": "recommendationView",
+   "args": [
+    {
+     "$input": "radio",
+     "index": 6
+    }
+   ],
+   "expect": {
+    "call": "PIT UNDER YELLOW",
+    "parts": [
+     "lap 4",
+     "16.7 L"
+    ],
+    "risks": [
+     "Rejoin position unknown - no standings gap basis, so we cannot say where we come out.",
+     "Fuel consumption learned from only 2 samples (std 0.148 L/lap); the 0.5-lap reserve covers modest variation but a big consumption spike would leave us short.",
+     "If the yellow ends before we reach pit entry, the stop reverts to full 25.0s loss."
+    ],
+    "spoken": "Box this lap under the yellow, fuel only, 16.7 litres. Stop is mandatory, we're 3.9 laps short. Rejoin unknown, no standings data.",
+    "grounded": true,
+    "refused": false,
+    "lap": 4
+   }
+  },
+  {
+   "name": "recommendationView of radio 7 (spotter)",
+   "module": "view_model",
+   "fn": "recommendationView",
+   "args": [
+    {
+     "$input": "radio",
+     "index": 7
+    }
+   ],
+   "expect": {
+    "call": "REFUSED",
+    "parts": [],
+    "risks": [],
+    "spoken": "Standby - I can't back that call with data yet.",
+    "grounded": false,
+    "refused": true,
+    "lap": 4
+   }
+  },
+  {
+   "name": "recommendationView of radio 8 (coach)",
+   "module": "view_model",
+   "fn": "recommendationView",
+   "args": [
+    {
+     "$input": "radio",
+     "index": 8
+    }
+   ],
+   "expect": {
+    "call": "HOLD",
+    "parts": [],
+    "risks": [],
+    "spoken": "That one's a one-off, no pattern. Keep it tidy on the way in, we're boxing this lap.",
+    "grounded": true,
+    "refused": false,
+    "lap": 5
+   }
+  },
+  {
+   "name": "recommendationView of radio 9 (coach)",
+   "module": "view_model",
+   "fn": "recommendationView",
+   "args": [
+    {
+     "$input": "radio",
+     "index": 9
+    }
+   ],
+   "expect": {
+    "call": "HOLD",
+    "parts": [],
+    "risks": [],
+    "spoken": "Same corner again — brake earlier, carry less speed in. You're running wide on entry. Keep it clean on the way in.",
+    "grounded": true,
+    "refused": false,
+    "lap": 6
+   }
+  },
+  {
+   "name": "recommendationView of radio 10 (coach)",
+   "module": "view_model",
+   "fn": "recommendationView",
+   "args": [
+    {
+     "$input": "radio",
+     "index": 10
+    }
+   ],
+   "expect": {
+    "call": "HOLD",
+    "parts": [],
+    "risks": [],
+    "spoken": "C09 again, three laps running. Brake earlier, slow the car to 130 at the apex — you're carrying too much in and running wide.",
+    "grounded": true,
+    "refused": false,
+    "lap": 7
+   }
+  },
+  {
+   "name": "recommendationView of radio 11 (vehicle_engineer)",
+   "module": "view_model",
+   "fn": "recommendationView",
+   "args": [
+    {
+     "$input": "radio",
+     "index": 11
+    }
+   ],
+   "expect": {
+    "call": "HOLD",
+    "parts": [],
+    "risks": [],
+    "spoken": "Same corner C09, third time. Brake earlier, less speed in. Keep it clean on the way in.",
+    "grounded": true,
+    "refused": false,
+    "lap": 7
+   }
+  },
+  {
+   "name": "recommendationView of radio 12 (strategist)",
+   "module": "view_model",
+   "fn": "recommendationView",
+   "args": [
+    {
+     "$input": "radio",
+     "index": 12
+    }
+   ],
+   "expect": {
+    "call": "BOX NOW",
+    "parts": [
+     "lap 8",
+     "16.2 L"
+    ],
+    "risks": [
+     "Rejoin position unknown - standings data unavailable",
+     "Cannot assess traffic loss without gap basis",
+     "Pressure trend slightly positive but within normal range"
+    ],
+    "spoken": "Box this lap, fuel only. We're short 14 litres, window is open now.",
+    "grounded": true,
+    "refused": false,
+    "lap": 8
+   }
+  },
+  {
+   "name": "recommendationView of radio 13 (coach)",
+   "module": "view_model",
+   "fn": "recommendationView",
+   "args": [
+    {
+     "$input": "radio",
+     "index": 13
+    }
+   ],
+   "expect": {
+    "call": "HOLD",
+    "parts": [],
+    "risks": [],
+    "spoken": "C09 again, three laps running. Brake earlier, slow the car to 130 at the apex — you're carrying too much in and running wide.",
+    "grounded": true,
+    "refused": false,
+    "lap": 8
+   }
+  },
+  {
+   "name": "recommendationView of radio 14 (spotter)",
+   "module": "view_model",
+   "fn": "recommendationView",
+   "args": [
+    {
+     "$input": "radio",
+     "index": 14
+    }
+   ],
+   "expect": {
+    "call": "HOLD",
+    "parts": [],
+    "risks": [],
+    "spoken": "Incident at C09, you're off track. No gaps — traffic unknown. Get it back on safely.",
+    "grounded": true,
+    "refused": false,
+    "lap": 11
+   }
+  },
+  {
+   "name": "recommendationView of radio 15 (coach)",
+   "module": "view_model",
+   "fn": "recommendationView",
+   "args": [
+    {
+     "$input": "radio",
+     "index": 15
+    }
+   ],
+   "expect": {
+    "call": "HOLD",
+    "parts": [],
+    "risks": [],
+    "spoken": "C09 again — that's four times now. Brake earlier, slow it to 130 at the apex. You're carrying too much in and running wide.",
+    "grounded": true,
+    "refused": false,
+    "lap": 11
+   }
+  },
+  {
+   "name": "recommendationView of radio 16 (strategist)",
+   "module": "view_model",
+   "fn": "recommendationView",
+   "args": [
+    {
+     "$input": "radio",
+     "index": 16
+    }
+   ],
+   "expect": {
+    "call": "BOX NOW",
+    "parts": [
+     "lap 12",
+     "17.9 L"
+    ],
+    "risks": [
+     "Rejoin position unknown - standings gaps unavailable",
+     "Traffic on pit exit unknown",
+     "Only one more lap of window remaining if we miss this one"
+    ],
+    "spoken": "Box this lap, fuel only. Window closes next lap, we're 16 litres short.",
+    "grounded": true,
+    "refused": false,
+    "lap": 12
+   }
+  },
+  {
+   "name": "recommendationView of radio 17 (strategist)",
+   "module": "view_model",
+   "fn": "recommendationView",
+   "args": [
+    {
+     "$input": "radio",
+     "index": 17
+    }
+   ],
+   "expect": {
+    "call": "BOX NOW",
+    "parts": [
+     "lap 12",
+     "19.9 L"
+    ],
+    "risks": [
+     "Rejoin position unknown — standings gap basis unavailable, so traffic on exit is unpriced.",
+     "Fuel consumption could rise above 3.975 L/lap (std 0.0241), eating the 0.5-lap reserve.",
+     "If the stop is missed this lap, only lap 13 remains before the window closes."
+    ],
+    "spoken": "Box this lap, fuel only, 19.9 litres. We're 17.9 short with six laps to go — this is the window.",
+    "grounded": true,
+    "refused": false,
+    "lap": 12
+   }
+  },
+  {
+   "name": "recommendationView of radio 18 (coach)",
+   "module": "view_model",
+   "fn": "recommendationView",
+   "args": [
+    {
+     "$input": "radio",
+     "index": 18
+    }
+   ],
+   "expect": {
+    "call": "HOLD",
+    "parts": [],
+    "risks": [],
+    "spoken": "C09 again, that's five. Brake earlier, slow it right down toward 130 through the apex — stop giving the entry away.",
+    "grounded": true,
+    "refused": false,
+    "lap": 12
+   }
+  },
+  {
+   "name": "recommendationView of radio 19 (spotter)",
+   "module": "view_model",
+   "fn": "recommendationView",
+   "args": [
+    {
+     "$input": "radio",
+     "index": 19
+    }
+   ],
+   "expect": {
+    "call": "HOLD",
+    "parts": [],
+    "risks": [],
+    "spoken": "Off again, second incident. No gaps — traffic unknown. Get it back on safely.",
+    "grounded": true,
+    "refused": false,
+    "lap": 12
+   }
+  },
+  {
+   "name": "recommendationView of radio 20 (vehicle_engineer)",
+   "module": "view_model",
+   "fn": "recommendationView",
+   "args": [
+    {
+     "$input": "radio",
+     "index": 20
+    }
+   ],
+   "expect": {
+    "call": "HOLD",
+    "parts": [],
+    "risks": [],
+    "spoken": "Car's healthy — temps flat, pressures building normally, no tyre issues. Fuel only this stop. The C09 problem is entry speed, not the car.",
+    "grounded": true,
+    "refused": false,
+    "lap": 12
+   }
+  },
+  {
+   "name": "recommendationView of radio 21 (strategist)",
+   "module": "view_model",
+   "fn": "recommendationView",
+   "args": [
+    {
+     "$input": "radio",
+     "index": 21
+    }
+   ],
+   "expect": {
+    "call": "BOX NOW",
+    "parts": [
+     "lap 13",
+     "0.0 L"
+    ],
+    "risks": [
+     "Rejoin position unknown — standings gaps unavailable, so we cannot confirm track position after the stop.",
+     "If fuel consumption rises above 3.975 L/lap, the margin shrinks further."
+    ],
+    "spoken": "Box this lap, fuel only. Window is open, margin is under one lap — we stop now.",
+    "grounded": true,
+    "refused": false,
+    "lap": 13
+   }
+  },
+  {
+   "name": "recommendationView of radio 22 (coach)",
+   "module": "view_model",
+   "fn": "recommendationView",
+   "args": [
+    {
+     "$input": "radio",
+     "index": 22
+    }
+   ],
+   "expect": {
+    "call": "HOLD",
+    "parts": [],
+    "risks": [],
+    "spoken": "C09 again — six times now. Brake earlier and commit to 139 through the apex, same speed every lap. Consistency, not caution.",
+    "grounded": true,
+    "refused": false,
+    "lap": 13
+   }
+  },
+  {
+   "name": "recommendationView of radio 23 (vehicle_engineer)",
+   "module": "view_model",
+   "fn": "recommendationView",
+   "args": [
+    {
+     "$input": "radio",
+     "index": 23
+    }
+   ],
+   "expect": {
+    "call": "HOLD",
+    "parts": [],
+    "risks": [],
+    "spoken": "Car's healthy, tyres are fine. C09 is entry speed, not the car. Fuel only this stop.",
+    "grounded": true,
+    "refused": false,
+    "lap": 13
+   }
+  },
+  {
+   "name": "recommendationView of radio 24 (spotter)",
+   "module": "view_model",
+   "fn": "recommendationView",
+   "args": [
+    {
+     "$input": "radio",
+     "index": 24
+    }
+   ],
+   "expect": {
+    "call": "HOLD",
+    "parts": [],
+    "risks": [],
+    "spoken": "Off again, third incident. No gaps — traffic unknown. Get it back on safely.",
+    "grounded": true,
+    "refused": false,
+    "lap": 14
+   }
+  },
+  {
+   "name": "recommendationView of radio 25 (coach)",
+   "module": "view_model",
+   "fn": "recommendationView",
+   "args": [
+    {
+     "$input": "radio",
+     "index": 25
+    }
+   ],
+   "expect": {
+    "call": "HOLD",
+    "parts": [],
+    "risks": [],
+    "spoken": "C09 again — brake earlier, commit to 139 through the apex, same speed every lap. Consistency, not caution. Box this lap.",
+    "grounded": true,
+    "refused": false,
+    "lap": 14
+   }
+  },
+  {
+   "name": "recommendationView of radio 26 (coach)",
+   "module": "view_model",
+   "fn": "recommendationView",
+   "args": [
+    {
+     "$input": "radio",
+     "index": 26
+    }
+   ],
+   "expect": {
+    "call": "HOLD",
+    "parts": [],
+    "risks": [],
+    "spoken": "That one was C14, not C09. Brake nine metres earlier into C14 — you're running in too deep and losing it on entry.",
+    "grounded": true,
+    "refused": false,
+    "lap": 16
+   }
+  },
+  {
+   "name": "recommendationView of radio 27 (strategist)",
+   "module": "view_model",
+   "fn": "recommendationView",
+   "args": [
+    {
+     "$input": "radio",
+     "index": 27
+    }
+   ],
+   "expect": {
+    "call": "BOX NOW",
+    "parts": [
+     "lap 17",
+     "3.7 L"
+    ],
+    "risks": [
+     "Rejoin position unknown — standings gaps unavailable, so traffic on exit is unpriced.",
+     "Pit-lane loss of 25.0 s is an assumption, not measured.",
+     "Fuel per-lap spread is 0.0421 L over 5 samples; consumption spike could tighten the finish margin."
+    ],
+    "spoken": "Box this lap, fuel only. Tank runs dry next lap.",
+    "grounded": true,
+    "refused": false,
+    "lap": 17
+   }
+  },
+  {
+   "name": "recommendationView of radio 28 (spotter)",
+   "module": "view_model",
+   "fn": "recommendationView",
+   "args": [
+    {
+     "$input": "radio",
+     "index": 28
+    }
+   ],
+   "expect": {
+    "call": "HOLD",
+    "parts": [],
+    "risks": [],
+    "spoken": "Off again, fourth incident. No gaps — traffic unknown. Get it back on safely.",
+    "grounded": true,
+    "refused": false,
+    "lap": 17
+   }
+  },
+  {
+   "name": "recommendationView of radio 29 (strategist)",
+   "module": "view_model",
+   "fn": "recommendationView",
+   "args": [
+    {
+     "$input": "radio",
+     "index": 29
+    }
+   ],
+   "expect": {
+    "call": "BOX NOW",
+    "parts": [
+     "lap 18",
+     "4.6 L"
+    ],
+    "risks": [
+     "Rejoin position unknown — standings gap basis is null, so traffic on exit is unpriced.",
+     "Only 1.345 laps of fuel remain; any delay past this lap risks running dry."
+    ],
+    "spoken": "Box this lap, fuel only, 4.6 litres. We're short 2.6 to the flag — no rejoin read, gaps unknown.",
+    "grounded": true,
+    "refused": false,
+    "lap": 17
+   }
+  },
+  {
+   "name": "recommendationView of nothing",
+   "module": "view_model",
+   "fn": "recommendationView",
+   "args": [
+    null
+   ],
+   "expect": null
+  },
+  {
+   "name": "eventLine 0 (car_health_warning)",
+   "module": "view_model",
+   "fn": "eventLine",
+   "args": [
+    {
+     "$input": "events",
+     "index": 0
+    }
+   ],
+   "expect": {
+    "key": "car_health_warning",
+    "type": "car_health_warning",
+    "severity": "critical",
+    "lap": 0,
+    "session_time": 22.683333334823445,
+    "text": "engine_warning [oil_pressure_warning, engine_stalled]",
+    "injected": false,
+    "director_id": null
+   }
+  },
+  {
+   "name": "eventLine 1 (wheelspin)",
+   "module": "view_model",
+   "fn": "eventLine",
+   "args": [
+    {
+     "$input": "events",
+     "index": 1
+    }
+   ],
+   "expect": {
+    "key": "wheelspin",
+    "type": "wheelspin",
+    "severity": "info",
+    "lap": 0,
+    "session_time": 47.90000000148868,
+    "text": "wheelspin RR slip 0.16",
+    "injected": false,
+    "director_id": null
+   }
+  },
+  {
+   "name": "eventLine 2 (flag_change)",
+   "module": "view_model",
+   "fn": "eventLine",
+   "args": [
+    {
+     "$input": "events",
+     "index": 2
+    }
+   ],
+   "expect": {
+    "key": "flag_change:green",
+    "type": "flag_change",
+    "severity": "info",
+    "lap": 0,
+    "session_time": 59.33333333482136,
+    "text": "flag unknown → green",
+    "injected": false,
+    "director_id": null
+   }
+  },
+  {
+   "name": "eventLine 3 (lap_completed)",
+   "module": "view_model",
+   "fn": "eventLine",
+   "args": [
+    {
+     "$input": "events",
+     "index": 3
+    }
+   ],
+   "expect": {
+    "key": "lap_completed",
+    "type": "lap_completed",
+    "severity": "info",
+    "lap": 1,
+    "session_time": 81.71666666815342,
+    "text": "lap 0 in n/a (not green)",
+    "injected": false,
+    "director_id": null
+   }
+  },
+  {
+   "name": "eventLine 4 (lap_completed)",
+   "module": "view_model",
+   "fn": "eventLine",
+   "args": [
+    {
+     "$input": "events",
+     "index": 4
+    }
+   ],
+   "expect": {
+    "key": "lap_completed",
+    "type": "lap_completed",
+    "severity": "info",
+    "lap": 2,
+    "session_time": 227.5833333348967,
+    "text": "lap 1 in 2:25.867",
+    "injected": false,
+    "director_id": null
+   }
+  },
+  {
+   "name": "eventLine 5 (personal_best)",
+   "module": "view_model",
+   "fn": "eventLine",
+   "args": [
+    {
+     "$input": "events",
+     "index": 5
+    }
+   ],
+   "expect": {
+    "key": "personal_best",
+    "type": "personal_best",
+    "severity": "info",
+    "lap": 2,
+    "session_time": 227.5833333348967,
+    "text": "personal best 2:25.867",
+    "injected": false,
+    "director_id": null
+   }
+  },
+  {
+   "name": "eventLine 6 (session_fastest_lap)",
+   "module": "view_model",
+   "fn": "eventLine",
+   "args": [
+    {
+     "$input": "events",
+     "index": 6
+    }
+   ],
+   "expect": {
+    "key": "session_fastest_lap",
+    "type": "session_fastest_lap",
+    "severity": "info",
+    "lap": 2,
+    "session_time": 227.5833333348967,
+    "text": "session fastest 2:25.867",
+    "injected": false,
+    "director_id": null
+   }
+  },
+  {
+   "name": "eventLine 7 (pit_window_open)",
+   "module": "view_model",
+   "fn": "eventLine",
+   "args": [
+    {
+     "$input": "events",
+     "index": 7
+    }
+   ],
+   "expect": {
+    "key": "pit_window_open",
+    "type": "pit_window_open",
+    "severity": "advisory",
+    "lap": 2,
+    "session_time": 229.68333333489838,
+    "text": "pit window lap 2–14",
+    "injected": false,
+    "director_id": null
+   }
+  },
+  {
+   "name": "eventLine 8 (fuel_margin_low)",
+   "module": "view_model",
+   "fn": "eventLine",
+   "args": [
+    {
+     "$input": "events",
+     "index": 8
+    }
+   ],
+   "expect": {
+    "key": "fuel_margin_low",
+    "type": "fuel_margin_low",
+    "severity": "advisory",
+    "lap": 2,
+    "session_time": 229.68333333489838,
+    "text": "fuel margin −3.08 laps",
+    "injected": false,
+    "director_id": null
+   }
+  },
+  {
+   "name": "eventLine 9 (offtrack)",
+   "module": "view_model",
+   "fn": "eventLine",
+   "args": [
+    {
+     "$input": "events",
+     "index": 9
+    }
+   ],
+   "expect": {
+    "key": "offtrack",
+    "type": "offtrack",
+    "severity": "advisory",
+    "lap": 2,
+    "session_time": 367.71666666815105,
+    "text": "off track (off_track) at 98%",
+    "injected": false,
+    "director_id": null
+   }
+  },
+  {
+   "name": "eventLine 10 (lap_completed)",
+   "module": "view_model",
+   "fn": "eventLine",
+   "args": [
+    {
+     "$input": "events",
+     "index": 10
+    }
+   ],
+   "expect": {
+    "key": "lap_completed",
+    "type": "lap_completed",
+    "severity": "info",
+    "lap": 3,
+    "session_time": 371.5500000014809,
+    "text": "lap 2 in 2:23.967",
+    "injected": false,
+    "director_id": null
+   }
+  },
+  {
+   "name": "eventLine 11 (personal_best)",
+   "module": "view_model",
+   "fn": "eventLine",
+   "args": [
+    {
+     "$input": "events",
+     "index": 11
+    }
+   ],
+   "expect": {
+    "key": "personal_best",
+    "type": "personal_best",
+    "severity": "info",
+    "lap": 3,
+    "session_time": 371.5500000014809,
+    "text": "personal best 2:23.967",
+    "injected": false,
+    "director_id": null
+   }
+  },
+  {
+   "name": "eventLine 12 (session_fastest_lap)",
+   "module": "view_model",
+   "fn": "eventLine",
+   "args": [
+    {
+     "$input": "events",
+     "index": 12
+    }
+   ],
+   "expect": {
+    "key": "session_fastest_lap",
+    "type": "session_fastest_lap",
+    "severity": "info",
+    "lap": 3,
+    "session_time": 371.5500000014809,
+    "text": "session fastest 2:23.967",
+    "injected": false,
+    "director_id": null
+   }
+  },
+  {
+   "name": "eventLine 13 (tyre_out_of_band)",
+   "module": "view_model",
+   "fn": "eventLine",
+   "args": [
+    {
+     "$input": "events",
+     "index": 13
+    }
+   ],
+   "expect": {
+    "key": "tyre_out_of_band",
+    "type": "tyre_out_of_band",
+    "severity": "advisory",
+    "lap": 3,
+    "session_time": 371.5500000014809,
+    "text": "tyre_pressure_trend RF = 4.2",
+    "injected": false,
+    "director_id": null
+   }
+  },
+  {
+   "name": "eventLine 14 (flag_change)",
+   "module": "view_model",
+   "fn": "eventLine",
+   "args": [
+    {
+     "$input": "events",
+     "index": 14
+    }
+   ],
+   "expect": {
+    "key": "flag_change:yellow",
+    "type": "flag_change",
+    "severity": "critical",
+    "lap": 3,
+    "session_time": 500.81666666803,
+    "text": "flag green → yellow",
+    "injected": false,
+    "director_id": null
+   }
+  },
+  {
+   "name": "eventLine 15 (flag_change)",
+   "module": "view_model",
+   "fn": "eventLine",
+   "args": [
+    {
+     "$input": "events",
+     "index": 15
+    }
+   ],
+   "expect": {
+    "key": "flag_change:green",
+    "type": "flag_change",
+    "severity": "info",
+    "lap": 3,
+    "session_time": 510.73333333468764,
+    "text": "flag yellow → green",
+    "injected": false,
+    "director_id": null
+   }
+  },
+  {
+   "name": "eventLine 16 (lap_completed)",
+   "module": "view_model",
+   "fn": "eventLine",
+   "args": [
+    {
+     "$input": "events",
+     "index": 16
+    }
+   ],
+   "expect": {
+    "key": "lap_completed",
+    "type": "lap_completed",
+    "severity": "info",
+    "lap": 4,
+    "session_time": 513.300000001352,
+    "text": "lap 3 in 2:21.750 (not green)",
+    "injected": false,
+    "director_id": null
+   }
+  },
+  {
+   "name": "eventLine 17 (personal_best)",
+   "module": "view_model",
+   "fn": "eventLine",
+   "args": [
+    {
+     "$input": "events",
+     "index": 17
+    }
+   ],
+   "expect": {
+    "key": "personal_best",
+    "type": "personal_best",
+    "severity": "info",
+    "lap": 4,
+    "session_time": 513.300000001352,
+    "text": "personal best 2:21.750",
+    "injected": false,
+    "director_id": null
+   }
+  },
+  {
+   "name": "eventLine 18 (session_fastest_lap)",
+   "module": "view_model",
+   "fn": "eventLine",
+   "args": [
+    {
+     "$input": "events",
+     "index": 18
+    }
+   ],
+   "expect": {
+    "key": "session_fastest_lap",
+    "type": "session_fastest_lap",
+    "severity": "info",
+    "lap": 4,
+    "session_time": 513.300000001352,
+    "text": "session fastest 2:21.750",
+    "injected": false,
+    "director_id": null
+   }
+  },
+  {
+   "name": "eventLine 19 (flag_change)",
+   "module": "view_model",
+   "fn": "eventLine",
+   "args": [
+    {
+     "$input": "events",
+     "index": 19
+    }
+   ],
+   "expect": {
+    "key": "flag_change:yellow",
+    "type": "flag_change",
+    "severity": "critical",
+    "lap": 4,
+    "session_time": 570.933333334633,
+    "text": "flag green → yellow",
+    "injected": false,
+    "director_id": null
+   }
+  },
+  {
+   "name": "eventLine 20 (flag_change)",
+   "module": "view_model",
+   "fn": "eventLine",
+   "args": [
+    {
+     "$input": "events",
+     "index": 20
+    }
+   ],
+   "expect": {
+    "key": "flag_change:green",
+    "type": "flag_change",
+    "severity": "info",
+    "lap": 4,
+    "session_time": 573.6166666679638,
+    "text": "flag yellow → green",
+    "injected": false,
+    "director_id": null
+   }
+  },
+  {
+   "name": "eventLine 21 (wheelspin)",
+   "module": "view_model",
+   "fn": "eventLine",
+   "args": [
+    {
+     "$input": "events",
+     "index": 21
+    }
+   ],
+   "expect": {
+    "key": "wheelspin",
+    "type": "wheelspin",
+    "severity": "info",
+    "lap": 4,
+    "session_time": 650.6500000012271,
+    "text": "wheelspin RR slip 0.18",
+    "injected": false,
+    "director_id": null
+   }
+  },
+  {
+   "name": "eventLine 22 (lap_completed)",
+   "module": "view_model",
+   "fn": "eventLine",
+   "args": [
+    {
+     "$input": "events",
+     "index": 22
+    }
+   ],
+   "expect": {
+    "key": "lap_completed",
+    "type": "lap_completed",
+    "severity": "info",
+    "lap": 5,
+    "session_time": 655.533333334556,
+    "text": "lap 4 in 2:22.233 (not green)",
+    "injected": false,
+    "director_id": null
+   }
+  },
+  {
+   "name": "eventLine 23 (offtrack)",
+   "module": "view_model",
+   "fn": "eventLine",
+   "args": [
+    {
+     "$input": "events",
+     "index": 23
+    }
+   ],
+   "expect": {
+    "key": "offtrack",
+    "type": "offtrack",
+    "severity": "advisory",
+    "lap": 5,
+    "session_time": 724.2000000011602,
+    "text": "off track (off_track) at 48%",
+    "injected": false,
+    "director_id": null
+   }
+  },
+  {
+   "name": "eventLine 24 (lap_completed)",
+   "module": "view_model",
+   "fn": "eventLine",
+   "args": [
+    {
+     "$input": "events",
+     "index": 24
+    }
+   ],
+   "expect": {
+    "key": "lap_completed",
+    "type": "lap_completed",
+    "severity": "info",
+    "lap": 6,
+    "session_time": 797.4166666677603,
+    "text": "lap 5 in 2:21.883",
+    "injected": false,
+    "director_id": null
+   }
+  },
+  {
+   "name": "eventLine 25 (offtrack)",
+   "module": "view_model",
+   "fn": "eventLine",
+   "args": [
+    {
+     "$input": "events",
+     "index": 25
+    }
+   ],
+   "expect": {
+    "key": "offtrack",
+    "type": "offtrack",
+    "severity": "advisory",
+    "lap": 6,
+    "session_time": 865.6000000010316,
+    "text": "off track (off_track) at 48%",
+    "injected": false,
+    "director_id": null
+   }
+  },
+  {
+   "name": "eventLine 26 (offtrack)",
+   "module": "view_model",
+   "fn": "eventLine",
+   "args": [
+    {
+     "$input": "events",
+     "index": 26
+    }
+   ],
+   "expect": {
+    "key": "offtrack",
+    "type": "offtrack",
+    "severity": "advisory",
+    "lap": 6,
+    "session_time": 900.5333333343332,
+    "text": "off track (off_track) at 72%",
+    "injected": false,
+    "director_id": null
+   }
+  },
+  {
+   "name": "eventLine 27 (lap_completed)",
+   "module": "view_model",
+   "fn": "eventLine",
+   "args": [
+    {
+     "$input": "events",
+     "index": 27
+    }
+   ],
+   "expect": {
+    "key": "lap_completed",
+    "type": "lap_completed",
+    "severity": "info",
+    "lap": 7,
+    "session_time": 938.0333333342991,
+    "text": "lap 6 in 2:20.617",
+    "injected": false,
+    "director_id": null
+   }
+  },
+  {
+   "name": "eventLine 28 (personal_best)",
+   "module": "view_model",
+   "fn": "eventLine",
+   "args": [
+    {
+     "$input": "events",
+     "index": 28
+    }
+   ],
+   "expect": {
+    "key": "personal_best",
+    "type": "personal_best",
+    "severity": "info",
+    "lap": 7,
+    "session_time": 938.0333333342991,
+    "text": "personal best 2:20.617",
+    "injected": false,
+    "director_id": null
+   }
+  },
+  {
+   "name": "eventLine 29 (session_fastest_lap)",
+   "module": "view_model",
+   "fn": "eventLine",
+   "args": [
+    {
+     "$input": "events",
+     "index": 29
+    }
+   ],
+   "expect": {
+    "key": "session_fastest_lap",
+    "type": "session_fastest_lap",
+    "severity": "info",
+    "lap": 7,
+    "session_time": 938.0333333342991,
+    "text": "session fastest 2:20.617",
+    "injected": false,
+    "director_id": null
+   }
+  },
+  {
+   "name": "eventLine 30 (wheelspin)",
+   "module": "view_model",
+   "fn": "eventLine",
+   "args": [
+    {
+     "$input": "events",
+     "index": 30
+    }
+   ],
+   "expect": {
+    "key": "wheelspin",
+    "type": "wheelspin",
+    "severity": "info",
+    "lap": 7,
+    "session_time": 947.8333333342902,
+    "text": "wheelspin LR slip 0.12",
+    "injected": false,
+    "director_id": null
+   }
+  },
+  {
+   "name": "eventLine 31 (offtrack)",
+   "module": "view_model",
+   "fn": "eventLine",
+   "args": [
+    {
+     "$input": "events",
+     "index": 31
+    }
+   ],
+   "expect": {
+    "key": "offtrack",
+    "type": "offtrack",
+    "severity": "advisory",
+    "lap": 7,
+    "session_time": 1006.5000000009035,
+    "text": "off track (off_track) at 48%",
+    "injected": false,
+    "director_id": null
+   }
+  },
+  {
+   "name": "eventLine 32 (recurring_issue)",
+   "module": "view_model",
+   "fn": "eventLine",
+   "args": [
+    {
+     "$input": "events",
+     "index": 32
+    }
+   ],
+   "expect": {
+    "key": "recurring_issue",
+    "type": "recurring_issue",
+    "severity": "advisory",
+    "lap": 7,
+    "session_time": 1006.5000000009035,
+    "text": "offtrack ×3 at C09",
+    "injected": false,
+    "director_id": null
+   }
+  },
+  {
+   "name": "eventLine 33 (offtrack)",
+   "module": "view_model",
+   "fn": "eventLine",
+   "args": [
+    {
+     "$input": "events",
+     "index": 33
+    }
+   ],
+   "expect": {
+    "key": "offtrack",
+    "type": "offtrack",
+    "severity": "advisory",
+    "lap": 7,
+    "session_time": 1040.8000000008724,
+    "text": "off track (off_track) at 72%",
+    "injected": false,
+    "director_id": null
+   }
+  },
+  {
+   "name": "eventLine 34 (wheelspin)",
+   "module": "view_model",
+   "fn": "eventLine",
+   "args": [
+    {
+     "$input": "events",
+     "index": 34
+    }
+   ],
+   "expect": {
+    "key": "wheelspin",
+    "type": "wheelspin",
+    "severity": "info",
+    "lap": 7,
+    "session_time": 1072.9166666675098,
+    "text": "wheelspin LR slip 0.22",
+    "injected": false,
+    "director_id": null
+   }
+  },
+  {
+   "name": "eventLine 35 (lap_completed)",
+   "module": "view_model",
+   "fn": "eventLine",
+   "args": [
+    {
+     "$input": "events",
+     "index": 35
+    }
+   ],
+   "expect": {
+    "key": "lap_completed",
+    "type": "lap_completed",
+    "severity": "info",
+    "lap": 8,
+    "session_time": 1079.0000000008376,
+    "text": "lap 7 in 2:20.967",
+    "injected": false,
+    "director_id": null
+   }
+  },
+  {
+   "name": "eventLine 36 (stint_lap_milestone)",
+   "module": "view_model",
+   "fn": "eventLine",
+   "args": [
+    {
+     "$input": "events",
+     "index": 36
+    }
+   ],
+   "expect": {
+    "key": "stint_lap_milestone",
+    "type": "stint_lap_milestone",
+    "severity": "info",
+    "lap": 8,
+    "session_time": 1079.0000000008376,
+    "text": "5 laps on this set",
+    "injected": false,
+    "director_id": null
+   }
+  },
+  {
+   "name": "eventLine 37 (lap_completed)",
+   "module": "view_model",
+   "fn": "eventLine",
+   "args": [
+    {
+     "$input": "events",
+     "index": 37
+    }
+   ],
+   "expect": {
+    "key": "lap_completed",
+    "type": "lap_completed",
+    "severity": "info",
+    "lap": 9,
+    "session_time": 1222.4333333340405,
+    "text": "lap 8 in 2:23.433",
+    "injected": false,
+    "director_id": null
+   }
+  },
+  {
+   "name": "eventLine 38 (lap_completed)",
+   "module": "view_model",
+   "fn": "eventLine",
+   "args": [
+    {
+     "$input": "events",
+     "index": 38
+    }
+   ],
+   "expect": {
+    "key": "lap_completed",
+    "type": "lap_completed",
+    "severity": "info",
+    "lap": 10,
+    "session_time": 1363.4333333339123,
+    "text": "lap 9 in 2:21.000",
+    "injected": false,
+    "director_id": null
+   }
+  },
+  {
+   "name": "eventLine 39 (lap_completed)",
+   "module": "view_model",
+   "fn": "eventLine",
+   "args": [
+    {
+     "$input": "events",
+     "index": 39
+    }
+   ],
+   "expect": {
+    "key": "lap_completed",
+    "type": "lap_completed",
+    "severity": "info",
+    "lap": 11,
+    "session_time": 1504.2333333337842,
+    "text": "lap 10 in 2:20.800",
+    "injected": false,
+    "director_id": null
+   }
+  },
+  {
+   "name": "eventLine 40 (offtrack)",
+   "module": "view_model",
+   "fn": "eventLine",
+   "args": [
+    {
+     "$input": "events",
+     "index": 40
+    }
+   ],
+   "expect": {
+    "key": "offtrack",
+    "type": "offtrack",
+    "severity": "advisory",
+    "lap": 11,
+    "session_time": 1572.683333333722,
+    "text": "off track (off_track) at 48%",
+    "injected": false,
+    "director_id": null
+   }
+  },
+  {
+   "name": "eventLine 41 (incident)",
+   "module": "view_model",
+   "fn": "eventLine",
+   "args": [
+    {
+     "$input": "events",
+     "index": 41
+    }
+   ],
+   "expect": {
+    "key": "incident",
+    "type": "incident",
+    "severity": "critical",
+    "lap": 11,
+    "session_time": 1573.2833333337214,
+    "text": "incident +1 (1 total)",
+    "injected": false,
+    "director_id": null
+   }
+  },
+  {
+   "name": "eventLine 42 (lap_completed)",
+   "module": "view_model",
+   "fn": "eventLine",
+   "args": [
+    {
+     "$input": "events",
+     "index": 42
+    }
+   ],
+   "expect": {
+    "key": "lap_completed",
+    "type": "lap_completed",
+    "severity": "info",
+    "lap": 12,
+    "session_time": 1645.2500000003226,
+    "text": "lap 11 in 2:21.017",
+    "injected": false,
+    "director_id": null
+   }
+  },
+  {
+   "name": "eventLine 43 (pit_window_closing)",
+   "module": "view_model",
+   "fn": "eventLine",
+   "args": [
+    {
+     "$input": "events",
+     "index": 43
+    }
+   ],
+   "expect": {
+    "key": "pit_window_closing",
+    "type": "pit_window_closing",
+    "severity": "advisory",
+    "lap": 12,
+    "session_time": 1662.6833333336401,
+    "text": "pit window closing, latest lap 13",
+    "injected": false,
+    "director_id": null
+   }
+  },
+  {
+   "name": "eventLine 44 (offtrack)",
+   "module": "view_model",
+   "fn": "eventLine",
+   "args": [
+    {
+     "$input": "events",
+     "index": 44
+    }
+   ],
+   "expect": {
+    "key": "offtrack",
+    "type": "offtrack",
+    "severity": "advisory",
+    "lap": 12,
+    "session_time": 1714.3333333335931,
+    "text": "off track (off_track) at 48%",
+    "injected": false,
+    "director_id": null
+   }
+  },
+  {
+   "name": "eventLine 45 (fuel_critical)",
+   "module": "view_model",
+   "fn": "eventLine",
+   "args": [
+    {
+     "$input": "events",
+     "index": 45
+    }
+   ],
+   "expect": {
+    "key": "fuel_critical",
+    "type": "fuel_critical",
+    "severity": "critical",
+    "lap": 12,
+    "session_time": 1731.6833333335774,
+    "text": "fuel critical: 1.50 laps left",
+    "injected": false,
+    "director_id": null
+   }
+  },
+  {
+   "name": "eventLine 46 (offtrack)",
+   "module": "view_model",
+   "fn": "eventLine",
+   "args": [
+    {
+     "$input": "events",
+     "index": 46
+    }
+   ],
+   "expect": {
+    "key": "offtrack",
+    "type": "offtrack",
+    "severity": "advisory",
+    "lap": 12,
+    "session_time": 1769.6833333335428,
+    "text": "off track (off_track) at 90%",
+    "injected": false,
+    "director_id": null
+   }
+  },
+  {
+   "name": "eventLine 47 (incident)",
+   "module": "view_model",
+   "fn": "eventLine",
+   "args": [
+    {
+     "$input": "events",
+     "index": 47
+    }
+   ],
+   "expect": {
+    "key": "incident",
+    "type": "incident",
+    "severity": "critical",
+    "lap": 12,
+    "session_time": 1770.633333333542,
+    "text": "incident +1 (2 total)",
+    "injected": false,
+    "director_id": null
+   }
+  },
+  {
+   "name": "eventLine 48 (pit_entry)",
+   "module": "view_model",
+   "fn": "eventLine",
+   "args": [
+    {
+     "$input": "events",
+     "index": 48
+    }
+   ],
+   "expect": {
+    "key": "pit_entry",
+    "type": "pit_entry",
+    "severity": "info",
+    "lap": 12,
+    "session_time": 1787.6166666668598,
+    "text": "pit entry, stint 1, 4.5 L",
+    "injected": false,
+    "director_id": null
+   }
+  },
+  {
+   "name": "eventLine 49 (lap_completed)",
+   "module": "view_model",
+   "fn": "eventLine",
+   "args": [
+    {
+     "$input": "events",
+     "index": 49
+    }
+   ],
+   "expect": {
+    "key": "lap_completed",
+    "type": "lap_completed",
+    "severity": "info",
+    "lap": 13,
+    "session_time": 1791.5166666668563,
+    "text": "lap 12 in 2:26.267 (not green)",
+    "injected": false,
+    "director_id": null
+   }
+  },
+  {
+   "name": "eventLine 50 (wheelspin)",
+   "module": "view_model",
+   "fn": "eventLine",
+   "args": [
+    {
+     "$input": "events",
+     "index": 50
+    }
+   ],
+   "expect": {
+    "key": "wheelspin",
+    "type": "wheelspin",
+    "severity": "info",
+    "lap": 13,
+    "session_time": 1815.9500000001674,
+    "text": "wheelspin LR slip 0.13",
+    "injected": false,
+    "director_id": null
+   }
+  },
+  {
+   "name": "eventLine 51 (pit_exit)",
+   "module": "view_model",
+   "fn": "eventLine",
+   "args": [
+    {
+     "$input": "events",
+     "index": 51
+    }
+   ],
+   "expect": {
+    "key": "pit_exit",
+    "type": "pit_exit",
+    "severity": "info",
+    "lap": 13,
+    "session_time": 1821.616666666829,
+    "text": "pit exit, stint 2, 25.0 L",
+    "injected": false,
+    "director_id": null
+   }
+  },
+  {
+   "name": "eventLine 52 (stint_start)",
+   "module": "view_model",
+   "fn": "eventLine",
+   "args": [
+    {
+     "$input": "events",
+     "index": 52
+    }
+   ],
+   "expect": {
+    "key": "stint_start",
+    "type": "stint_start",
+    "severity": "info",
+    "lap": 13,
+    "session_time": 1821.616666666829,
+    "text": "stint 2 begins",
+    "injected": false,
+    "director_id": null
+   }
+  },
+  {
+   "name": "eventLine 53 (fuel_margin_low)",
+   "module": "view_model",
+   "fn": "eventLine",
+   "args": [
+    {
+     "$input": "events",
+     "index": 53
+    }
+   ],
+   "expect": {
+    "key": "fuel_margin_low",
+    "type": "fuel_margin_low",
+    "severity": "advisory",
+    "lap": 13,
+    "session_time": 1854.6833333334655,
+    "text": "fuel margin +1.00 laps",
+    "injected": false,
+    "director_id": null
+   }
+  },
+  {
+   "name": "eventLine 54 (offtrack)",
+   "module": "view_model",
+   "fn": "eventLine",
+   "args": [
+    {
+     "$input": "events",
+     "index": 54
+    }
+   ],
+   "expect": {
+    "key": "offtrack",
+    "type": "offtrack",
+    "severity": "advisory",
+    "lap": 13,
+    "session_time": 1883.4333333334394,
+    "text": "off track (off_track) at 48%",
+    "injected": false,
+    "director_id": null
+   }
+  },
+  {
+   "name": "eventLine 55 (recurring_issue)",
+   "module": "view_model",
+   "fn": "eventLine",
+   "args": [
+    {
+     "$input": "events",
+     "index": 55
+    }
+   ],
+   "expect": {
+    "key": "recurring_issue",
+    "type": "recurring_issue",
+    "severity": "advisory",
+    "lap": 13,
+    "session_time": 1883.4333333334394,
+    "text": "offtrack ×3 at C09",
+    "injected": false,
+    "director_id": null
+   }
+  },
+  {
+   "name": "eventLine 56 (wheelspin)",
+   "module": "view_model",
+   "fn": "eventLine",
+   "args": [
+    {
+     "$input": "events",
+     "index": 56
+    }
+   ],
+   "expect": {
+    "key": "wheelspin",
+    "type": "wheelspin",
+    "severity": "info",
+    "lap": 13,
+    "session_time": 1947.4500000000478,
+    "text": "wheelspin RR slip 0.23",
+    "injected": false,
+    "director_id": null
+   }
+  },
+  {
+   "name": "eventLine 57 (lap_completed)",
+   "module": "view_model",
+   "fn": "eventLine",
+   "args": [
+    {
+     "$input": "events",
+     "index": 57
+    }
+   ],
+   "expect": {
+    "key": "lap_completed",
+    "type": "lap_completed",
+    "severity": "info",
+    "lap": 14,
+    "session_time": 1955.5166666667071,
+    "text": "lap 13 in 2:44.000 (not green)",
+    "injected": false,
+    "director_id": null
+   }
+  },
+  {
+   "name": "eventLine 58 (offtrack)",
+   "module": "view_model",
+   "fn": "eventLine",
+   "args": [
+    {
+     "$input": "events",
+     "index": 58
+    }
+   ],
+   "expect": {
+    "key": "offtrack",
+    "type": "offtrack",
+    "severity": "advisory",
+    "lap": 14,
+    "session_time": 2080.100000000365,
+    "text": "off track (off_track) at 91%",
+    "injected": false,
+    "director_id": null
+   }
+  },
+  {
+   "name": "eventLine 59 (incident)",
+   "module": "view_model",
+   "fn": "eventLine",
+   "args": [
+    {
+     "$input": "events",
+     "index": 59
+    }
+   ],
+   "expect": {
+    "key": "incident",
+    "type": "incident",
+    "severity": "critical",
+    "lap": 14,
+    "session_time": 2080.4833333337033,
+    "text": "incident +1 (3 total)",
+    "injected": false,
+    "director_id": null
+   }
+  },
+  {
+   "name": "eventLine 60 (lap_completed)",
+   "module": "view_model",
+   "fn": "eventLine",
+   "args": [
+    {
+     "$input": "events",
+     "index": 60
+    }
+   ],
+   "expect": {
+    "key": "lap_completed",
+    "type": "lap_completed",
+    "severity": "info",
+    "lap": 15,
+    "session_time": 2096.4166666672395,
+    "text": "lap 14 in 2:20.900",
+    "injected": false,
+    "director_id": null
+   }
+  },
+  {
+   "name": "eventLine 61 (lap_completed)",
+   "module": "view_model",
+   "fn": "eventLine",
+   "args": [
+    {
+     "$input": "events",
+     "index": 61
+    }
+   ],
+   "expect": {
+    "key": "lap_completed",
+    "type": "lap_completed",
+    "severity": "info",
+    "lap": 16,
+    "session_time": 2237.400000002368,
+    "text": "lap 15 in 2:20.983",
+    "injected": false,
+    "director_id": null
+   }
+  },
+  {
+   "name": "eventLine 62 (offtrack)",
+   "module": "view_model",
+   "fn": "eventLine",
+   "args": [
+    {
+     "$input": "events",
+     "index": 62
+    }
+   ],
+   "expect": {
+    "key": "offtrack",
+    "type": "offtrack",
+    "severity": "advisory",
+    "lap": 16,
+    "session_time": 2342.53333333704,
+    "text": "off track (off_track) at 72%",
+    "injected": false,
+    "director_id": null
+   }
+  },
+  {
+   "name": "eventLine 63 (flag_change)",
+   "module": "view_model",
+   "fn": "eventLine",
+   "args": [
+    {
+     "$input": "events",
+     "index": 63
+    }
+   ],
+   "expect": {
+    "key": "flag_change:white",
+    "type": "flag_change",
+    "severity": "info",
+    "lap": 16,
+    "session_time": 2369.0333333373774,
+    "text": "flag green → white",
+    "injected": false,
+    "director_id": null
+   }
+  },
+  {
+   "name": "eventLine 64 (lap_completed)",
+   "module": "view_model",
+   "fn": "eventLine",
+   "args": [
+    {
+     "$input": "events",
+     "index": 64
+    }
+   ],
+   "expect": {
+    "key": "lap_completed",
+    "type": "lap_completed",
+    "severity": "info",
+    "lap": 17,
+    "session_time": 2380.4166666708556,
+    "text": "lap 16 in 2:23.017 (not green)",
+    "injected": false,
+    "director_id": null
+   }
+  },
+  {
+   "name": "eventLine 65 (offtrack)",
+   "module": "view_model",
+   "fn": "eventLine",
+   "args": [
+    {
+     "$input": "events",
+     "index": 65
+    }
+   ],
+   "expect": {
+    "key": "offtrack",
+    "type": "offtrack",
+    "severity": "advisory",
+    "lap": 17,
+    "session_time": 2482.86666667216,
+    "text": "off track (off_track) at 72%",
+    "injected": false,
+    "director_id": null
+   }
+  },
+  {
+   "name": "eventLine 66 (incident)",
+   "module": "view_model",
+   "fn": "eventLine",
+   "args": [
+    {
+     "$input": "events",
+     "index": 66
+    }
+   ],
+   "expect": {
+    "key": "incident",
+    "type": "incident",
+    "severity": "critical",
+    "lap": 17,
+    "session_time": 2483.683333338837,
+    "text": "incident +1 (4 total)",
+    "injected": false,
+    "director_id": null
+   }
+  },
+  {
+   "name": "eventLine 67 (pit_window_open)",
+   "module": "view_model",
+   "fn": "eventLine",
+   "args": [
+    {
+     "$input": "events",
+     "index": 67
+    }
+   ],
+   "expect": {
+    "key": "pit_window_open",
+    "type": "pit_window_open",
+    "severity": "advisory",
+    "lap": 17,
+    "session_time": 2490.6833333389263,
+    "text": "pit window lap 17–18",
+    "injected": false,
+    "director_id": null
+   }
+  },
+  {
+   "name": "eventLine 68 (pit_window_closing)",
+   "module": "view_model",
+   "fn": "eventLine",
+   "args": [
+    {
+     "$input": "events",
+     "index": 68
+    }
+   ],
+   "expect": {
+    "key": "pit_window_closing",
+    "type": "pit_window_closing",
+    "severity": "advisory",
+    "lap": 17,
+    "session_time": 2490.6833333389263,
+    "text": "pit window closing, latest lap 18",
+    "injected": false,
+    "director_id": null
+   }
+  },
+  {
+   "name": "eventLine 69 (fuel_critical)",
+   "module": "view_model",
+   "fn": "eventLine",
+   "args": [
+    {
+     "$input": "events",
+     "index": 69
+    }
+   ],
+   "expect": {
+    "key": "fuel_critical",
+    "type": "fuel_critical",
+    "severity": "critical",
+    "lap": 17,
+    "session_time": 2499.683333339041,
+    "text": "fuel critical: 1.49 laps left",
+    "injected": false,
+    "director_id": null
+   }
+  },
+  {
+   "name": "eventLine 70 (flag_change)",
+   "module": "view_model",
+   "fn": "eventLine",
+   "args": [
+    {
+     "$input": "events",
+     "index": 70
+    }
+   ],
+   "expect": {
+    "key": "flag_change:checkered",
+    "type": "flag_change",
+    "severity": "info",
+    "lap": 17,
+    "session_time": 2509.5333333391663,
+    "text": "flag white → checkered",
+    "injected": false,
+    "director_id": null
+   }
+  },
+  {
+   "name": "eventLine 71 (lap_completed)",
+   "module": "view_model",
+   "fn": "eventLine",
+   "args": [
+    {
+     "$input": "events",
+     "index": 71
+    }
+   ],
+   "expect": {
+    "key": "lap_completed",
+    "type": "lap_completed",
+    "severity": "info",
+    "lap": 18,
+    "session_time": 2521.133333339314,
+    "text": "lap 17 in 2:20.717 (not green)",
+    "injected": false,
+    "director_id": null
+   }
+  },
+  {
+   "name": "eventLine of an unknown type",
+   "module": "view_model",
+   "fn": "eventLine",
+   "args": [
+    {
+     "event_type": "new_kind",
+     "severity": "advisory",
+     "payload": {
+      "a": 1,
+      "b": "x"
+     }
+    }
+   ],
+   "expect": {
+    "key": "new_kind",
+    "type": "new_kind",
+    "severity": "advisory",
+    "lap": null,
+    "session_time": null,
+    "text": "a=1 b=x",
+    "injected": false,
+    "director_id": null
+   }
+  },
+  {
+   "name": "eventLine of nothing",
+   "module": "view_model",
+   "fn": "eventLine",
+   "args": [
+    null
+   ],
+   "expect": null
+  }
+ ]
+}

@@ -178,6 +178,56 @@ def test_replay_runs_the_real_race_through_the_live_path(client):
     assert laps[2] == pytest.approx(OFFICIAL[2], abs=0.05)
 
 
+def _replayed(client) -> None:
+    """The replay above has run; run it here when this test is selected on its own."""
+    if client.get("/api/v1/replay/status").json().get("finished"):
+        return
+    r = client.post("/api/v1/replay/start", json={"session_id": client.session_id, "speed": 0})
+    assert r.status_code == 200, r.text
+    deadline = time.time() + 300
+    while time.time() < deadline and not client.get("/api/v1/replay/status").json()["finished"]:
+        time.sleep(0.2)
+
+
+def test_live_corner_labels_match_the_review(client):
+    """E1: the replayed race names places with the review's own corner labels."""
+    from rtv.desktop.model.review import default_laps
+
+    _replayed(client)
+    track = client.get("/api/v1/racestate").json()["track"]
+    assert track["provisional"] is False
+    # Lap 1 (the start) has an extra apex at Raidillon and laps 3-4 ran under yellow, so the
+    # first two clean laps that agree are 2 and 5.
+    assert track["corner_map_lap"] == 5
+
+    laps = client.get(f"/api/v1/sessions/{client.session_id}/laps").json()["laps"]
+    picks = default_laps(laps)  # the laps the desktop review opens on
+    f = client.get(
+        "/api/v1/coaching/lap-findings",
+        params={
+            "session_id": client.session_id, "main_lap": picks["main"], "ref_lap": picks["ref"],
+        },
+    ).json()
+    review = [(c["label"], c["name"]) for c in f["corners"]]
+    live = [(c["label"], c["name"]) for c in track["corners"]]
+    assert live == review
+    assert live[0] == ("T1", "La Source") and live[-1] == ("T8", "Chicane")
+
+    events = client.get("/api/v1/racestate/events", params={"limit": 500}).json()["events"]
+    placed = [e for e in events if "place" in (e.get("payload") or {})]
+    assert placed
+    labels = {c["label"] for c in track["corners"]}
+    for e in placed:
+        place = e["payload"]["place"]
+        if place["provisional"]:
+            assert place["label"].startswith("C") and place["name"] is None
+        else:
+            assert place["label"] in labels
+    recurring = [e for e in placed if e["key"].startswith("recurring_issue")]
+    assert recurring and all(not e["payload"]["place"]["provisional"] for e in recurring)
+    assert recurring[0]["payload"]["place"]["name"] == "Speaker's Corner"
+
+
 @pytest.mark.parametrize(("main_lap", "ref_lap"), [(12, 6), (8, 6), (5, 3), (10, 6), (3, 6)])
 def test_prose_check_accepts_the_findings_own_words(client, main_lap, ref_lap):
     """No false alarms on real data: a plan written in the findings' own words is fully grounded."""

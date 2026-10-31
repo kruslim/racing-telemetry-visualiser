@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import math
 import time as _time
+from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
 NA = "n/a"
@@ -24,7 +25,7 @@ def num(value: Any, digits: int = 1, suffix: str = "") -> str:
     """A fixed-point number, or ``n/a``."""
     if not is_num(value):
         return NA
-    return f"{value:.{digits}f}{suffix}"
+    return f"{to_fixed(value, digits)}{suffix}"
 
 
 def integer(value: Any, suffix: str = "") -> str:
@@ -48,8 +49,8 @@ def lap_time(seconds: Any) -> str:
     minutes = math.floor(seconds / 60)
     rest = seconds - minutes * 60
     if minutes <= 0:
-        return f"{rest:.3f}"
-    return f"{minutes}:{rest:06.3f}"
+        return to_fixed(rest, 3)
+    return f"{minutes}:{to_fixed(rest, 3).rjust(6, '0')}"
 
 
 def clock(seconds: Any) -> str:
@@ -72,14 +73,14 @@ def gap(seconds: Any, digits: int = 2) -> str:
     """A signed gap in seconds: ``+1.23``, ``−0.40``, ``n/a``."""
     if not is_num(seconds):
         return NA
-    return f"{_sign(seconds)}{abs(seconds):.{digits}f}"
+    return f"{_sign(seconds)}{to_fixed(abs(seconds), digits)}"
 
 
 def signed(value: Any, digits: int = 1, suffix: str = "") -> str:
     """A signed quantity that is not a gap (a trend, a margin)."""
     if not is_num(value):
         return NA
-    return f"{_sign(value)}{abs(value):.{digits}f}{suffix}"
+    return f"{_sign(value)}{to_fixed(abs(value), digits)}{suffix}"
 
 
 def trend_arrow(value: Any, deadband: float = 0) -> str:
@@ -118,6 +119,16 @@ def kmh(speed_ms: Any, digits: int = 1) -> str:
     if not is_num(speed_ms):
         return NA
     return num(speed_ms * 3.6, digits)
+
+
+def to_fixed(value: float, digits: int) -> str:
+    """``Number.prototype.toFixed``: the exact binary value, a half rounds away from zero.
+
+    Python's ``f"{x:.2f}"`` rounds a half to even, so ``2.5`` gave ``2`` here and ``3``
+    on the web pages. ``-0`` prints without a sign, as in JS.
+    """
+    exact = Decimal(value if value != 0 else 0.0)
+    return format(exact.quantize(Decimal(1).scaleb(-digits), rounding=ROUND_HALF_UP), "f")
 
 
 def _js_round(value: float) -> int:

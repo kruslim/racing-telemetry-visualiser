@@ -20,6 +20,7 @@ frames (live poller 60 Hz | ReplayDriver)
   -> RaceStateEngine.on_frame           racestate/engine.py   no LLM, ever
        detectors -> RaceEvent -> engine.bus (EventBus)
   -> PitwallOrchestrator.dispatch       pitwall/orchestrator.py
+       DeterministicCaller.call -> RadioFeed   template calls, no model (pitwall/callers.py)
        trigger match, cooldown, inbox, inflight cap, budget
   -> AgentRuntime.invoke                pitwall/framework.py
        prefetch tools, model + scoped tools, validator, repair or refusal
@@ -42,8 +43,14 @@ window. The engine latches them into `RaceEvent {event_type, tick, session_time,
 severity, payload, state_version}`, with no wall-clock field, so a replay gives the same
 event log twice. Types cover flags, laps and bests, lock-ups / wheelspin / off-tracks /
 incidents, pit entry and exit, stints, pit window and fuel margin, rivals, blue flags,
-recurring issues, tyre bands, car health, traffic, weather and `visual_observation`
-(published by the vision seam only; the engine never reads it).
+recurring issues, tyre bands, car health, traffic, `car_alongside` (iRacing's
+`CarLeftRight` proximity sensor, live only: an `.ibt` does not record it), weather and
+`visual_observation` (published by the vision seam only; the engine never reads it).
+Every event that happened somewhere on the lap (lock-up, wheelspin, off-track, incident,
+recurring issue) carries `payload.place = {label, name, lap_dist_pct, provisional}` in the
+post-race review's corner labels (`T1 La Source`), from the session corner map in
+`RaceState.track` (`rtv.tracks.live`); before two clean laps agree it is the lap-distance
+bucket (`C08`) with `provisional: true`.
 
 **Event bus** (`bus.py`). Thread-safe producer with bounded drop-oldest subscriptions
 (sync `drain()` and asyncio `next_events()`), sync callbacks on the producer thread, and
@@ -57,9 +64,32 @@ inbox (a queued critical event is never displaced by a lesser one) and a cooldow
 `suspend()` / `resume()` follow the connection, and the race director seam
 (`rtv.director`, `NoopDirector` today) injects scripted events onto the same bus.
 
+**Deterministic callers** (`pitwall/callers.py`, appendix B2). A call whose words are
+fully determined by its event is a template, not a model run. `dispatch` runs every
+`DeterministicCaller` first and publishes what it returns straight onto the feed, so it
+is on the channel in the same tick (well under 100 ms; a model call is 12-17 s). The
+spotter's per-event calls are all templates: `car_alongside` ("Car left.", "Three wide,
+cars both sides.", "Clear."), `traffic_close` ("P5 behind, 0.6, closing."), `blue_flag`
+("Blue flag, P1 lapping you, 1.2 behind."), a yellow or red `flag_change` and an
+`incident`. Each figure is copied from the event payload, so the call is grounded by
+construction (the tests run every template through the validator with the payload as
+the only fact source). A template message is an ordinary `RadioMessage` with
+`agent="spotter"`, `source="template"`, `model="template"`, stamped for the air-time
+check: `computed_at_session_time` is the event's time, `max_age_s` is 3 s
+(`RTV_PITWALL_SPOTTER_MAX_AGE_S`), a traffic or blue-flag call carries
+`subject_car_idx` and expires 8 s after its event, a side call expires after 1.5 s and is
+never aired late, and flag and incident calls have a 10 s per-subject cooldown. All side
+states share the subject `traffic:alongside`, so "Clear." supersedes a queued "Car
+left.". The kill switch, `suspend()`, a stale state and the spotter's own enable flag
+silence template calls too; the model-call budget does not, since they cost nothing.
+`dispatch` traces each one as a `template_call` activity record and lists the caller in
+the dispatch record's `templated`; `status()` has `template_calls` and `callers`.
+Template calls need the agent layer to be mounted (today that means a Kimi key is set).
+
 **Agents** (`pitwall/agents/`). Four declarative `AgentSpec`s: strategist (fuel, stops,
-rivals), vehicle engineer (tyres, car health, recurring issues), spotter (traffic, blue
-flags, hazards) and coach (repeated mistakes, pace). A spec is a role prompt, an output
+rivals), vehicle engineer (tyres, car health, recurring issues), spotter (a lap-line
+traffic summary when a car is within 5 s, at most every 300 s, and camera notes; its
+instant calls are the templates above) and coach (repeated mistakes, pace). A spec is a role prompt, an output
 model, scoped tools, triggers, a state slice, a radio subject, an optional policy and a
 prefetch list; adding an agent is one module plus one `AGENT_REGISTRY` entry. Agents never
 call each other; each run is shown the recent radio. Model per agent: the spec names a
@@ -81,8 +111,13 @@ grounded refusal at `info` priority with the blocked text kept in `detail_text`.
 
 **Radio** (`pitwall/radio.py`). One channel, ordered by `(priority, sequence)`. A newer
 non-critical message with the same `(agent, subject)` supersedes a queued one; a critical
-message is never superseded or dropped. Airtime is about 0.4 s per word, and
-`pump(session_time)` is the deterministic, clock-injected twin of `run()`. A call
+message is never superseded. Airtime is about 0.4 s per word, and
+`pump(session_time)` is the deterministic, clock-injected twin of `run()`. Every agent
+message is checked again when it reaches the front (`pitwall/validity.py`, appendix B1):
+older than its agent's `max_age_s` but still true, it airs tagged late ("Late call:
+...", `radio_late`); no longer true (its stop lap gone, the car past the pit entry or
+in the pit lane, the car it was about gone, an expiry passed), it is dropped, critical or
+not, and handed to consumers marked `expired` (`radio_expired`). A call
 triggered by a visual observation always airs at `info`. Voice: browser TTS by default,
 optional server engine via `RTV_PITWALL_TTS` (`pitwall/tts.py`).
 
@@ -91,19 +126,29 @@ session (live or replay) holding lifecycle, race events, aired radio, every acti
 record and state snapshots every `RTV_JOURNAL_STATE_INTERVAL_S`. The post-race review
 and the desktop review read only the journal and never re-run the agents
 (`/sessions/{id}/pitwall-runs`, `/pitwall-log`, `/pitwall-log/state`, `/summary`).
+Schema version 2 (F1): each `run_start` holds the run's whole model input (`data.input`)
+and each `tool_call` its whole result (`data.result_full`); `rtv.pitwall.agent_input.
+model_input(record)` rebuilds the first model call. Version-1 journals read unchanged.
 
 **Vision live worker** (`rtv.vision.live_worker`, details in `docs/VISION.md`). With
 `RTV_VISION_MODE=live`, events in `RTV_VISION_LIVE_TRIGGERS` become moments; the worker
 grabs frames from the running capture or a synced recording, runs the grounded
-`VisionAnalyzer` and publishes kept notes as `visual_observation` events. The spotter and
-coach can wake on them. Spend is capped by `RTV_VISION_LIVE_MAX_CALLS` and
-`RTV_VISION_LIVE_MIN_GAP_S`.
+`VisionAnalyzer` and publishes kept notes as `visual_observation` events. They are review
+material by default: the journal, the timeline and both reviews show them, and the
+orchestrator's dispatch records them as `blocked: "vision_review_only"`. Only with
+`RTV_VISION_LIVE_RADIO=true` do they wake the spotter and coach. Spend is capped by
+`RTV_VISION_LIVE_MAX_CALLS` (an inner limit) and `RTV_VISION_LIVE_MIN_GAP_S`, and every
+vision call also counts against the session budget below.
 
 **Health and budget** (appendix stage 5). A frame that raises costs one frame; a
 supervised task that dies is restarted and counted (`status()["restarts"]`); a failed
 model call is retried once and then said out loud; `RTV_PITWALL_AGENT_FAILURE_LIMIT`
 consecutive failures open an agent's breaker; `RTV_PITWALL_MAX_CALLS_PER_SESSION` caps
-billable calls per session. `GET /api/v1/pitwall/health` is the one poll for all of it.
+billable calls per session, every layer included: the live VLM reports each call through
+`PitwallOrchestrator.record_call("vision")`, and a moment that would exceed the budget is
+skipped (`over_budget`, also written as a `skip` record in the vision journal).
+`status()["calls_by_layer"]` is `{"agents": n, "vision": m}`. `GET /api/v1/pitwall/health`
+is the one poll for all of it, the budget and its split included.
 Token usage per call is in `rtv.llm.USAGE` (`GET /api/v1/llm/usage`) and in the journal.
 
 **Prompt caching.** The stable role prompt is the first system block and carries
@@ -118,10 +163,21 @@ services.engine / .replay / .pitwall / .activity / .recorder   # None when disab
 engine.on_frame(frame, catalog); engine.snapshot() -> RaceState; engine.health()
 engine.bus.subscribe(...) / .subscribe_callback(fn) / .history(limit)
 orch.handle_event(event, state)       # route + run inline (tests, evals)
+PitwallOrchestrator(..., callers=None)  # None = build_callers(); [] = no template calls
+rtv.pitwall.callers: TemplateCall(spoken_text, detail_text, priority=, subject=, data=,
+    expires_after_s=, subject_car_idx=, valid_until_lap=, max_age_s=, cooldown_s=)
+    template_message(agent, event, call, max_age_s=None, state=None) -> RadioMessage
+    DeterministicCaller(agent, {event_type: template}, max_age_s=).call(event, state)
+    build_callers(settings=None, only=None); SPOTTER_TEMPLATES; spotter_max_age(settings)
 orch.feed.subscribe(...) / .subscribe_callback(fn) / .pump(session_time)
 orch.status(); orch.healthy(); orch.suspend(reason) / .resume(); orch.director
 build_agents(models=None, enabled=None, only=None, settings=None) -> list[AgentSpec]
 agent_model(spec, settings=None, override="") -> str
+agent_max_age(spec, settings=None) -> float | None    # RTV_PITWALL_<NAME>_MAX_AGE_S
+validity.stamp(message, spec, state, event, max_age_s=, pit_entry_pct=)
+validity.check(message, state, now) -> (verdict, reason, age_s)
+feed.take(now) / feed.expire(message, reason); RadioFeed(state_source=engine.snapshot)
+engine.pit_entry_pct -> float | None                  # learned from OnPitRoad edges
 AgentRuntime(spec, provider, ...).invoke(event, state, events=...) -> RadioMessage | None
 FactSet, validate_output(...)         # pitwall/validator.py
 rtv.director: DirectorEngine, NoopDirector, ScenarioScript, injected_event, is_injected
@@ -299,6 +355,7 @@ except for flag changes which render as `flag_change:<phase>`.
 | `tyre_out_of_band` | advisory | a tyre measure leaves its band (see stage 3) | `measure`, `corner`, `value`, `threshold` |
 | `car_health_warning` | critical / advisory | an engine warning bit, a tow, or oil/water over the limit | `measure`, `warnings[]`, `value`, `threshold` |
 | `traffic_close` | advisory | a car is inside the gap threshold *and* closing | `car_idx`, `gap`, `side`, `closing_rate_s_per_s` |
+| `car_alongside` | advisory (`clear`: info) | `CarLeftRight` changes; key `car_alongside:<side>`; the first clear of a session and the sensor turning off are silent (B2) | `side` (`car_left`, `car_right`, `car_left_right`, `two_cars_left`, `two_cars_right`, `clear`), `from`, `raw` |
 | `weather_change` | — | **never** — director-only, see stage 5 | `measure`, `from`, `to`, … |
 | `regulation_change` | — | **never** — director-only, see stage 5 | `regulation`, `applies_from_lap`, … |
 | `visual_observation` | info | **never** — published by `rtv.vision.live`, see `docs/VISION.md` | `source: "vision"`, `kind`, `text`, `confidence`, `trigger` |
@@ -1044,7 +1101,9 @@ problem into a one-time notification for the rest of the race.
 | repeats before it is a finding | `RTV_PITWALL_RECURRENCE_MIN` | 3 |
 | lap window they must fall in | `RTV_PITWALL_RECURRENCE_WINDOW_LAPS` | 5 |
 
-**Corner labels are `C00`–`C19`, not circuit corner numbers.** Without a track map
+**Corner labels are `C00`–`C19`, not circuit corner numbers.** (Since E1 these are only
+the counting key and the provisional label; agents cite `payload.place`, see the E1 note at
+the end of the appendix.) Without a track map
 we do not know where T7 is, and naming it would be exactly the unbacked figure the
 rest of this system refuses to produce. The payload carries the lap-fraction range
 so a UI can point at it, and every prompt says so explicitly.
@@ -2744,9 +2803,9 @@ bounded, drop-oldest, drops-counted subscriptions) carrying plain dicts:
 |---|---|---|
 | `dispatch` | `PitwallOrchestrator.dispatch` | `accepted`, `skipped` (agent -> `cooldown`/`disabled`), `blocked` (`disabled`/`suspended`/`budget_exhausted`/`stale`) |
 | `inbox_superseded` | `PitwallOrchestrator._offer` | `dropped`, `kept` event keys |
-| `run_start` | `AgentRuntime.invoke` | `trigger`, `severity`, `model`, `context_radio` (message ids + agents the run was shown), `context_events` |
+| `run_start` | `AgentRuntime.invoke` | `trigger`, `severity`, `model`, `context_radio` (message ids + agents the run was shown), `context_events`; journal only: `input` (F1) |
 | `llm_call_start` / `llm_call_end` | `AgentRuntime._complete` | `call`, `model`, `latency_ms`, `ok`, `error` (class name), `tool_calls`, `answered` |
-| `tool_call` | `AgentRuntime._converse` | `tool`, `args` (long strings cut), `ok`, `result` (shape only: type, keys, size), `latency_ms` |
+| `tool_call` | `AgentRuntime._converse` | `tool`, `args` (long strings cut), `ok`, `result` (shape only: type, keys, size), `latency_ms`; journal only: `result_full` (F1) |
 | `validate` | `AgentRuntime.invoke` | `ok`, `unsupported`, `word_count`, `over_word_limit`, `repaired` |
 | `run_end` | `AgentRuntime.invoke` | `outcome` (`radio`/`refused`/`error`), `message_id`, `priority`, `tools_used`, `turns`, `latency_ms` |
 | `radio_queued` / `radio_superseded` / `radio_aired` | `RadioFeed.publish` / `emit` | `message_id`, `seq`, `priority`, `subject`, `refused` |
@@ -2876,6 +2935,183 @@ Deviation: the plan named the settings `RTV_PITWALL_MODEL_<AGENT>`, but
 `RTV_PITWALL_<AGENT>_MODEL` already existed (wired in `services.build_pitwall` only), so
 those names stay and existing `.env` files keep working. Behaviour with nothing set is
 unchanged: every agent runs on `kimi-k3`.
+
+---
+
+## B1 — late and expired radio calls (2026-10-31)
+
+Plan task B1 (REVIEW P1-2, decision Q3). A Kimi run takes 15-60 s and the radio used to
+air whatever reached the front. Now:
+
+- **Stamped at the run.** `orchestrator._run_agent` calls `validity.stamp` with the
+  snapshot the run started from: `state_version`, `computed_at_session_time`, the
+  agent's `max_age_s`, and whatever the spec's new `validity` hook returns from the
+  structured answer. The strategist's hook (`strategist_validity`) gives a box call
+  (`box_now`, `pit_under_yellow`, `box_next_lap`, `plan_stop` with `target_lap`)
+  `valid_until_lap`, `invalid_if_on_pit_road` and, when the session has shown where the
+  pit entry is, `invalid_if_lap_dist_past`. The spotter's names `subject_car_idx` from the
+  event's `car_idx`. The engineer and coach have only an age limit.
+- **Checked at air time.** `RadioFeed.take(now)` (used by `pump`, `flush` and `run`) reads
+  the race state from `state_source` (the orchestrator wires `engine.snapshot`) and calls
+  `validity.check`. Ages are on the session clock, so a 2x replay doubles them.
+- **Defaults**: spotter 3 s, vehicle engineer 20 s, coach 30 s, strategist 30 s (for the
+  late tag; its calls are dropped only when their lap has gone). Override with
+  `RTV_PITWALL_<AGENT>_MAX_AGE_S`; 0 turns the late tag off.
+- **Pit entry**: `engine.pit_entry_pct` is the median lap fraction at which any car's
+  `OnPitRoad` went true this session (player or field). An `.ibt` has no field, so before
+  the player's first stop a box call is dropped only once the lap is over or the car is in
+  the pit lane. Deriving the entry from the OSM pit lane is left for later.
+
+Journal records and fields added (F1 and the review read these):
+
+- `radio_late` (activity kind): `message_id`, `agent`, `priority`, `subject`,
+  `late_by_s`, `max_age_s`, `computed_at_session_time`; `session_time` is the air time.
+- `radio_expired` (activity kind): the same ids plus `reason`, `age_s`,
+  `computed_at_session_time`, `spoken_text`; `session_time` is when it was dropped.
+- `radio_aired` gains `late: true` and `late_by_s` for a late call (absent otherwise).
+- The `radio` record (the message itself) gains `state_version`,
+  `computed_at_session_time`, `max_age_s`, `valid_until_lap`, `expires_at_session_time`,
+  `invalid_if_lap_dist_past`, `invalid_if_on_pit_road`, `subject_car_idx`,
+  `air_session_time`, `late`, `late_by_s`, `expired`, `expired_reason`. A dropped call is
+  journalled as a `radio` record with `expired: true`, `speak: false` and no
+  `radio_aired`.
+- `RadioMessage.message_id` ignores the "Late call: " prefix, so the id a call was
+  queued, journalled and given an audio URL under does not change when it airs late.
+- `feed.stats()` gains `late` and `expired`.
+
+UI: the desktop radio list and review show "late +Ns" and strike a dropped call with its
+reason (`rtv.desktop.model.review.air_badge`, mirrored as `airBadge` in
+`review-model.js`, both checked by the view golden file). The web live pages skip
+expired messages; the web review lists them struck, with the badge. Nothing else changed
+on the web.
+
+
+---
+
+## G4 — live visual notes off the radio, one call budget (2026-10-31)
+
+Plan task G4 of the project review (REVIEW.md P2-5). Live VLM notes are review material
+by default: `PitwallOrchestrator.dispatch` routes a `visual_observation` to no agent and
+traces it as `blocked: "vision_review_only"` unless `RTV_VISION_LIVE_RADIO=true`
+(`Settings.vision_live_radio`, orchestrator argument `vision_radio`). The event still goes
+on the bus, so the journal, `/ws/pitwall`, the timeline and both reviews are unchanged.
+
+Vision calls now count against `RTV_PITWALL_MAX_CALLS_PER_SESSION`. The orchestrator gained
+`record_call(layer, n=1)` (thread-safe) and `calls_by_layer`; `calls_used` sums the agents
+and every recorded layer, and `reset()` clears the layers with the agent baseline.
+`LiveVisionWorker` takes `budget=` (anything with `calls_remaining` and
+`record_call(layer)`; `services` passes the orchestrator through `VisionService(budget=)`),
+checks it when a moment is admitted and again before the call, and counts a skip as
+`over_budget` plus a `skip` record in the vision journal. `RTV_VISION_LIVE_MAX_CALLS`
+stays as the inner cap. `/pitwall/status` has `calls_by_layer`; `/pitwall/health`'s
+`agents` block now carries `calls_used`, `calls_by_layer`, `max_calls_per_session` and
+`budget_exhausted`. With the agent layer off there is no shared budget and the vision cap
+alone applies. `radio.py` is untouched (B1 owns it).
+
+---
+
+## E1 — live corner labels match the review (2026-10-31)
+
+Plan task E1 (REVIEW.md P2-2). The live pitwall now names places the way the post-race
+review does.
+
+- `rtv.tracks.live.LiveCornerMap` keeps the lap being driven in `floor(LapDistPct * 1500)`
+  bucket means (the store's own resampling) and, at each clean lap, runs Layer 1's apex
+  detector (`rtv.coaching.features.detect_apexes`, the same `_detect_corners`) and the
+  venue name lookup (`TrackReference.name_at` at each apex). The engine feeds it every
+  frame and offers it every completed green, pit-free, timed lap.
+- **Deviation:** the plan said "after one clean lap". Layer 1 numbers corners per lap, and
+  on the real Spa race the start lap has an extra apex (Raidillon) and lap 8 misses
+  Speaker's Corner, so one lap can renumber everything. The map is adopted when two clean
+  laps have the same apexes (each within 2 % of a lap); on Spa that is laps 2 and 5 (3-4
+  ran under yellow), and the result equals the review's corners for its default laps.
+- `RaceState.track = {corner_map_lap, provisional, corners: [{label, name, lap_dist_pct}]}`,
+  a new state section (`get_race_state_slice` lists it), in the coach's and the vehicle
+  engineer's slices.
+- `payload.place = {label, name, lap_dist_pct, provisional}` on `lockup`, `wheelspin`,
+  `offtrack`, `incident` and `recurring_issue` (engine `PLACE_EVENTS`). A place belongs to
+  the nearest apex around the lap. A recurring issue is placed at the middle of its hits.
+  `CornerRecurrence` still counts by bucket, and `payload.corner` stays the bucket.
+- The coach and engineer prompts cite the place ("T1 La Source", or "T4" without a name)
+  and keep "the same corner" for a provisional bucket. `get_corner_detail` accepts `T7` or
+  `T7 Pouhon` and filters live events by the map; its `live` block gains `place`.
+- RTV Desktop's live ticker shows the place (`view_model.place_title`), the same
+  `T1 La Source` text as the review's findings table.
+- Names need `Lat`/`Lon`, which the `.ibt` has; a stream without them gets labels and
+  `name: null`, the same as its own review.
+- The coaching checks (`rtv.coaching.agent.validation.split_corner` / `resolve_corner`)
+  accept `T7 Campus`, `T7 — Campus` or `Turn 7 (Campus)` as T7 when Campus is T7's mapped
+  name, and report any other name as made up; `evals.checks.cross_check` uses them.
+
+## F1 — each agent run's full input in the journal (2026-10-31)
+
+The journal is the eval source (REVIEW P2-3), so a run must be re-executable from it.
+
+- **`rtv.pitwall.agent_input`** (new, imports nothing from the runtime). `build_input`
+  makes the record; `model_input(record)` returns `system`, `messages`, `model`,
+  `max_tokens`, `tools` (names) and `output_contract` of the run's first model call;
+  `input_of(record)` is `None` for a version-1 run; `spec_drift(record, spec,
+  system_prompt)` lists what changed since (`prompt`, `tools`, `output_contract`,
+  `model`). The pure `system_blocks` and `instruction` are what the runtime itself uses,
+  and the runtime builds its first call *from the record*, so the rebuild is
+  byte-identical by construction (`tests/test_agent_input.py`, all four agents).
+- **Record** (`run_start.data.input`, `v: 1`): `agent`, `model`, `max_tokens`,
+  `max_tool_iterations`, `provider` (`KimiProvider.describe()`: name, thinking, effort),
+  `system_prompt` (role prompt + grounding rules) and `prompt_sha`, `state_slice`,
+  `event` (`RaceEvent.to_api()`), `radio` (the five calls shown: id, agent, priority,
+  spoken text), `prefetched` (`tool`, `args`, `result`), `tools` + `tools_sha`,
+  `output_contract` + `output_schema_sha`. `tool_call.data.result_full` is the whole tool
+  result, so later turns can be rebuilt too.
+- **Order**: `run_start` is now written after the prefetch (it needs the results); the
+  prefetch `tool_call` records are held and written right after it, so a run still
+  starts with `run_start`. A run that fails before its input exists still gets one.
+- **Schema**: `rtv.store.journal.JOURNAL_SCHEMA_VERSION = 2` on the lifecycle start
+  record; `schema_version_of`, `summarize_run()["schema_version"]` (1 when absent) and
+  `agent_inputs(path)`. `run_stats` adds `schema_version` and `runs_with_input`, and the
+  compare table two rows. Old journals read unchanged (tested on the run-3 excerpt,
+  including the desktop review and activity models).
+- **Live feed**: `input` and `result_full` are journal-only; `rtv.pitwall.activity.public`
+  strips them from `/ws/pitwall` and `/pitwall/activity`. `/pitwall-log` serves them.
+- Not recorded: the in-loop model outputs beyond what `tool_call.args` (cut at 120
+  chars) and the radio record hold; F3 replays model output from its own fixtures.
+
+---
+
+## B2 — deterministic spotter (2026-10-31)
+
+Plan task B2 of the project review (REVIEW.md P1-3). The spotter's per-event calls are
+templates (`rtv.pitwall.callers`, described under "Deterministic callers" above); the
+LLM spotter's per-event triggers (`traffic_close`, `blue_flag`, yellow/red `flag_change`,
+`incident`) are gone. It keeps a `lap_completed` trigger for a traffic summary, gated on
+a measured field within `SUMMARY_GAP_S` (5 s) and a 300 s cooldown, plus the
+`visual_observation` trigger (off the radio unless `RTV_VISION_LIVE_RADIO`). Its
+`max_age_s` is now `None` (a summary is never tagged late) and `spotter_validity` makes
+a summary expire 60 s after its snapshot. `RTV_PITWALL_SPOTTER_MAX_AGE_S` now sets the
+template calls' limit (default 3 s); when set it also applies to the summaries.
+
+Engine: new `EventType.CAR_ALONGSIDE`, `channels.CAR_LEFT_RIGHT`, `REQUIRED["car_alongside"]`,
+`Capabilities.car_alongside`, pure `detectors.detect_car_alongside(previous, raw)` and
+`alongside_state(raw)`, checked every frame. The Spa `.ibt` has no `CarLeftRight`, so it
+reports the capability off and lists the channel in `capabilities.missing`.
+
+`RadioMessage.source` is new: `"model"` (default), `"template"`, `"driver"` (push-to-talk)
+or `"pitwall"` (a notice); the journal's `radio` record carries it. Template messages
+also put `source` and the event key in `data`.
+
+Evals: `SPOTTER_THREATS["lap_completed"]` and a `spotter-traffic-summary` case; the
+per-event spotter cases stay, grading the agent contract. `evals/synthetic_race.py`
+gained `ScenarioSpec.alongside` (test-only; the channel is absent unless it is set, so the
+ground-truth scenario is unchanged) and `_headers(spec)`.
+
+Changed tests, by design: in `test_pitwall_roles.py` a traffic call and a local yellow
+now wake no agent and produce a template call, and a caution wakes the strategist plus a
+spotter template; `test_default_max_ages_and_the_settings_override` checks the spotter's
+summary age is `None` and the 3 s template default. New: `tests/test_pitwall_callers.py`.
+
+Not done: template calls need a mounted agent layer, which `services.build_pitwall`
+only builds with a Kimi key. Running the radio and the callers without any key is a
+possible follow-up. Desktop: template calls are ordinary radio messages, so the live view
+shows them like any other; no view field changed, so the golden file is unchanged.
 
 ## A1 — typed grounding in the pitwall validator (2026-10-31)
 

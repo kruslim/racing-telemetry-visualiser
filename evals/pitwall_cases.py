@@ -324,6 +324,25 @@ def spotter_degraded_cases() -> list[EvalCase]:
         ),
         None,
     )
+    # B2: per-event calls are templates now; the live LLM spotter only gives the
+    # lap-line summary. The per-event cases below still grade its contract.
+    summary = base.model_copy(deep=True)
+    out.append(
+        EvalCase(
+            name="spotter-traffic-summary",
+            event=_synthetic_event(
+                summary,
+                "lap_completed",
+                {"lap": summary.player.lap, "new_lap": (summary.player.lap or 0) + 1},
+                Severity.INFO,
+            ),
+            state=summary,
+            events=events,
+            note="Lap line with cars around: one short traffic picture for the next lap or two.",
+            agent=SPOTTER.name,
+        )
+    )
+
     closing = base.model_copy(deep=True)
     out.append(
         EvalCase(

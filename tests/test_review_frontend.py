@@ -73,8 +73,12 @@ def test_the_review_ships_and_serves_the_file(client, relative):
 
 def test_every_asset_the_page_links_exists():
     markup = PAGE.read_text("utf-8")
-    for path in re.findall(r"""(?:href|src)=["'](/(?:css|js)/[^"']+)["']""", markup):
-        assert (FRONTEND_DIR / path.lstrip("/")).is_file(), path
+    links = re.findall(r"""(?:href|src)=["']([^"':]+\.(?:css|js))["']""", markup)
+    assert links
+    for path in links:
+        # Relative, so the same page works at /review/ and under the Pages subpath.
+        assert not path.startswith("/"), path
+        assert (PAGE.parent / path).resolve().is_file(), path
 
 
 @pytest.mark.parametrize("module", MODULES, ids=lambda p: p.name)

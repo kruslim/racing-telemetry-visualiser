@@ -117,7 +117,7 @@ export function connectionView(state, ctx = {}) {
     return {
       state: 'replay',
       label: 'REPLAY',
-      detail: `${replay.session_id || 'scenario'} · ${speed} · ${replay.frames || 0} frames`,
+      detail: `${replay.session_id ? `${replay.session_id} · ` : ''}${speed} · ${replay.frames || 0} frames`,
     };
   }
   const source = state && state.session ? state.session.source : null;

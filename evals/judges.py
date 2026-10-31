@@ -2,7 +2,8 @@
 
 Factuality is handled deterministically in :mod:`evals.checks`. This judge only rates
 clarity, actionability and grounding — and it is told the findings so it can sanity-check
-grounding too. Needs the ``ai`` extra and the LLM key (see ``rtv.llm``).
+grounding too. The provider comes from :func:`evals.judge_provider.judge_backend`:
+Gemini by default, so Kimi is not grading its own coach (``RTV_JUDGE_PROVIDER``).
 """
 
 from __future__ import annotations

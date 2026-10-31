@@ -4,10 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Racing Telemetry Visualiser &mdash; post-race review</title>
-<link rel="stylesheet" href="/css/pitwall.css">
-<link rel="stylesheet" href="/css/app.css">
-<link rel="stylesheet" href="/css/live.css">
-<link rel="stylesheet" href="/css/review.css">
+<link rel="stylesheet" href="../css/pitwall.css">
+<link rel="stylesheet" href="../css/app.css">
+<link rel="stylesheet" href="../css/live.css">
+<link rel="stylesheet" href="../css/review.css">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='88'>&#127937;</text></svg>">
 </head>
 <body class="review">
@@ -15,10 +15,10 @@
 <header>
   <h1>Racing Telemetry Visualiser</h1>
   <nav class="views" aria-label="views">
-    <a href="/">Live</a>
+    <a href="/" data-server-only>Live</a>
     <a href="/review/" class="active" aria-current="page">Post-race review &amp; lap analysis</a>
   </nav>
-  <nav>
+  <nav data-server-only>
     <a href="/radio.html">Pitwall radio</a>
     <a href="/docs">api</a>
   </nav>
@@ -34,8 +34,8 @@
     <select id="session-select" aria-label="recorded session"><option value="">loading&hellip;</option></select>
     <label class="k" for="run-select">pitwall run</label>
     <select id="run-select" aria-label="recorded pitwall run"></select>
-    <button id="analyse" title="Replay the stored telemetry through the race-state engine to record a run">Record a run from the telemetry</button>
-    <label class="upload" title="Import an iRacing .ibt telemetry file">
+    <button id="analyse" data-server-only title="Replay the stored telemetry through the race-state engine to record a run">Record a run from the telemetry</button>
+    <label class="upload" data-server-only title="Import an iRacing .ibt telemetry file">
       <input id="ibt-file" type="file" accept=".ibt">
       <span class="button-like">Import .ibt&hellip;</span>
     </label>
@@ -164,6 +164,6 @@
 
 </main>
 
-<script type="module" src="/js/review/review-app.js"></script>
+<script type="module" src="../js/review/review-app.js"></script>
 </body>
 </html>

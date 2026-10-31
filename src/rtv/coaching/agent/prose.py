@@ -39,6 +39,7 @@ from rtv.coaching.agent.validation import (
     POSITION_TOL_M,
     PROSE_SPEED_TOL,
     corner_map,
+    split_corner,
 )
 from rtv.grounding.units import G_RE as _G_RE
 from rtv.grounding.units import GEAR_PROSE_RE as _GEAR_PROSE_RE
@@ -246,6 +247,7 @@ def _check_sentence(
     scope = [facts[lb] for lb in labels if lb in facts]
     if labels and not scope:
         return  # only a hallucinated corner: already flagged, nothing true to check against
+    owner = split_corner(owner)[0]
     if not scope and owner in facts:
         scope = [facts[owner]]
     if not scope:

@@ -217,7 +217,8 @@ def build_services(settings: Settings) -> AppServices:
         if pitwall is not None:
             pitwall.feed.subscribe_callback(recorder.on_radio)
 
-    vision = VisionService(settings, repo, coaching, engine=engine)
+    # Live vision calls count against the pitwall's session call budget.
+    vision = VisionService(settings, repo, coaching, engine=engine, budget=pitwall)
     live_sid: list[str | None] = [None]
 
     def on_frame(frame: Frame, catalog) -> None:
@@ -383,6 +384,7 @@ def build_pitwall(
     """
     from rtv.llm import is_configured, key_env_var
     from rtv.pitwall.agents import build_agents
+    from rtv.pitwall.callers import build_callers
 
     if not is_configured(settings):
         log.info(
@@ -426,6 +428,9 @@ def build_pitwall(
         failure_limit=settings.pitwall_agent_failure_limit,
         max_calls_per_session=settings.pitwall_max_calls_per_session,
         retry_backoff_s=settings.pitwall_retry_backoff_s,
+        vision_radio=settings.vision_live_radio,
+        # The spotter's per-event calls are templates: instant, no model call.
+        callers=build_callers(settings, only=only or None),
         tool_config={
             "pit_lane_loss_s": settings.pitwall_pit_lane_loss_s,
             "standings_window": 3,

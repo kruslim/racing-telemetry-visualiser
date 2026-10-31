@@ -186,6 +186,36 @@ class Settings(BaseSettings):
     pitwall_coach_model: str = Field(
         default="", description="Override the live coach's model. Empty = RTV_LLM_KIMI_MODEL_FAST."
     )
+    pitwall_strategist_max_age_s: float | None = Field(
+        default=None,
+        description=(
+            "Seconds a strategist call may wait for the radio before it airs "
+            "tagged late. Unset = the agent's default (30 s); 0 = never tagged late."
+        ),
+    )
+    pitwall_vehicle_engineer_max_age_s: float | None = Field(
+        default=None,
+        description=(
+            "Seconds a vehicle engineer call may wait for the radio before it airs "
+            "tagged late. Unset = the agent's default (20 s); 0 = never tagged late."
+        ),
+    )
+    pitwall_spotter_max_age_s: float | None = Field(
+        default=None,
+        description=(
+            "Seconds a spotter template call (car left, closing, blue flag) may wait "
+            "for the radio before it airs tagged late. Unset = 3 s; 0 = never tagged "
+            "late. When set it also applies to the LLM spotter's lap-line summaries, "
+            "which by default are never tagged late and expire after 60 s."
+        ),
+    )
+    pitwall_coach_max_age_s: float | None = Field(
+        default=None,
+        description=(
+            "Seconds a coach call may wait for the radio before it airs "
+            "tagged late. Unset = the agent's default (30 s); 0 = never tagged late."
+        ),
+    )
     pitwall_agents_only: str = Field(
         default="",
         description="Comma-separated agent names to mount. Empty mounts all of them; "
@@ -222,7 +252,7 @@ class Settings(BaseSettings):
         default=400,
         ge=0,
         description="Hard ceiling on billable model calls in one session, counted "
-        "across every agent. Generous on purpose: it is a runaway guard, not a "
+        "across every agent and the live VLM. Generous on purpose: it is a runaway guard, not a "
         "budget (a normal race hour is a low-tens number). 0 = unlimited. The "
         "counter is exposed on GET /api/v1/pitwall/status.",
     )
@@ -362,7 +392,13 @@ class Settings(BaseSettings):
         default=10,
         ge=0,
         le=500,
-        description="VLM calls per session run in live mode; 0 turns the live VLM off.",
+        description="VLM calls per session run in live mode; 0 turns the live VLM off. "
+        "An inner limit: each call also counts against RTV_PITWALL_MAX_CALLS_PER_SESSION.",
+    )
+    vision_live_radio: bool = Field(
+        default=False,
+        description="Let live visual notes wake the spotter and coach (radio calls at info "
+        "priority). Off: they go to the timeline, the journal and the review only.",
     )
     vision_live_min_gap_s: float = Field(
         default=5.0,

@@ -31,14 +31,15 @@ from typing import Any
 from pydantic import BaseModel, Field, computed_field
 
 from rtv.logging import get_logger
+from rtv.pitwall import agent_input
 from rtv.pitwall.activity import Tracer, safe_trace, summarize
+from rtv.pitwall.agent_input import SPOKEN_WORD_LIMIT
+from rtv.pitwall.agent_input import as_text as _as_text
 from rtv.pitwall.validator import FactSet, GroundingReport, validate_output
 from rtv.racestate.models import EventType, RaceEvent, RaceState
 
 log = get_logger("pitwall.framework")
 
-#: Radio is a scarce channel; a message longer than this stops being radio.
-SPOKEN_WORD_LIMIT = 25
 #: Pause before the single retry of a failed model call.
 RETRY_BACKOFF_S = 0.5
 
@@ -98,6 +99,10 @@ class EventRef(BaseModel):
         )
 
 
+#: What a call aired after its ``max_age_s`` starts with, on the radio and in TTS.
+LATE_PREFIX = "Late call: "
+
+
 class RadioMessage(BaseModel):
     """One thing the pitwall says, plus everything needed to justify it."""
 
@@ -122,12 +127,46 @@ class RadioMessage(BaseModel):
     #: Tools the agent actually called, for the pitwall's audit panel.
     tools_used: list[str] = Field(default_factory=list)
     model: str = ""
+    #: Who wrote the words: ``"model"`` (an agent's LLM run), ``"template"`` (a
+    #: deterministic caller, :mod:`rtv.pitwall.callers`: no model call), ``"driver"``
+    #: (a push-to-talk transcript) or ``"pitwall"`` (a notice about the pitwall).
+    source: str = "model"
     #: False for anything that is *shown* but must not be *said* -- the driver's
     #: own push-to-talk transcript, for instance. The audio manager drops these.
     speak: bool = True
     #: Set when a backend TTS provider is configured; ``None`` means "use the
     #: browser's Web Speech API". See :mod:`rtv.pitwall.tts`.
     audio_url: str | None = None
+    #: ---- air-time validity, stamped by deterministic code when the run starts
+    #: (:func:`rtv.pitwall.validity.stamp`) and checked by the radio when the
+    #: message reaches the front of the channel. ``None`` = no such rule.
+    #: The :class:`RaceState` version the agent's snapshot came from.
+    state_version: int | None = None
+    #: Session time of that snapshot: the age of the call is measured from here.
+    computed_at_session_time: float | None = None
+    #: Older than this when it airs and still valid: aired, tagged late.
+    max_age_s: float | None = None
+    #: Dropped once the player's lap counter is past this lap.
+    valid_until_lap: int | None = None
+    #: Dropped once the session clock is past this.
+    expires_at_session_time: float | None = None
+    #: Dropped once the player is past this lap fraction on :attr:`valid_until_lap`
+    #: (the pit entry, for a box call) without being in the pit lane.
+    invalid_if_lap_dist_past: float | None = None
+    #: Dropped once the player is in the pit lane (a box call that has happened).
+    invalid_if_on_pit_road: bool = False
+    #: The car the call is about; dropped once it has left the running order.
+    subject_car_idx: int | None = None
+    #: ---- what the radio decided at air time
+    #: Session time the channel reached the message (aired or dropped).
+    air_session_time: float | None = None
+    #: Aired after :attr:`max_age_s`; the spoken text starts with ``LATE_PREFIX``.
+    late: bool = False
+    #: Seconds between :attr:`computed_at_session_time` and the air time.
+    late_by_s: float | None = None
+    #: Never aired because it had stopped being true; :attr:`expired_reason` says why.
+    expired: bool = False
+    expired_reason: str | None = None
 
     @computed_field  # type: ignore[prop-decorator]
     @property
@@ -145,12 +184,17 @@ class RadioMessage(BaseModel):
         event and words are enough: two messages that agree on all three are the
         same call, and should share one clip.
         """
+        spoken = self.spoken_text
+        if self.late and spoken.startswith(LATE_PREFIX):
+            # Tagging a call late at air time must not change its id: the audio
+            # URL and the journal's radio_queued record were keyed before it.
+            spoken = spoken[len(LATE_PREFIX) :]
         raw = "|".join(
             (
                 self.agent,
                 self.event_ref.key,
                 str(self.event_ref.tick),
-                self.spoken_text,
+                spoken,
             )
         )
         return hashlib.sha1(raw.encode("utf-8")).hexdigest()[:16]
@@ -245,6 +289,22 @@ def agent_model(spec: AgentSpec, settings: Any = None, override: str = "") -> st
     return llm.model(spec.tier, per_agent, s)
 
 
+def agent_max_age(spec: AgentSpec, settings: Any = None) -> float | None:
+    """Seconds an agent's call may wait before it airs late; ``None`` = never late.
+
+    ``RTV_PITWALL_<NAME>_MAX_AGE_S`` wins over the spec's default; zero or a
+    negative value there turns the late tag off for that agent.
+    """
+    from rtv.config import get_settings
+
+    s = settings or get_settings()
+    value = getattr(s, f"pitwall_{spec.name}_max_age_s", None)
+    if value is None:
+        return spec.max_age_s
+    value = float(value)
+    return value if value > 0 else None
+
+
 @dataclass(frozen=True)
 class AgentSpec:
     """One agent, entirely declarative."""
@@ -285,6 +345,15 @@ class AgentSpec:
     #: Ceiling on tool-use round trips before the runtime demands an answer.
     max_tool_iterations: int = 4
     enabled: bool = True
+    #: Seconds a call may wait for the channel before it airs tagged late.
+    #: ``None`` = never late. ``RTV_PITWALL_<NAME>_MAX_AGE_S`` overrides it
+    #: (:func:`agent_max_age`).
+    max_age_s: float | None = None
+    #: Deterministic air-time rules for a message: ``(message, state, event,
+    #: pit_entry_pct) -> {field: value}`` over :class:`RadioMessage`'s validity
+    #: fields (``valid_until_lap``, ``invalid_if_lap_dist_past``, ...). Read
+    #: from the message's structured ``data``, never from the spoken words.
+    validity: Callable[..., dict[str, Any]] | None = None
 
     def tool(self, name: str) -> ToolSpec | None:
         return next((t for t in self.tools if t.name == name), None)
@@ -305,6 +374,7 @@ class AgentSpec:
                 for t in self.triggers
             ],
             "max_tokens": self.max_tokens,
+            "max_age_s": self.max_age_s,
             "prefetch": [name for name, _ in self.prefetch],
             "output_contract": self.output_model.__name__,
         }
@@ -348,6 +418,9 @@ class AgentRuntime:
         #: The run being traced. One agent never overlaps itself (one worker,
         #: one-slot inbox), so per-instance state is enough.
         self._trace_run: dict[str, Any] | None = None
+        #: run_start fields not yet written, and records held back behind it.
+        self._pending_start: dict[str, Any] | None = None
+        self._held: list[tuple[str, dict[str, Any]]] = []
         #: Why the last :meth:`match` returned ``None``, for the dispatch trace.
         self.last_skip: str | None = None
         self.provider = provider
@@ -423,7 +496,11 @@ class AgentRuntime:
         started = time.perf_counter()
         turns_before = self.turns
         run = self._begin_trace(event, events, radio_history)
-        message = await self._invoke(event, state, events, radio_history)
+        try:
+            message = await self._invoke(event, state, events, radio_history)
+        finally:
+            # A run that failed before its input was built still gets a run_start.
+            self._start_run(None)
         if run is not None:
             if message is None:
                 outcome = "error"
@@ -464,12 +541,23 @@ class AgentRuntime:
             config=self.tool_config,
             extras=self.tool_extras,
         )
-        system = self._system_blocks(slice_)
         tools_used: list[str] = []
         prefetched = self._prefetch(ctx, facts, tools_used, state, event)
-        messages: list[dict[str, Any]] = [
-            {"role": "user", "content": self._instruction(event, radio_history, prefetched)}
-        ]
+        # The run's whole model input as data. It goes on run_start, and the first
+        # call is rebuilt from it, so the journal holds exactly what was sent.
+        record = agent_input.build_input(
+            spec,
+            system_prompt=self.system_prompt,
+            state_slice=slice_,
+            event=event.to_api(),
+            radio_history=radio_history,
+            prefetched=prefetched,
+            provider=self._provider_info(),
+        )
+        self._start_run(record)
+        first = agent_input.model_input(record)
+        system = first["system"]
+        messages: list[dict[str, Any]] = first["messages"]
 
         try:
             output = await self._converse_with_retry(
@@ -693,6 +781,9 @@ class AgentRuntime:
             args=_trace_args(args),
             ok=not is_error,
             result=summarize(payload),
+            # The whole result, for the journal only (stripped from the live feed):
+            # with the run_start input it rebuilds every later turn of the run.
+            result_full=agent_input.jsonable(payload),
             latency_ms=round((time.perf_counter() - tool_started) * 1000.0, 2),
             **extra,
         )
@@ -778,20 +869,43 @@ class AgentRuntime:
             "calls": 0,
         }
         self._trace_run = run
-        self._trace(
-            "run_start",
-            trigger=event.event_type.value,
-            severity=event.severity.value,
-            model=self.spec.model,
+        # run_start waits for the model input, which needs the prefetch results;
+        # the prefetch tool_call records are held until it is written.
+        self._pending_start = {
+            "trigger": event.event_type.value,
+            "severity": event.severity.value,
+            "model": self.spec.model,
             # The radio this run is shown: the only way one agent hears another.
-            context_radio=[
+            "context_radio": [
                 {"message_id": m.message_id, "agent": m.agent} for m in radio_history
             ],
-            context_events=len(events),
-        )
+            "context_events": len(events),
+        }
+        self._held = []
         return run
 
+    def _start_run(self, record: dict[str, Any] | None) -> None:
+        """Write the pending run_start (with ``input`` when there is one), then the
+        records held back for it. Does nothing once the run_start is written."""
+        start, held = self._pending_start, self._held
+        if start is None:
+            return
+        self._pending_start, self._held = None, []
+        if record is not None:
+            start["input"] = record
+        self._emit("run_start", start)
+        for kind, data in held:
+            self._emit(kind, data)
+
     def _trace(self, kind: str, **data: Any) -> None:
+        if self._trace_run is None:
+            return
+        if self._pending_start is not None:
+            self._held.append((kind, data))
+            return
+        self._emit(kind, data)
+
+    def _emit(self, kind: str, data: dict[str, Any]) -> None:
         run = self._trace_run
         if run is None:
             return
@@ -820,60 +934,19 @@ class AgentRuntime:
         )
 
     # ---- context assembly ------------------------------------------------
-    def _system_blocks(self, slice_: dict[str, Any]) -> list[dict[str, Any]]:
-        """Stable role prompt first (cached), volatile state after it.
+    @property
+    def system_prompt(self) -> str:
+        """The stable half of the system prompt: role prompt plus grounding rules."""
+        return self.spec.role_prompt + "\n\n" + GROUNDING_RULES
 
-        Ordering matters: prompt caching is a prefix match, so the part that never
-        changes has to come first or nothing caches (see the Layer-3b coach).
-        """
-        return [
-            {
-                "type": "text",
-                "text": self.spec.role_prompt + "\n\n" + GROUNDING_RULES,
-                "cache_control": {"type": "ephemeral"},
-            },
-            {"type": "text", "text": "RACE STATE:\n" + _as_text(slice_)},
-        ]
-
-    def _instruction(
-        self,
-        event: RaceEvent,
-        radio_history: Sequence[RadioMessage],
-        prefetched: Sequence[tuple[str, dict[str, Any], Any]] = (),
-    ) -> str:
-        parts = [
-            f"TRIGGER: {event.key} (severity {event.severity.value}) at "
-            f"session time {event.session_time:.1f}s"
-            + (f", lap {event.lap}" if event.lap is not None else "")
-            + f".\nEvent payload: {_as_text(event.payload)}"
-        ]
-        if radio_history:
-            recent = "\n".join(
-                f"- [{m.agent}/{m.priority.value}] {m.spoken_text}" for m in radio_history[-5:]
-            )
-            parts.append(
-                "RECENT RADIO (do not repeat a call that still stands):\n" + recent
-            )
-        if prefetched:
-            parts.append(
-                "TOOL RESULTS (already called for you, as if you had called them):\n"
-                + "\n".join(
-                    f"- {name}({_as_text(args) if args else ''}): {_as_text(payload)}"
-                    for name, args, payload in prefetched
-                )
-            )
-            parts.append(
-                "If these and the race state settle it, answer now in the required "
-                "structure; call another tool only for a figure that is not here. "
-                f"Keep spoken_text under {SPOKEN_WORD_LIMIT} words."
-            )
-        else:
-            parts.append(
-                "Call the tools you need, then answer in the required structure. "
-                "Keep spoken_text under "
-                f"{SPOKEN_WORD_LIMIT} words."
-            )
-        return "\n\n".join(parts)
+    def _provider_info(self) -> dict[str, Any]:
+        describe = getattr(self.provider, "describe", None)
+        if callable(describe):
+            try:
+                return dict(describe())
+            except Exception:  # pragma: no cover - defensive
+                log.exception("Provider describe() failed")
+        return {"name": type(self.provider).__name__}
 
     # ---- output ----------------------------------------------------------
     def _to_message(
@@ -976,18 +1049,6 @@ def _payload_of(output: AgentOutput) -> dict[str, Any]:
         mode="json", exclude={"spoken_text", "detail_text", "priority"}
     )
 
-
-def _as_text(value: Any) -> str:
-    import json
-
-    if isinstance(value, str):
-        return value
-    if isinstance(value, BaseModel):
-        value = value.model_dump(mode="json")
-    try:
-        return json.dumps(value, separators=(",", ":"), default=str)
-    except (TypeError, ValueError):  # pragma: no cover - defensive
-        return str(value)
 
 
 def _trace_args(args: Any, *, limit: int = 120) -> dict[str, Any]:

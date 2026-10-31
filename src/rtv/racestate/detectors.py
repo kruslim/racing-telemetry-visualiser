@@ -21,8 +21,8 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
+from rtv.catalog.enums import CAR_LEFT_RIGHT, TRK_LOC, decode_bitfield
 from rtv.catalog.enums import SESSION_FLAGS as SESSION_FLAG_BITS
-from rtv.catalog.enums import TRK_LOC, decode_bitfield
 from rtv.racestate import channels as ch
 from rtv.racestate.models import FlagPhase
 
@@ -435,6 +435,30 @@ def detect_closing_traffic(
                 "threshold_gap_s": cfg.traffic_gap_s,
             }
     return best
+
+
+def alongside_state(raw: int | None) -> str | None:
+    """Decode ``CarLeftRight`` to a side label; ``None`` when the sensor is off."""
+    if raw is None or raw <= 0:
+        return None
+    return CAR_LEFT_RIGHT.get(int(raw))
+
+
+def detect_car_alongside(previous: str | None, raw: int | None) -> tuple[str | None, dict | None]:
+    """``(new_state, payload)`` for one ``CarLeftRight`` sample.
+
+    Fires on every *change* of iRacing's own proximity sensor: a car arriving on
+    the left or right, a second one, or the sides clearing. "Clear" is only news
+    after something was alongside, so the first clear of a session is silent, and
+    the sensor being off (0, or no value) resets the state without an event --
+    the next car alongside after it comes back is a fresh call.
+    """
+    state = alongside_state(raw)
+    if state is None or state == previous:
+        return state, None
+    if state == "clear" and previous is None:
+        return state, None
+    return state, {"side": state, "from": previous, "raw": int(raw) if raw is not None else None}
 
 
 # --------------------------------------------------------------------------

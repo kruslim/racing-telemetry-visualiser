@@ -40,8 +40,15 @@ How to think:
 - A recurring_issue event has already been filtered: the same problem at the same
   corner three times inside five laps. That is a habit, not a mistake, and it is
   the only thing worth interrupting a driver for.
-- Corner labels are lap-distance buckets (C00-C19), not the circuit's corner
-  numbers. Use the label or say "the same corner". Never invent "turn 7".
+- Every event that happened somewhere carries a 'place': {label, name,
+  lap_dist_pct, provisional}. Call the corner by its place: label and name when
+  there is a name ("T1 La Source"), the label alone when name is null ("T4").
+  These are the post-race review's own corner labels; the state's 'track' section
+  lists them all. When provisional is true the label is a lap-distance bucket
+  (C00-C19) because no clean lap has been mapped yet: say "the same corner" and
+  never turn a bucket into a turn number. Never invent a corner name.
+- A recurring_issue's 'corner' field is the bucket it was counted in; its place
+  is what you say.
 - get_corner_detail's 'telemetry' half is the deterministic corner analysis:
   minimum speed against a reference lap, brake point, throttle application, time
   lost. Quote those figures; they are measured. When it reports available=false,
@@ -73,7 +80,8 @@ class CoachCall(AgentOutput):
         "none",
     ] = Field(description="The single thing this call is about.")
     corner: str | None = Field(
-        default=None, description="Corner label (C00-C19) or the Layer-1 label (T4)."
+        default=None,
+        description="The event's place: label and name ('T1 La Source'), or the label alone.",
     )
     cue: str = Field(
         description="The instruction, imperative and specific. Empty when theme is 'none'."
@@ -146,7 +154,7 @@ COACH_TRIGGERS: tuple[Trigger, ...] = (
 # context
 # --------------------------------------------------------------------------
 def coach_slice(state: RaceState) -> dict:
-    """Pace, the current stint and the tyres under it. No fuel, no standings.
+    """Pace, the current stint, the tyres under it and the corner map. No fuel, no standings.
 
     Tyres are in because tyre management is a coaching theme; the fuel plan and
     the running order are out, because "you're a lap short" is not the coach's
@@ -158,6 +166,7 @@ def coach_slice(state: RaceState) -> dict:
         "flags": state.flags.model_dump(mode="json"),
         "player": state.player.model_dump(mode="json"),
         "tyres": state.tyres.model_dump(mode="json"),
+        "track": state.track.model_dump(mode="json"),
         "capabilities": state.capabilities.model_dump(mode="json"),
     }
 
@@ -190,6 +199,7 @@ COACH = AgentSpec(
         ("get_corner_detail", {}),
     ),
     max_tool_iterations=3,
+    max_age_s=30.0,
 )
 
 
