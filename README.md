@@ -311,6 +311,20 @@ Layer-3a orchestration;
 `pip install -e ".[agent]"` for the Layer-3b LangGraph coach. The Layer-3b graph and
 its eval harness run **offline with a scripted model** — no key — under the `dev` extra.
 
+### RTV Desktop (native app)
+
+The same pitwall and review as a native Windows app (PySide6), with the server
+embedded — one window, no browser:
+
+```powershell
+uv pip install --python .venv\Scripts\python.exe -e ".[desktop]"
+.\run-desktop.ps1                         # or: rtv-desktop
+.\scripts\build_desktop.ps1               # dist\RTV.exe, data in %LOCALAPPDATA%\RTV\data
+```
+
+It is a client of the same API, built from the UI redesign brief
+(`docs/ui-redesign/UI_REDESIGN_BRIEF.md`); `docs/DESKTOP.md` has the details.
+
 ---
 
 ## Try it on a real race (no iRacing, no API key)
@@ -473,6 +487,8 @@ either way.
   a build log: every
   stage records what it built, what the next one consumes, and every deviation
   from its spec with the reasoning.
+- `docs/DESKTOP.md` — RTV Desktop, the native Qt client: running, building
+  `RTV.exe`, its architecture, how it maps onto the UI brief, and its deviations.
 - `docs/VISION.md` — onboard video and VLM visual notes: syncing a video to the
   telemetry, which moments are looked at, the grounding rules, storage, and the full
   API for the review UI.

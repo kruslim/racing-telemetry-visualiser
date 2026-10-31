@@ -122,6 +122,11 @@ def _variants(value: float) -> list[float]:
         # Lap counts are habitually spoken floored ("two laps of fuel" on 2.4).
         if abs(base) < 1e6:
             out.extend([float(math.floor(base)), float(math.ceil(base))])
+    # A fraction said as a percentage ("off at 94.98 %" for lap_dist_pct 0.9498):
+    # on the second Spa replay this was most of the refusals.
+    if 0 < abs(value) <= 1:
+        pct = abs(value) * 100.0
+        out.extend([pct, round(pct), round(pct, 1), round(pct, 2), float(math.floor(pct))])
     return [float(v) for v in out]
 
 

@@ -25,6 +25,9 @@ In Git Bash write `.venv/Scripts/python.exe`, in PowerShell `.venv\Scripts\pytho
 - Lint: `.venv/Scripts/python.exe -m ruff check .`
 - Run: `.\run.ps1` (or `-Reload`), then http://127.0.0.1:8000/ for the live pitwall and
   http://127.0.0.1:8000/review/ for the post-race review and lap analysis (API docs at `/docs`).
+- Desktop app (native Qt, server embedded): `uv pip install --python .venv/Scripts/python.exe
+  -e ".[desktop]"`, then `.\run-desktop.ps1`; `.\scripts\build_desktop.ps1` builds
+  `dist\RTV.exe`. See `docs/DESKTOP.md`.
 - Real-data fixture (162 MB Spa race .ibt, gitignored):
   `.venv/Scripts/python.exe scripts/fetch_fixtures.py`; `tests/test_real_ibt.py` skips
   without it, and CI fetches and caches it in a separate job.
@@ -48,7 +51,9 @@ files that were already formatted and sorts imports in every edited file.
   detectors, event bus, replay), `pitwall/` (v2
   agents, provider, radio, TTS), `vision/` (onboard video sync and grounded VLM visual
   notes, `docs/VISION.md`), `director/` (interfaces only), `llm.py` (the Kimi
-  Code client), `config.py`, `services.py`, `main.py`.
+  Code client), `config.py`, `services.py`, `main.py`, and `desktop/` (RTV Desktop, the
+  PySide6 client: `model/` holds pure Python ports of the frontend's tested view
+  models, the rest is Qt; PySide6 is imported only inside `rtv.desktop`).
 - `frontend/` served by FastAPI at `/`: the live view (`index.html`, `css/`, `js/`), the
   post-race review at `/review/` (`review/index.html`, `js/review/`), `radio.html` and
   two self-test pages; `js/shared/` is used by both views. `docs/*.md` are hand-written

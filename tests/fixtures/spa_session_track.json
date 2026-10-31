@@ -1,0 +1,172 @@
+{
+ "session_id": "spa-race",
+ "header": {
+  "iracing_track_id": 163,
+  "iracing_track_name": "spa up",
+  "display_name": "Circuit de Spa-Francorchamps",
+  "short_name": "Spa",
+  "config_name": "Grand Prix Pit",
+  "city": "Francorchamps",
+  "country": "Belgium",
+  "length_m": 6930.0,
+  "official_length_m": 7000.0,
+  "num_turns": 21,
+  "pit_speed_limit_kph": 80.0,
+  "track_type": "road course",
+  "latitude": 50.444061,
+  "longitude": 5.965178,
+  "sector_starts_pct": [
+   0.0,
+   0.310613,
+   0.522299,
+   0.692902,
+   0.931096
+  ]
+ },
+ "reference": {
+  "key": "spa",
+  "name": "Circuit de Spa-Francorchamps",
+  "country": "Belgium",
+  "center": [
+   50.437,
+   5.975
+  ],
+  "iracing_names": [
+   "spa"
+  ],
+  "named_corners": 13,
+  "named_straights": 1,
+  "has_pit_lane": true,
+  "attribution": "Map data (c) OpenStreetMap contributors, ODbL 1.0 (https://www.openstreetmap.org/copyright)"
+ },
+ "trace_lap": 6,
+ "corners": [
+  {
+   "name": "La Source",
+   "kind": "corner",
+   "ref": null,
+   "start_pct": 0.04967,
+   "end_pct": 0.063,
+   "mid_pct": 0.05633,
+   "max_offset_m": 27.1
+  },
+  {
+   "name": "Eau Rouge",
+   "kind": "corner",
+   "ref": null,
+   "start_pct": 0.14033,
+   "end_pct": 0.15767,
+   "mid_pct": 0.149,
+   "max_offset_m": 29.0
+  },
+  {
+   "name": "Raidillon",
+   "kind": "corner",
+   "ref": null,
+   "start_pct": 0.15833,
+   "end_pct": 0.189,
+   "mid_pct": 0.17367,
+   "max_offset_m": 6.5
+  },
+  {
+   "name": "Kemmel",
+   "kind": "straight",
+   "ref": null,
+   "start_pct": 0.18967,
+   "end_pct": 0.341,
+   "mid_pct": 0.265,
+   "max_offset_m": 6.0
+  },
+  {
+   "name": "Les Combes",
+   "kind": "corner",
+   "ref": null,
+   "start_pct": 0.34167,
+   "end_pct": 0.36833,
+   "mid_pct": 0.355,
+   "max_offset_m": 28.3
+  },
+  {
+   "name": "Malmedy",
+   "kind": "corner",
+   "ref": null,
+   "start_pct": 0.371,
+   "end_pct": 0.39033,
+   "mid_pct": 0.38033,
+   "max_offset_m": 28.0
+  },
+  {
+   "name": "Bruxelles",
+   "kind": "corner",
+   "ref": null,
+   "start_pct": 0.42233,
+   "end_pct": 0.455,
+   "mid_pct": 0.43833,
+   "max_offset_m": 29.9
+  },
+  {
+   "name": "Speaker's Corner",
+   "kind": "corner",
+   "ref": null,
+   "start_pct": 0.461,
+   "end_pct": 0.505,
+   "mid_pct": 0.483,
+   "max_offset_m": 28.8
+  },
+  {
+   "name": "Double Gauche",
+   "kind": "corner",
+   "ref": null,
+   "start_pct": 0.53433,
+   "end_pct": 0.59567,
+   "mid_pct": 0.565,
+   "max_offset_m": 27.5
+  },
+  {
+   "name": "Fagnes",
+   "kind": "corner",
+   "ref": null,
+   "start_pct": 0.62967,
+   "end_pct": 0.679,
+   "mid_pct": 0.65433,
+   "max_offset_m": 28.8
+  },
+  {
+   "name": "Campus",
+   "kind": "corner",
+   "ref": null,
+   "start_pct": 0.697,
+   "end_pct": 0.71833,
+   "mid_pct": 0.70767,
+   "max_offset_m": 28.7
+  },
+  {
+   "name": "Courbe Paul Frère",
+   "kind": "corner",
+   "ref": null,
+   "start_pct": 0.72567,
+   "end_pct": 0.761,
+   "mid_pct": 0.743,
+   "max_offset_m": 27.9
+  },
+  {
+   "name": "Blanchimont",
+   "kind": "corner",
+   "ref": null,
+   "start_pct": 0.81167,
+   "end_pct": 0.89833,
+   "mid_pct": 0.855,
+   "max_offset_m": 26.5
+  },
+  {
+   "name": "Chicane",
+   "kind": "corner",
+   "ref": null,
+   "start_pct": 0.95967,
+   "end_pct": 0.973,
+   "mid_pct": 0.96633,
+   "max_offset_m": 28.8
+  }
+ ],
+ "notes": []
+}

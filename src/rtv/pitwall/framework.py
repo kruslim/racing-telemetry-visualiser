@@ -596,6 +596,28 @@ class AgentRuntime:
             if response.output is not None and not response.tool_calls:
                 return response.output
             if not response.tool_calls:
+                if not offer_tools or not getattr(response, "text", ""):
+                    return response.output
+                # Answered in prose instead of the contract: ask once more with
+                # the tools withdrawn, which forces the respond tool.
+                messages.append(
+                    {"role": "assistant", "content": response.assistant_content or response.text}
+                )
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": "Give that answer in the required structure now.",
+                    }
+                )
+                response = await self._complete(
+                    agent=spec.name,
+                    model=spec.model,
+                    system=system,
+                    messages=messages,
+                    tools=[],
+                    output_model=spec.output_model,
+                    max_tokens=spec.max_tokens,
+                )
                 return response.output
             messages.append({"role": "assistant", "content": response.assistant_content})
             results = []
