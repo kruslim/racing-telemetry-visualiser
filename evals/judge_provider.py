@@ -111,14 +111,14 @@ class GeminiProvider:
 
     def __init__(self, client: Any | None = None, *, api_key: str | None = None) -> None:
         if client is None:
+            if not api_key:
+                raise JudgeConfigError("No Gemini key: set GEMINI_API_KEY.")
             try:
                 from google import genai
             except ImportError as exc:  # pragma: no cover - depends on the judge extra
                 raise JudgeConfigError(
                     "The Gemini judge needs google-genai: install the 'judge' extra."
                 ) from exc
-            if not api_key:
-                raise JudgeConfigError("No Gemini key: set GEMINI_API_KEY.")
             client = genai.Client(api_key=api_key)
         self._client = client
 
