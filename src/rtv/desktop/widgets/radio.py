@@ -1,8 +1,9 @@
 """The radio feed: on-air strip, audio controls, the calls (newest first), driver input.
 
 Used by the live pitwall and the radio window. Refusals are shown as grounded
-refusals, not errors; a driver message nests the calls that aired within 45 s as
-"after your message", never as a reply.
+refusals, not errors. A driver message is a question: its answer (``in_reply_to``)
+nests under it tagged "answer", and other calls that aired within 45 s nest as
+"after your message".
 """
 
 from __future__ import annotations
@@ -22,7 +23,7 @@ from PySide6.QtWidgets import (
 
 from ..model.activity import AGENTS
 from ..model.format import agent_badge, clock, is_num
-from ..model.radio import thread_feed
+from ..model.radio import question_status, thread_feed
 from ..model.review import NOT_AIRED, air_badge
 from ..theme import tokens as t
 from .common import clear_layout, label, severity_tag, tag
@@ -86,6 +87,8 @@ class RadioEntry(QFrame):
         if is_driver:
             head.addWidget(tag("not spoken", "#1c222a", t.SOFT))
         else:
+            if message.get("answer"):
+                head.addWidget(tag("answer", "#173322", "#8ff0c3"))
             head.addWidget(severity_tag(message.get("priority")))
         if refused:
             head.addWidget(tag("withheld · grounded refusal", "#2a2414", "#ffd27a"))
@@ -160,12 +163,23 @@ class RadioEntry(QFrame):
             tl = QVBoxLayout(thread)
             tl.setContentsMargins(10, 2, 0, 0)
             tl.setSpacing(4)
-            tl.addWidget(label("after your message", "muted", size=11))
-            for child in children:
+            answers = [c for c in children if c.get("answer")]
+            others = [c for c in children if not c.get("answer")]
+            status = question_status(message, children)
+            if status:
+                tl.addWidget(label(status, "muted", size=11))
+            for child in answers:
                 entry = RadioEntry(child, [], aired, expanded, muted)
                 entry.toggled_detail.connect(self.toggled_detail)
                 tl.addWidget(entry)
-            if not children:
+            if others:
+                tl.addWidget(label("after your message", "muted", size=11))
+            for child in others:
+                entry = RadioEntry(child, [], aired, expanded, muted)
+                entry.toggled_detail.connect(self.toggled_detail)
+                tl.addWidget(entry)
+            if not children and not status:
+                tl.addWidget(label("after your message", "muted", size=11))
                 tl.addWidget(label("no call aired within 45 s yet", "muted", size=11))
             row = QHBoxLayout()
             row.setContentsMargins(14, 0, 0, 0)
@@ -280,10 +294,10 @@ class RadioFeed(QWidget):
         dl = QHBoxLayout(driver)
         dl.setContentsMargins(14, 8, 14, 8)
         self.input = QLineEdit()
-        self.input.setPlaceholderText("say something to the pitwall…")
-        self.input.setAccessibleName("Message to the pitwall")
+        self.input.setPlaceholderText("ask the pitwall… (fuel, gaps, tyres, lap times)")
+        self.input.setAccessibleName("Ask the pitwall")
         self.input.setMaxLength(500)
-        self.send = QPushButton("Send")
+        self.send = QPushButton("Ask")
         self.send.setProperty("role", "primary")
         dl.addWidget(self.input, 1)
         dl.addWidget(self.send)

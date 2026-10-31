@@ -79,6 +79,12 @@ class EventType(StrEnum):
     SESSION_GREEN = "session_green"
     SESSION_CHECKERED = "session_checkered"
     SESSION_END = "session_end"
+    #: Not a detector event: the driver asked the pitwall something (push-to-talk
+    #: or the desktop text box). ``payload.text`` is the question, ``payload.owner``
+    #: the agent the router chose, ``payload.intent`` a template lookup or ``None``,
+    #: ``payload.question_id`` the driver transcript's radio ``message_id``. See
+    #: :mod:`rtv.pitwall.questions`. On the bus so the journal records it.
+    DRIVER_QUESTION = "driver_question"
 
 
 class FlagPhase(StrEnum):

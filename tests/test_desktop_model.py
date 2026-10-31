@@ -507,3 +507,29 @@ def test_corner_titles_use_the_name_only_when_mapped():
     corners = [{"label": "T8", "name": "Chicane"}]
     assert review.priority_title({"label": "T8"}, corners) == "T8 Chicane"
     assert review.priority_title({"label": "T2"}, corners) == "T2"
+
+
+def test_an_answer_nests_under_its_question_wherever_it_lands():
+    """C1: ``in_reply_to`` ties an answer to the driver's question, past the 45 s window."""
+    q = {
+        "agent": "driver", "message_id": "q1", "session_time": 100,
+        "data": {"question": {"owner": "strategist", "intent": None}},
+    }
+    feed = radio.thread_feed(
+        [
+            q,
+            {"agent": "spotter", "session_time": 110},
+            {"agent": "coach", "session_time": 300},
+            {"agent": "strategist", "session_time": 320, "in_reply_to": "q1"},
+            {"agent": "coach", "session_time": 330, "in_reply_to": "gone"},
+        ]
+    )
+    assert [e["message"]["agent"] for e in feed] == ["driver", "coach", "coach"]
+    children = feed[0]["children"]
+    assert [(c["agent"], c.get("answer", False)) for c in children] == [
+        ("spotter", False),
+        ("strategist", True),
+    ]
+    assert radio.question_status(q, children) is None
+    assert radio.question_status(q, []) == "asked the strategist · waiting for the answer"
+    assert radio.question_status({"agent": "driver"}, []) is None

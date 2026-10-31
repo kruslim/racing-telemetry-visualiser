@@ -115,6 +115,15 @@ def instruction(
         + (f", lap {lap}" if lap is not None else "")
         + f".\nEvent payload: {as_text(event.get('payload'))}"
     ]
+    payload = event.get("payload") or {}
+    if event.get("event_type") == "driver_question" and isinstance(payload, Mapping):
+        # The driver asked; the run exists to answer them, not to make a call.
+        parts.append(
+            f'THE DRIVER ASKED: "{payload.get("text", "")}"\n'
+            "Answer that question in spoken_text, in your own role, as you would on the "
+            "radio. Use only the race state and tool results; if they cannot answer it, "
+            "say so plainly and never guess a figure."
+        )
     if radio:
         recent = "\n".join(
             f"- [{m['agent']}/{m['priority']}] {m['spoken_text']}" for m in radio

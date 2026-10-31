@@ -536,13 +536,14 @@ def build_pitwall(
     from rtv.pitwall.agents import build_agents
     from rtv.pitwall.callers import build_callers
 
+    only = [n.strip() for n in settings.pitwall_agents_only.split(",") if n.strip()]
     if not is_configured(settings):
         log.info(
-            "Pitwall agents disabled: %s is not set. "
-            "The deterministic race-state engine is unaffected.",
+            "Pitwall agents disabled: %s is not set. Template calls (spotter, "
+            "driver-question lookups) still run; nothing calls a model.",
             key_env_var(settings),
         )
-        return None
+        return build_template_pitwall(engine, settings, only=only, tts=tts)
     try:
         from rtv.pitwall.provider import KimiProvider
 
@@ -550,11 +551,10 @@ def build_pitwall(
     except Exception:  # pragma: no cover - the ai extra is optional
         log.warning(
             "Pitwall agents disabled: the 'ai' extra is not installed "
-            '(pip install -e ".[ai]").'
+            '(pip install -e ".[ai]"). Template calls still run.'
         )
-        return None
+        return build_template_pitwall(engine, settings, only=only, tts=tts)
 
-    only = [n.strip() for n in settings.pitwall_agents_only.split(",") if n.strip()]
     # Each agent's model: RTV_PITWALL_<NAME>_MODEL, else the rtv.llm tier default.
     agents = build_agents(only=only or None, settings=settings)
     if not agents:
@@ -597,6 +597,32 @@ def build_pitwall(
         # The Layer-1 coaching service and its repository, so get_corner_detail
         # reads the *same* deterministic corner analysis the v1 endpoints serve.
         tool_extras={"coaching": coaching, "repo": repo},
+        tts=tts,
+    )
+
+
+def build_template_pitwall(
+    engine: RaceStateEngine,
+    settings: Settings,
+    *,
+    only: list[str] | None = None,
+    tts: RadioTTS | None = None,
+) -> PitwallOrchestrator:
+    """The radio with its deterministic callers only: no agents, no provider, no key.
+
+    The spotter's template calls and the answers to driver lookup questions
+    (:mod:`rtv.pitwall.questions`) need no model, so they must not need a key
+    either. Questions that need an agent get an honest "no one to answer" reply.
+    """
+    from rtv.pitwall.callers import build_callers
+
+    return PitwallOrchestrator(
+        engine,
+        None,
+        [],
+        feed=RadioFeed(history=settings.pitwall_radio_history),
+        enabled=settings.pitwall_agents_live,
+        callers=build_callers(settings, only=only or None),
         tts=tts,
     )
 
