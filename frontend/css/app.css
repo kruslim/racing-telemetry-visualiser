@@ -437,6 +437,10 @@ canvas.fuel-spark { width: 100%; height: 26px; display: block; margin: 2px 0; }
   border-bottom: 1px solid var(--line);
 }
 .tower-body { display: flex; flex-direction: column; }
+.panel-tower.no-field .tower-head,
+.panel-tower.no-field [data-role="tower-toggle"] { display: none; }
+.tower-empty.no-field { display: flex; flex-direction: column; gap: 8px; }
+.tower-empty-title { color: var(--muted); padding: 6px 0; }
 .tower-row {
   border-bottom: 1px solid rgba(38, 45, 56, 0.55);
   font-size: 14px;

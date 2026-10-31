@@ -342,8 +342,17 @@ export function towerView(state, options = {}) {
     hidden = rows.length - visible.length;
   }
 
+  // .ibt recordings carry only the player's car, so there is no field to show.
+  // The player's own position is still in the file; keep it for the empty state.
+  const player = (state && state.player) || {};
   return {
     available: !!caps.standings,
+    // A bound session without standings, as opposed to nothing bound yet.
+    noField: !caps.standings && !!caps.session,
+    player: {
+      position: isNum(player.position) && player.position > 0 ? player.position : null,
+      lastLap: isNum(player.last_lap_time) && player.last_lap_time > 0 ? player.last_lap_time : null,
+    },
     gapBasis: standings.gap_basis || null,
     // No basis means every gap in the payload is null. Say so once at the top
     // of the tower instead of printing a column of n/a with no explanation.
