@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
 from ..model.activity import AGENTS
 from ..model.format import agent_badge, clock, is_num
 from ..model.radio import thread_feed
+from ..model.review import air_badge
 from ..theme import tokens as t
 from .common import clear_layout, label, severity_tag, tag
 
@@ -40,6 +41,9 @@ def _when(message: dict, aired: dict[str, float]) -> str:
         event_t = message.get("session_time")
     text = (f"L{lap} · " if lap is not None else "") + clock(event_t)
     aired_t = aired.get(message.get("message_id") or "")
+    if message.get("expired"):
+        dropped_t = message.get("air_session_time")
+        return text + (f" → dropped {clock(dropped_t)}" if is_num(dropped_t) else " → dropped")
     if is_num(aired_t) and is_num(event_t) and aired_t - event_t >= 1:
         text += f" → aired {clock(aired_t)}"
     return text
@@ -85,16 +89,33 @@ class RadioEntry(QFrame):
             head.addWidget(severity_tag(message.get("priority")))
         if refused:
             head.addWidget(tag("withheld · grounded refusal", "#2a2414", "#ffd27a"))
+        badge = air_badge(message)
+        if badge is not None and badge["kind"] == "late":
+            head.addWidget(tag(badge["text"], "#2a2414", "#ffd27a"))
+        elif badge is not None:
+            head.addWidget(tag(badge["text"], "#2a1618", "#ff9a9a"))
         if agent in muted:
             head.addWidget(tag("muted", "#1c222a", t.SOFT))
         head.addWidget(label(_when(message, aired), "muted", mono=True))
         head.addStretch(1)
         layout.addLayout(head)
+        expired = badge is not None and badge["kind"] == "expired"
         spoken = label(
-            message.get("spoken_text") or "", "radio", wrap=True, color=t.SOFT if refused else None
+            message.get("spoken_text") or "",
+            "radio",
+            wrap=True,
+            color=t.SOFT if refused or expired else None,
         )
+        if expired:
+            font = spoken.font()
+            font.setStrikeOut(True)
+            spoken.setFont(font)
         spoken.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         layout.addWidget(spoken)
+        if expired:
+            layout.addWidget(
+                label(f"Dropped before airing: {badge['reason']}.", "muted", wrap=True, size=11)
+            )
         if not is_driver:
             foot = QHBoxLayout()
             foot.setSpacing(10)

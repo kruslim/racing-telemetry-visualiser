@@ -205,6 +205,8 @@ function onState(state) {
 }
 
 function onRadio(message) {
+  // Dropped at air time because it had stopped being true: never said, not a call.
+  if (message.expired) return;
   const result = manager.push(message);
   radioPanel.push(message, result);
   if (message.agent === 'strategist' && !message.refused) {

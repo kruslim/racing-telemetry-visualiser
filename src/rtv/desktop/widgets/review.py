@@ -408,13 +408,14 @@ class MiniList(QFrame):
         layout.addLayout(self.lines)
         layout.addStretch(1)
 
-    def set_lines(self, rows: list[tuple[str, str, str]], count: int, empty: str) -> None:
-        """rows: (header, text, colour)."""
+    def set_lines(self, rows: list[tuple], count: int, empty: str) -> None:
+        """rows: (header, text, colour) or (header, text, colour, struck)."""
         self.title.setText(f"{self.base} · {count}")
         clear_layout(self.lines)
         if not rows:
             self.lines.addWidget(label(empty, "muted", wrap=True))
-        for head, text, color in rows:
+        for head, text, color, *rest in rows:
+            struck = bool(rest and rest[0])
             box = QFrame()
             box.setObjectName("mini")
             box.setStyleSheet(f"#mini {{ border-left: 3px solid {color}; }}")
@@ -423,7 +424,12 @@ class MiniList(QFrame):
             bl.setSpacing(1)
             if head:
                 bl.addWidget(label(head, "muted", mono=True, size=11))
-            bl.addWidget(label(text, wrap=True, size=12))
+            body = label(text, wrap=True, size=12, color=t.SOFT if struck else None)
+            if struck:
+                font = body.font()
+                font.setStrikeOut(True)
+                body.setFont(font)
+            bl.addWidget(body)
             self.lines.addWidget(box)
 
 

@@ -60,6 +60,29 @@ export function airedTimes(records) {
   return out;
 }
 
+/**
+ * What the radio decided at air time: {kind: 'late', text: 'late +27s'} for a call
+ * aired after its agent's limit, {kind: 'expired', text: 'not aired', reason} for
+ * one dropped because it had stopped being true, else null.
+ */
+export function airBadge(message) {
+  if (!message || typeof message !== 'object') return null;
+  if (message.expired) {
+    return { kind: 'expired', text: 'not aired', reason: message.expired_reason || 'no longer valid' };
+  }
+  if (message.late) {
+    const by = message.late_by_s;
+    return { kind: 'late', text: Number.isFinite(by) ? `late +${Math.round(by)}s` : 'late' };
+  }
+  return null;
+}
+
+/** When a call reached the channel: aired, or (for a dropped one) dropped. */
+function radioWhen(data, aired, t) {
+  if (data.expired && Number.isFinite(data.air_session_time)) return data.air_session_time;
+  return aired.has(data.message_id) ? aired.get(data.message_id) : t;
+}
+
 /** A lap is "clean" when it is valid and neither an in- nor an out-lap. */
 export function isClean(lap) {
   return !!(lap && lap.is_valid && !lap.is_in_lap && !lap.is_out_lap && lap.lap_time > 0);
@@ -173,10 +196,16 @@ export function laneItems(records, laps) {
       item.label += ` → ${data.outcome || '?'}`;
       if (data.outcome && data.outcome !== 'radio') item.cls += ' run-quiet';
     } else if (rec.kind === 'radio') {
+      const badge = airBadge(data);
+      let note = '';
+      if (badge && badge.kind === 'expired') note = ` (not aired: ${badge.reason})`;
+      else if (badge) note = ` (${badge.text})`;
       lanes.radio.push({
-        t0: aired.has(data.message_id) ? aired.get(data.message_id) : t,
-        label: `${data.agent}: ${data.spoken_text || ''}`,
-        cls: `agent-${data.agent}${data.refused ? ' refused' : ''}`,
+        t0: radioWhen(data, aired, t),
+        label: `${data.agent}${note}: ${data.spoken_text || ''}`,
+        cls: `agent-${data.agent}${data.refused ? ' refused' : ''}${badge ? ` ${badge.kind}` : ''}`,
+        late: !!data.late,
+        expired: !!data.expired,
         record: rec,
       });
     }
@@ -280,10 +309,7 @@ export function filterAudit(rows, { agent = '', outcome = '', sort = 'time' } = 
 /** Radio calls that had aired at or before t, newest first. */
 export function radioUpTo(records, t, limit = 40) {
   const aired = airedTimes(records);
-  const when = (rec) => {
-    const id = (rec.data || {}).message_id;
-    return aired.has(id) ? aired.get(id) : rec.session_time;
-  };
+  const when = (rec) => radioWhen(rec.data || {}, aired, rec.session_time);
   const out = [];
   for (const rec of records || []) {
     if (rec.kind !== 'radio') continue;

@@ -30,6 +30,7 @@ import { clear, el, setText } from '../pitwall/dom.js';
 import { TraceStack, TrackMap } from './charts.js';
 import { mergeCompare, stateAt, staticBase, staticPlan } from './static-data.js';
 import {
+  airBadge,
   auditRows,
   bounds,
   cornerSpan,
@@ -469,8 +470,13 @@ function renderLogs(t) {
     const li = el('li', `agent-${d.agent}`);
     li.append(el('span', 't', tlClock(rec.session_time)));
     li.append(el('strong', '', `${humanise(d.agent)}: `));
-    li.append(el('span', d.refused ? 'refused' : '', d.spoken_text || d.detail_text || ''));
-    li.title = d.detail_text || '';
+    // A call dropped at air time is listed, struck, with why; it was never said.
+    const badge = airBadge(d);
+    if (badge) li.append(el('em', '', `[${badge.text}] `));
+    const text = el('span', d.refused ? 'refused' : '', d.spoken_text || d.detail_text || '');
+    if (badge && badge.kind === 'expired') text.style.textDecoration = 'line-through';
+    li.append(text);
+    li.title = badge && badge.kind === 'expired' ? `Not aired: ${badge.reason}` : d.detail_text || '';
     li.onclick = () => seek(rec.session_time);
     radio.append(li);
   }
