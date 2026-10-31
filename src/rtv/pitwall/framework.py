@@ -31,14 +31,15 @@ from typing import Any
 from pydantic import BaseModel, Field, computed_field
 
 from rtv.logging import get_logger
+from rtv.pitwall import agent_input
 from rtv.pitwall.activity import Tracer, safe_trace, summarize
+from rtv.pitwall.agent_input import SPOKEN_WORD_LIMIT
+from rtv.pitwall.agent_input import as_text as _as_text
 from rtv.pitwall.validator import FactSet, GroundingReport, validate_output
 from rtv.racestate.models import EventType, RaceEvent, RaceState
 
 log = get_logger("pitwall.framework")
 
-#: Radio is a scarce channel; a message longer than this stops being radio.
-SPOKEN_WORD_LIMIT = 25
 #: Pause before the single retry of a failed model call.
 RETRY_BACKOFF_S = 0.5
 
@@ -417,6 +418,9 @@ class AgentRuntime:
         #: The run being traced. One agent never overlaps itself (one worker,
         #: one-slot inbox), so per-instance state is enough.
         self._trace_run: dict[str, Any] | None = None
+        #: run_start fields not yet written, and records held back behind it.
+        self._pending_start: dict[str, Any] | None = None
+        self._held: list[tuple[str, dict[str, Any]]] = []
         #: Why the last :meth:`match` returned ``None``, for the dispatch trace.
         self.last_skip: str | None = None
         self.provider = provider
@@ -492,7 +496,11 @@ class AgentRuntime:
         started = time.perf_counter()
         turns_before = self.turns
         run = self._begin_trace(event, events, radio_history)
-        message = await self._invoke(event, state, events, radio_history)
+        try:
+            message = await self._invoke(event, state, events, radio_history)
+        finally:
+            # A run that failed before its input was built still gets a run_start.
+            self._start_run(None)
         if run is not None:
             if message is None:
                 outcome = "error"
@@ -533,12 +541,23 @@ class AgentRuntime:
             config=self.tool_config,
             extras=self.tool_extras,
         )
-        system = self._system_blocks(slice_)
         tools_used: list[str] = []
         prefetched = self._prefetch(ctx, facts, tools_used, state, event)
-        messages: list[dict[str, Any]] = [
-            {"role": "user", "content": self._instruction(event, radio_history, prefetched)}
-        ]
+        # The run's whole model input as data. It goes on run_start, and the first
+        # call is rebuilt from it, so the journal holds exactly what was sent.
+        record = agent_input.build_input(
+            spec,
+            system_prompt=self.system_prompt,
+            state_slice=slice_,
+            event=event.to_api(),
+            radio_history=radio_history,
+            prefetched=prefetched,
+            provider=self._provider_info(),
+        )
+        self._start_run(record)
+        first = agent_input.model_input(record)
+        system = first["system"]
+        messages: list[dict[str, Any]] = first["messages"]
 
         try:
             output = await self._converse_with_retry(
@@ -762,6 +781,9 @@ class AgentRuntime:
             args=_trace_args(args),
             ok=not is_error,
             result=summarize(payload),
+            # The whole result, for the journal only (stripped from the live feed):
+            # with the run_start input it rebuilds every later turn of the run.
+            result_full=agent_input.jsonable(payload),
             latency_ms=round((time.perf_counter() - tool_started) * 1000.0, 2),
             **extra,
         )
@@ -847,20 +869,43 @@ class AgentRuntime:
             "calls": 0,
         }
         self._trace_run = run
-        self._trace(
-            "run_start",
-            trigger=event.event_type.value,
-            severity=event.severity.value,
-            model=self.spec.model,
+        # run_start waits for the model input, which needs the prefetch results;
+        # the prefetch tool_call records are held until it is written.
+        self._pending_start = {
+            "trigger": event.event_type.value,
+            "severity": event.severity.value,
+            "model": self.spec.model,
             # The radio this run is shown: the only way one agent hears another.
-            context_radio=[
+            "context_radio": [
                 {"message_id": m.message_id, "agent": m.agent} for m in radio_history
             ],
-            context_events=len(events),
-        )
+            "context_events": len(events),
+        }
+        self._held = []
         return run
 
+    def _start_run(self, record: dict[str, Any] | None) -> None:
+        """Write the pending run_start (with ``input`` when there is one), then the
+        records held back for it. Does nothing once the run_start is written."""
+        start, held = self._pending_start, self._held
+        if start is None:
+            return
+        self._pending_start, self._held = None, []
+        if record is not None:
+            start["input"] = record
+        self._emit("run_start", start)
+        for kind, data in held:
+            self._emit(kind, data)
+
     def _trace(self, kind: str, **data: Any) -> None:
+        if self._trace_run is None:
+            return
+        if self._pending_start is not None:
+            self._held.append((kind, data))
+            return
+        self._emit(kind, data)
+
+    def _emit(self, kind: str, data: dict[str, Any]) -> None:
         run = self._trace_run
         if run is None:
             return
@@ -889,60 +934,19 @@ class AgentRuntime:
         )
 
     # ---- context assembly ------------------------------------------------
-    def _system_blocks(self, slice_: dict[str, Any]) -> list[dict[str, Any]]:
-        """Stable role prompt first (cached), volatile state after it.
+    @property
+    def system_prompt(self) -> str:
+        """The stable half of the system prompt: role prompt plus grounding rules."""
+        return self.spec.role_prompt + "\n\n" + GROUNDING_RULES
 
-        Ordering matters: prompt caching is a prefix match, so the part that never
-        changes has to come first or nothing caches (see the Layer-3b coach).
-        """
-        return [
-            {
-                "type": "text",
-                "text": self.spec.role_prompt + "\n\n" + GROUNDING_RULES,
-                "cache_control": {"type": "ephemeral"},
-            },
-            {"type": "text", "text": "RACE STATE:\n" + _as_text(slice_)},
-        ]
-
-    def _instruction(
-        self,
-        event: RaceEvent,
-        radio_history: Sequence[RadioMessage],
-        prefetched: Sequence[tuple[str, dict[str, Any], Any]] = (),
-    ) -> str:
-        parts = [
-            f"TRIGGER: {event.key} (severity {event.severity.value}) at "
-            f"session time {event.session_time:.1f}s"
-            + (f", lap {event.lap}" if event.lap is not None else "")
-            + f".\nEvent payload: {_as_text(event.payload)}"
-        ]
-        if radio_history:
-            recent = "\n".join(
-                f"- [{m.agent}/{m.priority.value}] {m.spoken_text}" for m in radio_history[-5:]
-            )
-            parts.append(
-                "RECENT RADIO (do not repeat a call that still stands):\n" + recent
-            )
-        if prefetched:
-            parts.append(
-                "TOOL RESULTS (already called for you, as if you had called them):\n"
-                + "\n".join(
-                    f"- {name}({_as_text(args) if args else ''}): {_as_text(payload)}"
-                    for name, args, payload in prefetched
-                )
-            )
-            parts.append(
-                "If these and the race state settle it, answer now in the required "
-                "structure; call another tool only for a figure that is not here. "
-                f"Keep spoken_text under {SPOKEN_WORD_LIMIT} words."
-            )
-        else:
-            parts.append(
-                "Call the tools you need, then answer in the required structure. "
-                "Keep spoken_text under "
-                f"{SPOKEN_WORD_LIMIT} words."
-            )
-        return "\n\n".join(parts)
+    def _provider_info(self) -> dict[str, Any]:
+        describe = getattr(self.provider, "describe", None)
+        if callable(describe):
+            try:
+                return dict(describe())
+            except Exception:  # pragma: no cover - defensive
+                log.exception("Provider describe() failed")
+        return {"name": type(self.provider).__name__}
 
     # ---- output ----------------------------------------------------------
     def _to_message(
@@ -1045,18 +1049,6 @@ def _payload_of(output: AgentOutput) -> dict[str, Any]:
         mode="json", exclude={"spoken_text", "detail_text", "priority"}
     )
 
-
-def _as_text(value: Any) -> str:
-    import json
-
-    if isinstance(value, str):
-        return value
-    if isinstance(value, BaseModel):
-        value = value.model_dump(mode="json")
-    try:
-        return json.dumps(value, separators=(",", ":"), default=str)
-    except (TypeError, ValueError):  # pragma: no cover - defensive
-        return str(value)
 
 
 def _trace_args(args: Any, *, limit: int = 120) -> dict[str, Any]:
