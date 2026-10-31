@@ -183,6 +183,12 @@ COACH = AgentSpec(
     cooldown_s=120.0,
     state_slice=coach_slice,
     subject=coach_subject,
+    # Every run on the Spa replay called these two first; with no corner named,
+    # get_corner_detail covers the trigger's own lap distance.
+    prefetch=(
+        ("get_recent_detector_events", {"limit": 10}),
+        ("get_corner_detail", {}),
+    ),
     max_tool_iterations=3,
 )
 

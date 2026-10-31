@@ -262,6 +262,12 @@ def strategist_policy(output: AgentOutput, state: RaceState, event: RaceEvent) -
     return None
 
 
+def _simulate_planned_stop(state: RaceState, event: RaceEvent) -> dict:
+    """Price the planned stop lap (or this lap, when there is no plan)."""
+    target = stop_plan(state).target_lap
+    return {"stop_lap": target} if target is not None else {}
+
+
 STRATEGIST = AgentSpec(
     name=AGENT_NAME,
     role_prompt=STRATEGIST_PROMPT,
@@ -283,6 +289,11 @@ STRATEGIST = AgentSpec(
     state_slice=strategist_slice,
     subject=strategist_subject,
     policy=strategist_policy,
+    # Every run on the Spa replay opened with these two calls.
+    prefetch=(
+        ("get_fuel_projection", {}),
+        ("simulate_pit_outcome", _simulate_planned_stop),
+    ),
     max_tool_iterations=4,
 )
 

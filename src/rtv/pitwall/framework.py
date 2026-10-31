@@ -253,6 +253,11 @@ class AgentSpec:
     #: one the deterministic data allows (the strategist's stop plan, say). A
     #: violation gets one repair turn, then the message is withheld, not aired.
     policy: Callable[[AgentOutput, RaceState, RaceEvent], str | None] | None = None
+    #: Tools the runtime calls before the first model turn, as ``(name, args)``;
+    #: ``args`` may be a callable of ``(state, event)``. Their results go into the
+    #: first message and the fact set. On the Spa replay every run made the same
+    #: one or two calls first, at about 11 s per model turn.
+    prefetch: tuple[tuple[str, Any], ...] = ()
     #: Ceiling on tool-use round trips before the runtime demands an answer.
     max_tool_iterations: int = 4
     enabled: bool = True
@@ -276,6 +281,7 @@ class AgentSpec:
                 for t in self.triggers
             ],
             "max_tokens": self.max_tokens,
+            "prefetch": [name for name, _ in self.prefetch],
             "output_contract": self.output_model.__name__,
         }
 
@@ -339,6 +345,8 @@ class AgentRuntime:
         #: the number the session cost guard counts.
         self.turns = 0
         self.last_latency_ms: float | None = None
+        #: Tokens over every call this runtime made, when the backend reports them.
+        self.tokens: dict[str, int] = {"input_tokens": 0, "output_tokens": 0}
         self.avg_latency_ms: float | None = None
         self._latency_total_ms = 0.0
 
@@ -431,10 +439,11 @@ class AgentRuntime:
             extras=self.tool_extras,
         )
         system = self._system_blocks(slice_)
-        messages: list[dict[str, Any]] = [
-            {"role": "user", "content": self._instruction(event, radio_history)}
-        ]
         tools_used: list[str] = []
+        prefetched = self._prefetch(ctx, facts, tools_used, state, event)
+        messages: list[dict[str, Any]] = [
+            {"role": "user", "content": self._instruction(event, radio_history, prefetched)}
+        ]
 
         try:
             output = await self._converse_with_retry(
@@ -544,6 +553,9 @@ class AgentRuntime:
             self._latency_total_ms += elapsed
             self.last_latency_ms = round(elapsed, 2)
             self.avg_latency_ms = round(self._latency_total_ms / self.turns, 2)
+            usage = getattr(response, "usage", None) or {}
+            for key in ("input_tokens", "output_tokens"):
+                self.tokens[key] += usage.get(key, 0)
             if call is not None:
                 tool_calls = getattr(response, "tool_calls", None) or []
                 self._trace(
@@ -555,6 +567,9 @@ class AgentRuntime:
                     latency_ms=round(elapsed, 2),
                     tool_calls=[c.name for c in tool_calls],
                     answered=getattr(response, "output", None) is not None,
+                    input_tokens=usage.get("input_tokens"),
+                    output_tokens=usage.get("output_tokens"),
+                    cache_read_input_tokens=usage.get("cache_read_input_tokens"),
                 )
 
     async def _converse(
@@ -585,30 +600,9 @@ class AgentRuntime:
             messages.append({"role": "assistant", "content": response.assistant_content})
             results = []
             for call in response.tool_calls:
-                tool = spec.tool(call.name)
-                if tool is None:
-                    payload: Any = {"error": f"Unknown tool {call.name!r}."}
-                    is_error = True
-                else:
-                    tools_used.append(call.name)
-                    tool_started = time.perf_counter()
-                    try:
-                        payload = tool(ctx, call.input or {})
-                        is_error = False
-                    except Exception as exc:  # tool bugs are the agent's problem, not fatal
-                        log.exception("Tool %s failed for %s", call.name, spec.name)
-                        payload, is_error = {"error": str(exc)}, True
-                    else:
-                        # Everything a tool returned is now citable ground truth.
-                        facts.add(call.name, payload)
-                    self._trace(
-                        "tool_call",
-                        tool=call.name,
-                        args=_trace_args(call.input),
-                        ok=not is_error,
-                        result=summarize(payload),
-                        latency_ms=round((time.perf_counter() - tool_started) * 1000.0, 2),
-                    )
+                payload, is_error = self._run_tool(
+                    call.name, call.input or {}, ctx, facts, tools_used
+                )
                 results.append(
                     {
                         "type": "tool_result",
@@ -619,6 +613,65 @@ class AgentRuntime:
                 )
             messages.append({"role": "user", "content": results})
         return None
+
+    def _run_tool(
+        self,
+        name: str,
+        args: dict[str, Any],
+        ctx: ToolContext,
+        facts: FactSet,
+        tools_used: list[str],
+        *,
+        prefetched: bool = False,
+    ) -> tuple[Any, bool]:
+        tool = self.spec.tool(name)
+        if tool is None:
+            return {"error": f"Unknown tool {name!r}."}, True
+        tools_used.append(name)
+        tool_started = time.perf_counter()
+        try:
+            payload = tool(ctx, args)
+            is_error = False
+        except Exception as exc:  # tool bugs are the agent's problem, not fatal
+            log.exception("Tool %s failed for %s", name, self.spec.name)
+            payload, is_error = {"error": str(exc)}, True
+        else:
+            # Everything a tool returned is now citable ground truth.
+            facts.add(name, payload)
+        extra = {"prefetched": True} if prefetched else {}
+        self._trace(
+            "tool_call",
+            tool=name,
+            args=_trace_args(args),
+            ok=not is_error,
+            result=summarize(payload),
+            latency_ms=round((time.perf_counter() - tool_started) * 1000.0, 2),
+            **extra,
+        )
+        return payload, is_error
+
+    def _prefetch(
+        self,
+        ctx: ToolContext,
+        facts: FactSet,
+        tools_used: list[str],
+        state: RaceState,
+        event: RaceEvent,
+    ) -> list[tuple[str, dict[str, Any], Any]]:
+        """Run the spec's prefetch tools: deterministic, local and sub-millisecond."""
+        out: list[tuple[str, dict[str, Any], Any]] = []
+        for name, args in self.spec.prefetch:
+            try:
+                resolved = dict(args(state, event) if callable(args) else args or {})
+            except Exception:
+                log.exception("Prefetch args failed for %s/%s", self.spec.name, name)
+                continue
+            payload, is_error = self._run_tool(
+                name, resolved, ctx, facts, tools_used, prefetched=True
+            )
+            if not is_error:
+                out.append((name, resolved, payload))
+        return out
 
     async def _repair(
         self,
@@ -735,7 +788,10 @@ class AgentRuntime:
         ]
 
     def _instruction(
-        self, event: RaceEvent, radio_history: Sequence[RadioMessage]
+        self,
+        event: RaceEvent,
+        radio_history: Sequence[RadioMessage],
+        prefetched: Sequence[tuple[str, dict[str, Any], Any]] = (),
     ) -> str:
         parts = [
             f"TRIGGER: {event.key} (severity {event.severity.value}) at "
@@ -750,11 +806,25 @@ class AgentRuntime:
             parts.append(
                 "RECENT RADIO (do not repeat a call that still stands):\n" + recent
             )
-        parts.append(
-            "Call the tools you need, then answer in the required structure. "
-            "Keep spoken_text under "
-            f"{SPOKEN_WORD_LIMIT} words."
-        )
+        if prefetched:
+            parts.append(
+                "TOOL RESULTS (already called for you, as if you had called them):\n"
+                + "\n".join(
+                    f"- {name}({_as_text(args) if args else ''}): {_as_text(payload)}"
+                    for name, args, payload in prefetched
+                )
+            )
+            parts.append(
+                "If these and the race state settle it, answer now in the required "
+                "structure; call another tool only for a figure that is not here. "
+                f"Keep spoken_text under {SPOKEN_WORD_LIMIT} words."
+            )
+        else:
+            parts.append(
+                "Call the tools you need, then answer in the required structure. "
+                "Keep spoken_text under "
+                f"{SPOKEN_WORD_LIMIT} words."
+            )
         return "\n\n".join(parts)
 
     # ---- output ----------------------------------------------------------
@@ -833,6 +903,8 @@ class AgentRuntime:
             "retries": self.retries,
             "last_latency_ms": self.last_latency_ms,
             "avg_latency_ms": self.avg_latency_ms,
+            "input_tokens": self.tokens["input_tokens"],
+            "output_tokens": self.tokens["output_tokens"],
             "cooldowns": dict(self._last_fired),
         }
 

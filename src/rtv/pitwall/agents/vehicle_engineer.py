@@ -207,6 +207,12 @@ VEHICLE_ENGINEER = AgentSpec(
     cooldown_s=45.0,
     state_slice=vehicle_engineer_slice,
     subject=vehicle_engineer_subject,
+    # What its runs on the Spa replay called first, nearly every time.
+    prefetch=(
+        ("get_car_health", {}),
+        ("get_tyre_trend", {}),
+        ("get_recent_detector_events", {"limit": 10}),
+    ),
     max_tool_iterations=3,
 )
 
