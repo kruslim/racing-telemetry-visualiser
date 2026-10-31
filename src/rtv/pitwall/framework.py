@@ -550,7 +550,7 @@ class AgentRuntime:
             prefetched=prefetched,
             provider=self._provider_info(),
         )
-        self._start_run(record)
+        self._start_run(record, state)
         first = agent_input.model_input(record)
         system = first["system"]
         messages: list[dict[str, Any]] = first["messages"]
@@ -570,7 +570,7 @@ class AgentRuntime:
 
         report = self._validate(output, facts)
         violation = self._check_policy(output, state, event)
-        self._trace_validate(report, repaired=False, policy=violation)
+        self._trace_validate(report, repaired=False, policy=violation, output=output)
         if (not report.ok or violation) and self._repair_attempts > 0:
             repaired = await self._repair(
                 system, messages, ctx, facts, tools_used, report, violation
@@ -579,7 +579,7 @@ class AgentRuntime:
                 output = repaired
                 report = self._validate(output, facts)
                 violation = self._check_policy(output, state, event)
-                self._trace_validate(report, repaired=True, policy=violation)
+                self._trace_validate(report, repaired=True, policy=violation, output=output)
 
         return self._to_message(event, output, report, tools_used, violation)
 
@@ -880,15 +880,22 @@ class AgentRuntime:
         self._held = []
         return run
 
-    def _start_run(self, record: dict[str, Any] | None) -> None:
+    def _start_run(self, record: dict[str, Any] | None, state: RaceState | None = None) -> None:
         """Write the pending run_start (with ``input`` when there is one), then the
-        records held back for it. Does nothing once the run_start is written."""
+        records held back for it. Does nothing once the run_start is written.
+
+        ``state`` is the whole snapshot the run was given (``state_full``): the input
+        only holds the agent's slice, and the policy, the validity rule and the eval
+        checks read the rest. Journal-only, like ``input``.
+        """
         start, held = self._pending_start, self._held
         if start is None:
             return
         self._pending_start, self._held = None, []
         if record is not None:
             start["input"] = record
+        if state is not None:
+            start["state_full"] = agent_input.jsonable(state)
         self._emit("run_start", start)
         for kind, data in held:
             self._emit(kind, data)
@@ -917,8 +924,18 @@ class AgentRuntime:
         )
 
     def _trace_validate(
-        self, report: GroundingReport, *, repaired: bool, policy: str | None = None
+        self,
+        report: GroundingReport,
+        *,
+        repaired: bool,
+        policy: str | None = None,
+        output: AgentOutput | None = None,
     ) -> None:
+        extra = {}
+        if output is not None:
+            # The model's own structured answer, before refusal or truncation
+            # rewrites it: what an eval replays through today's checks.
+            extra["output_full"] = output.model_dump(mode="json")
         self._trace(
             "validate",
             ok=report.ok and policy is None,
@@ -927,6 +944,7 @@ class AgentRuntime:
             word_count=report.word_count,
             over_word_limit=report.over_word_limit,
             repaired=repaired,
+            **extra,
         )
 
     # ---- context assembly ------------------------------------------------
