@@ -121,8 +121,9 @@ class ActivityLog(EventBus):
 
 
 #: Data fields kept for the journal but left out of the live feed: a run's whole
-#: model input (``run_start``) and whole tool results (``tool_call``).
-JOURNAL_ONLY_FIELDS = ("input", "result_full")
+#: model input and state snapshot (``run_start``), whole tool results
+#: (``tool_call``) and the model's structured answer (``validate``).
+JOURNAL_ONLY_FIELDS = ("input", "state_full", "result_full", "output_full")
 
 
 def public(record: dict[str, Any]) -> dict[str, Any]:

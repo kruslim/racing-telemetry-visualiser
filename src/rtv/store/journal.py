@@ -33,6 +33,11 @@ without one is version 1):
    settings; :mod:`rtv.pitwall.agent_input`), and ``tool_call`` records hold the
    whole result as ``data.result_full``. ``agent_input.model_input`` rebuilds the
    first model call of a run from its ``run_start`` record.
+3. ``run_start`` also holds ``data.state_full``, the whole :class:`RaceState`
+   snapshot the run was given (the input holds only the agent's slice), and each
+   ``validate`` record holds ``data.output_full``, the model's structured answer
+   before a refusal or truncation rewrote it. Together they make a run an eval case
+   (``evals/real``): its checks can be re-run offline on the recorded answer.
 
 Readers must accept both: every new field is additive, so a version-1 journal
 reads the same as before and simply has no inputs.
@@ -58,7 +63,7 @@ from rtv.logging import get_logger
 log = get_logger("store.journal")
 
 #: Written on every new run's lifecycle start record. See the module docstring.
-JOURNAL_SCHEMA_VERSION = 2
+JOURNAL_SCHEMA_VERSION = 3
 
 #: Kinds the recorder writes itself; anything else is an activity record.
 RECORDER_KINDS = ("lifecycle", "race_event", "radio", "state")

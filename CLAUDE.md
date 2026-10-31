@@ -65,6 +65,9 @@ files that were already formatted and sorts imports in every edited file.
 - `evals/` checks shared with the in-loop validator, fixtures, cases, runner, LLM judge,
   `run.py` (the live, paid eval), and the test-only generated data
   (`synthetic_race.py`, `synthetic_session.py`).
+  `evals/real/` holds eval cases cut from a real race journal (`spa_run`, built by
+  `scripts/build_real_evals.py`): offline in pytest against `baseline.json`, live via
+  `evals/run_pitwall.py --real spa_run` (paid).
 - `tests/` pytest suite; `conftest.py` has the `ScriptedModel` that drives the coach.
 - `scripts/` build, smoke, import and deep-coach helpers.
 
