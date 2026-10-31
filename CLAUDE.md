@@ -9,7 +9,7 @@ in-loop citation checks, plus a hermetic eval harness. v2 adds a live pitwall: a
 deterministic race-state engine, four event-driven agents (strategist, vehicle engineer,
 spotter, coach) on one prioritised radio feed, browser TTS, and a live pit-stand UI.
 `README.md` has the full tour; `docs/COACHING.md`, `docs/PITWALL.md`, `docs/TRACKS.md`,
-`docs/VISION.md` and `docs/VARIABLES.md` go deeper.
+`docs/VISION.md`, `docs/VARIABLES.md` and `docs/WEEKLY_EVAL.md` go deeper.
 
 ## Commands
 
@@ -128,7 +128,7 @@ files that were already formatted and sorts imports in every edited file.
 
 Anything that calls Kimi uses the user's Kimi Code quota and needs the user's go-ahead
 first: `evals/run.py` (coach on Kimi plus the judge on Gemini; `--no-judge`
-still calls the coach), `evals/run_pitwall.py` without `--dry-run`,
+still calls the coach), `evals/run_pitwall.py` without `--dry-run`, `scripts/weekly_eval.py` without `--dry-run` (the weekly scheduled task, `docs/WEEKLY_EVAL.md`),
 `scripts/deep_coach.py` without `--findings-only`, `scripts/check_llm.py`, the
 `orchestrator`, the pitwall agents (`RTV_PITWALL_AGENTS=true`), vision analyses
 (`POST .../vision/analyses` with `RTV_VISION_MODE` on; the `/vision/plan` dry run is free), and
