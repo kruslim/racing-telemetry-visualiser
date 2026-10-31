@@ -54,6 +54,11 @@ class GetLapFindingsInput(BaseModel):
     ref_lap: int
 
 
+class GetVisualNotesInput(BaseModel):
+    session_id: str
+    lap: int | None = Field(default=None, description="One lap; omit for the whole session.")
+
+
 class CompareChannelInput(BaseModel):
     session_id: str
     name: str
@@ -85,6 +90,14 @@ GET_LAP_FINDINGS_DESCRIPTION = (
     "and a 'chief' summary listing the top-3 priority corners and total time available. Base "
     "your coaching on these numbers — do not invent figures."
 )
+GET_VISUAL_NOTES_DESCRIPTION = (
+    "Visual notes from the onboard video: what a vision model saw at moments the telemetry "
+    "flagged (offs, lock-ups, incidents, the top time-loss corners), e.g. kerb use, the line "
+    "against the track edges, other cars, visible damage. Words only, never figures, and "
+    "already checked against telemetry. Use them to explain *how* a corner went wrong; the "
+    "lap findings stay the source of every number. 'available': false means no video was "
+    "analysed for this session."
+)
 COMPARE_CHANNEL_DESCRIPTION = (
     "Compare one raw channel (e.g. Speed, Throttle, Brake, Gear) across laps, aligned on lap "
     "distance (0..1). Use this only when get_lap_findings is not enough and you need the "
@@ -113,6 +126,14 @@ def _get_lap_findings(provider: FindingsProvider, inp: GetLapFindingsInput) -> d
     return provider.lap_findings(inp.session_id, inp.main_lap, inp.ref_lap)
 
 
+def _get_visual_notes(provider: FindingsProvider, inp: GetVisualNotesInput) -> dict:
+    # Optional on the protocol: the eval fixtures and older providers have no video.
+    fetch = getattr(provider, "visual_notes", None)
+    if fetch is None:
+        return {"session_id": inp.session_id, "available": False, "notes": []}
+    return fetch(inp.session_id, inp.lap)
+
+
 def _compare_channel(provider: FindingsProvider, inp: CompareChannelInput) -> dict:
     return provider.compare_channel(inp.session_id, inp.name, inp.laps, inp.grid)
 
@@ -128,6 +149,9 @@ TOOLS: tuple[ToolSpec, ...] = (
     ),
     ToolSpec(
         "get_lap_findings", GET_LAP_FINDINGS_DESCRIPTION, GetLapFindingsInput, _get_lap_findings
+    ),
+    ToolSpec(
+        "get_visual_notes", GET_VISUAL_NOTES_DESCRIPTION, GetVisualNotesInput, _get_visual_notes
     ),
     ToolSpec(
         "compare_channel", COMPARE_CHANNEL_DESCRIPTION, CompareChannelInput, _compare_channel

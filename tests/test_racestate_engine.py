@@ -7,12 +7,13 @@ from evals.synthetic_race import ScenarioSpec, replay_scenario, scenario_catalog
 
 from rtv.racestate import RaceStateEngine
 from rtv.racestate.models import EventType, FlagPhase
+from rtv.racestate.strategy_math import lap_left
 
 #: The scripted milestones, in the order the scenario stages them.
 EXPECTED_SEQUENCE = [
     "flag_change:yellow",
-    "lockup",
     "pit_window_open",
+    "lockup",
     "pit_entry",
     "pit_exit",
 ]
@@ -80,22 +81,32 @@ def test_fuel_consumption_is_learned_from_green_laps(engine):
 
 
 def test_pit_window_lands_on_the_derived_lap(engine):
-    """4.0 L tank / 0.5 L per lap = 8 laps; a 12-lap race from 3.0 L opens at lap 5."""
+    """4.0 L tank / 0.5 L per lap = 8 laps; a 12-lap race from 3.0 L opens at lap 4.
+
+    A stop at the end of lap 4 leaves laps 5-12, the 8 a full tank covers. The
+    1.5 L aboard at the lap-4 line is 3 laps (4, 5 and 6), so lap 6 is the last
+    one the car can pit at the end of. Both bounds used to be a lap late (5 and
+    7): they counted the whole lap the car was already on.
+    """
     opens = [e for e in engine.bus.history() if e.event_type is EventType.PIT_WINDOW_OPEN]
     assert len(opens) == 1
     payload = opens[0].payload
-    assert payload["lap"] == 5
-    assert payload["earliest_lap"] == 5
-    assert payload["latest_lap"] == 7
-    assert payload["laps_remaining"] == pytest.approx(2.0, abs=1e-6)
+    assert payload["lap"] == 4
+    assert payload["earliest_lap"] == 4
+    assert payload["latest_lap"] == 6
+    assert payload["laps_remaining"] == pytest.approx(3.0, abs=1e-6)
 
 
 def test_fuel_margin_is_consistent_with_the_tank_after_the_stop(engine):
-    fuel = engine.snapshot().fuel
-    # 7 laps left at 0.5 L each = 3.5 L needed against a nearly full 4.0 L tank.
-    assert fuel.laps_to_finish == pytest.approx(7.0)
-    assert fuel.fuel_to_finish == pytest.approx(3.5, abs=1e-6)
-    assert fuel.margin_l == pytest.approx(fuel.level - 3.5, abs=1e-3)
+    state = engine.snapshot()
+    fuel = state.fuel
+    # The scenario ends part-way round lap 6: the rest of it plus laps 7-12 at
+    # 0.5 L each, against a nearly full 4.0 L tank. Distances count from the
+    # car's position, so the margin holds steady through the lap.
+    ltf = 6.0 + lap_left(state)
+    assert fuel.laps_to_finish == pytest.approx(ltf, abs=1e-3)
+    assert fuel.fuel_to_finish == pytest.approx(ltf * 0.5, abs=1e-3)
+    assert fuel.margin_l == pytest.approx(fuel.level - ltf * 0.5, abs=1e-3)
     assert fuel.margin_laps > 0
     # A stop is no longer required, so the window must not read open.
     assert fuel.window_open is False
@@ -129,9 +140,10 @@ def test_the_flags_settle_laps_to_finish_at_the_end_of_a_timed_race(
     state.fuel.level, state.fuel.per_lap = 5.9, 3.97
     state.flags.phase = phase
     engine._fuel_critical_announced = False
+    engine._clean_lap_times.clear()  # project at the 141 s set above
 
     events = []
-    engine._recompute_fuel_plan(events)
+    engine._recompute_fuel_plan(events, at_line=True)
     assert state.fuel.laps_to_finish == pytest.approx(laps_to_finish)
     fired = any(e.event_type is EventType.FUEL_CRITICAL for e in events)
     assert fired is critical

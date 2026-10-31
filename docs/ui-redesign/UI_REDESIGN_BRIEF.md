@@ -586,6 +586,26 @@ Bad laps give errors like `404 {"detail": "'Session … has no lap 999'"}`.
 
 ---
 
+### 5.9 Onboard video and visual notes (review, optional)
+
+Backend only so far; full contract in `docs/VISION.md`. A session can have registered
+onboard videos (`GET /sessions/{id}/videos`), each with a sync that maps its clock to
+session time (`video_time = (session_time - sync.offset) / sync.rate`;
+`GET /videos/{vid}/file` streams it with Range for a `<video>` element). A vision
+analysis adds **visual notes**: a VLM's words about moments the telemetry flagged (an
+off, a lock-up, an incident, a top time-loss corner), e.g. "Turned in early and ran out
+to the exit kerb." `GET /sessions/{id}/vision/notes` returns them with
+`moment.session_time`, `t_start`/`t_end`, `lap`, `corner`, the frames sent and each
+observation's `kind`, `confidence` and `status`. `summary.vision` counts them.
+
+Design for: no video (the common case, hide the panel), a video that is not synced yet
+(the user sets a line crossing: lap N starts at video time T), an analysis running
+(notes arrive one by one), a note whose status is `trigger_not_seen` ("check the sync"),
+and notes that carry **no numbers ever**: every figure next to them comes from the
+findings. Running an analysis uses the Kimi quota, so it needs the same confirm step as
+turning the agents on; the free `POST /vision/plan` dry run gives the moment and frame
+count to show in that prompt.
+
 ## 6. States every design must cover
 
 | State | When | Live page | Review page |

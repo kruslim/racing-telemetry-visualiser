@@ -217,7 +217,10 @@ async def test_the_runtime_services_tool_calls_and_feeds_results_back(state):
             return tool_use_turn([("get_fuel_projection", {})])
         return _answer()
 
-    runtime = AgentRuntime(STRATEGIST, ScriptedProvider(handler))
+    from dataclasses import replace
+
+    # Without prefetch, so the call under test is the model's own.
+    runtime = AgentRuntime(replace(STRATEGIST, prefetch=()), ScriptedProvider(handler))
     message = await runtime.invoke(_event(), state)
 
     assert message is not None

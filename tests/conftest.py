@@ -35,6 +35,11 @@ def _no_api_key() -> None:
     monkeypatch = pytest.MonkeyPatch()
     for name in _LLM_KEY_ENVS:
         monkeypatch.delenv(name, raising=False)
+    # rtv.llm also reads the key from .env; a developer's real .env must never
+    # reach a test.
+    import rtv.llm
+
+    monkeypatch.setattr(rtv.llm, "_from_env_file", lambda name: None)
     yield
     monkeypatch.undo()
 

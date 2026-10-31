@@ -18,6 +18,14 @@ from typing import Any
 GAIN_TOL = 0.05  # seconds; how close a claimed time gain must be to the finding
 SPEED_TOL = 0.5  # km/h; tolerance for a cited minimum-speed figure
 
+# Figures written in prose (``rtv.coaching.agent.prose``). The findings' own texts round to whole
+# metres and km/h, so prose quoting them must be allowed that rounding and no more.
+POSITION_TOL_M = 5.0  # metres; a quoted track position (brake point, apex)
+DELTA_TOL_M = 1.5  # metres; a quoted gap ("32 m late")
+PROSE_SPEED_TOL = 1.0  # km/h; a speed in prose, against the finding or its rounded text
+G_TOL = 0.02  # g; a quoted lateral-g figure
+APPROX_FRACTION = 0.1  # "~30 m", "about 0.3 s": the slack a hedged gap or time gets
+
 # Which citable figures map to a direct field on a CornerFinding, and each field's tolerance.
 # ``time_loss`` (per-diagnostic) and ``brake_m`` (free-form diagnostic text) are validated only
 # for corner-existence here — matching their exact value is a deliberate follow-up.

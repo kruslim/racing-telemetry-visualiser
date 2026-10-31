@@ -33,7 +33,7 @@ from pydantic import BaseModel, Field, computed_field
 from rtv.logging import get_logger
 from rtv.pitwall.activity import Tracer, safe_trace, summarize
 from rtv.pitwall.validator import FactSet, GroundingReport, validate_output
-from rtv.racestate.models import RaceEvent, RaceState
+from rtv.racestate.models import EventType, RaceEvent, RaceState
 
 log = get_logger("pitwall.framework")
 
@@ -248,6 +248,16 @@ class AgentSpec:
     subject: Callable[[RaceEvent, AgentOutput], str] = field(
         default=lambda event, out: event.event_type.value
     )
+    #: Deterministic decision check: ``(output, state, event) -> reason | None``.
+    #: The validator proves the numbers are real; a policy proves the call is
+    #: one the deterministic data allows (the strategist's stop plan, say). A
+    #: violation gets one repair turn, then the message is withheld, not aired.
+    policy: Callable[[AgentOutput, RaceState, RaceEvent], str | None] | None = None
+    #: Tools the runtime calls before the first model turn, as ``(name, args)``;
+    #: ``args`` may be a callable of ``(state, event)``. Their results go into the
+    #: first message and the fact set. On the Spa replay every run made the same
+    #: one or two calls first, at about 11 s per model turn.
+    prefetch: tuple[tuple[str, Any], ...] = ()
     #: Ceiling on tool-use round trips before the runtime demands an answer.
     max_tool_iterations: int = 4
     enabled: bool = True
@@ -271,6 +281,7 @@ class AgentSpec:
                 for t in self.triggers
             ],
             "max_tokens": self.max_tokens,
+            "prefetch": [name for name, _ in self.prefetch],
             "output_contract": self.output_model.__name__,
         }
 
@@ -279,6 +290,8 @@ class AgentSpec:
 # runtime
 # --------------------------------------------------------------------------
 REFUSAL_SPOKEN = "Standby - I can't back that call with data yet."
+#: Shown (never spoken) for a call the agent's policy ruled out.
+POLICY_WITHHELD_SPOKEN = "Call withheld: it contradicts the fuel plan."
 
 
 class AgentRuntime:
@@ -332,6 +345,8 @@ class AgentRuntime:
         #: the number the session cost guard counts.
         self.turns = 0
         self.last_latency_ms: float | None = None
+        #: Tokens over every call this runtime made, when the backend reports them.
+        self.tokens: dict[str, int] = {"input_tokens": 0, "output_tokens": 0}
         self.avg_latency_ms: float | None = None
         self._latency_total_ms = 0.0
 
@@ -424,10 +439,11 @@ class AgentRuntime:
             extras=self.tool_extras,
         )
         system = self._system_blocks(slice_)
-        messages: list[dict[str, Any]] = [
-            {"role": "user", "content": self._instruction(event, radio_history)}
-        ]
         tools_used: list[str] = []
+        prefetched = self._prefetch(ctx, facts, tools_used, state, event)
+        messages: list[dict[str, Any]] = [
+            {"role": "user", "content": self._instruction(event, radio_history, prefetched)}
+        ]
 
         try:
             output = await self._converse_with_retry(
@@ -443,15 +459,30 @@ class AgentRuntime:
             return None
 
         report = self._validate(output, facts)
-        self._trace_validate(report, repaired=False)
-        if not report.ok and self._repair_attempts > 0:
-            repaired = await self._repair(system, messages, ctx, facts, tools_used, report)
+        violation = self._check_policy(output, state, event)
+        self._trace_validate(report, repaired=False, policy=violation)
+        if (not report.ok or violation) and self._repair_attempts > 0:
+            repaired = await self._repair(
+                system, messages, ctx, facts, tools_used, report, violation
+            )
             if repaired is not None:
                 output = repaired
                 report = self._validate(output, facts)
-                self._trace_validate(report, repaired=True)
+                violation = self._check_policy(output, state, event)
+                self._trace_validate(report, repaired=True, policy=violation)
 
-        return self._to_message(event, output, report, tools_used)
+        return self._to_message(event, output, report, tools_used, violation)
+
+    def _check_policy(
+        self, output: AgentOutput, state: RaceState, event: RaceEvent
+    ) -> str | None:
+        if self.spec.policy is None:
+            return None
+        try:
+            return self.spec.policy(output, state, event)
+        except Exception:
+            log.exception("Policy check failed for %s", self.spec.name)
+            return None
 
     def _validate(self, output: AgentOutput, facts: FactSet) -> GroundingReport:
         return validate_output(
@@ -522,6 +553,9 @@ class AgentRuntime:
             self._latency_total_ms += elapsed
             self.last_latency_ms = round(elapsed, 2)
             self.avg_latency_ms = round(self._latency_total_ms / self.turns, 2)
+            usage = getattr(response, "usage", None) or {}
+            for key in ("input_tokens", "output_tokens"):
+                self.tokens[key] += usage.get(key, 0)
             if call is not None:
                 tool_calls = getattr(response, "tool_calls", None) or []
                 self._trace(
@@ -533,6 +567,9 @@ class AgentRuntime:
                     latency_ms=round(elapsed, 2),
                     tool_calls=[c.name for c in tool_calls],
                     answered=getattr(response, "output", None) is not None,
+                    input_tokens=usage.get("input_tokens"),
+                    output_tokens=usage.get("output_tokens"),
+                    cache_read_input_tokens=usage.get("cache_read_input_tokens"),
                 )
 
     async def _converse(
@@ -563,30 +600,9 @@ class AgentRuntime:
             messages.append({"role": "assistant", "content": response.assistant_content})
             results = []
             for call in response.tool_calls:
-                tool = spec.tool(call.name)
-                if tool is None:
-                    payload: Any = {"error": f"Unknown tool {call.name!r}."}
-                    is_error = True
-                else:
-                    tools_used.append(call.name)
-                    tool_started = time.perf_counter()
-                    try:
-                        payload = tool(ctx, call.input or {})
-                        is_error = False
-                    except Exception as exc:  # tool bugs are the agent's problem, not fatal
-                        log.exception("Tool %s failed for %s", call.name, spec.name)
-                        payload, is_error = {"error": str(exc)}, True
-                    else:
-                        # Everything a tool returned is now citable ground truth.
-                        facts.add(call.name, payload)
-                    self._trace(
-                        "tool_call",
-                        tool=call.name,
-                        args=_trace_args(call.input),
-                        ok=not is_error,
-                        result=summarize(payload),
-                        latency_ms=round((time.perf_counter() - tool_started) * 1000.0, 2),
-                    )
+                payload, is_error = self._run_tool(
+                    call.name, call.input or {}, ctx, facts, tools_used
+                )
                 results.append(
                     {
                         "type": "tool_result",
@@ -598,6 +614,65 @@ class AgentRuntime:
             messages.append({"role": "user", "content": results})
         return None
 
+    def _run_tool(
+        self,
+        name: str,
+        args: dict[str, Any],
+        ctx: ToolContext,
+        facts: FactSet,
+        tools_used: list[str],
+        *,
+        prefetched: bool = False,
+    ) -> tuple[Any, bool]:
+        tool = self.spec.tool(name)
+        if tool is None:
+            return {"error": f"Unknown tool {name!r}."}, True
+        tools_used.append(name)
+        tool_started = time.perf_counter()
+        try:
+            payload = tool(ctx, args)
+            is_error = False
+        except Exception as exc:  # tool bugs are the agent's problem, not fatal
+            log.exception("Tool %s failed for %s", name, self.spec.name)
+            payload, is_error = {"error": str(exc)}, True
+        else:
+            # Everything a tool returned is now citable ground truth.
+            facts.add(name, payload)
+        extra = {"prefetched": True} if prefetched else {}
+        self._trace(
+            "tool_call",
+            tool=name,
+            args=_trace_args(args),
+            ok=not is_error,
+            result=summarize(payload),
+            latency_ms=round((time.perf_counter() - tool_started) * 1000.0, 2),
+            **extra,
+        )
+        return payload, is_error
+
+    def _prefetch(
+        self,
+        ctx: ToolContext,
+        facts: FactSet,
+        tools_used: list[str],
+        state: RaceState,
+        event: RaceEvent,
+    ) -> list[tuple[str, dict[str, Any], Any]]:
+        """Run the spec's prefetch tools: deterministic, local and sub-millisecond."""
+        out: list[tuple[str, dict[str, Any], Any]] = []
+        for name, args in self.spec.prefetch:
+            try:
+                resolved = dict(args(state, event) if callable(args) else args or {})
+            except Exception:
+                log.exception("Prefetch args failed for %s/%s", self.spec.name, name)
+                continue
+            payload, is_error = self._run_tool(
+                name, resolved, ctx, facts, tools_used, prefetched=True
+            )
+            if not is_error:
+                out.append((name, resolved, payload))
+        return out
+
     async def _repair(
         self,
         system: list[dict[str, Any]],
@@ -606,9 +681,12 @@ class AgentRuntime:
         facts: FactSet,
         tools_used: list[str],
         report: GroundingReport,
+        violation: str | None = None,
     ) -> AgentOutput | None:
         """One corrective turn. Cheaper than a wrong number on the radio."""
         problems = []
+        if violation:
+            problems.append(f"The call contradicts the deterministic data: {violation}.")
         if report.unsupported:
             problems.append(
                 "These figures are not in the race state or in any tool result you were "
@@ -680,10 +758,13 @@ class AgentRuntime:
             **data,
         )
 
-    def _trace_validate(self, report: GroundingReport, *, repaired: bool) -> None:
+    def _trace_validate(
+        self, report: GroundingReport, *, repaired: bool, policy: str | None = None
+    ) -> None:
         self._trace(
             "validate",
-            ok=report.ok,
+            ok=report.ok and policy is None,
+            policy=policy,
             unsupported=list(report.unsupported),
             word_count=report.word_count,
             over_word_limit=report.over_word_limit,
@@ -707,7 +788,10 @@ class AgentRuntime:
         ]
 
     def _instruction(
-        self, event: RaceEvent, radio_history: Sequence[RadioMessage]
+        self,
+        event: RaceEvent,
+        radio_history: Sequence[RadioMessage],
+        prefetched: Sequence[tuple[str, dict[str, Any], Any]] = (),
     ) -> str:
         parts = [
             f"TRIGGER: {event.key} (severity {event.severity.value}) at "
@@ -722,11 +806,25 @@ class AgentRuntime:
             parts.append(
                 "RECENT RADIO (do not repeat a call that still stands):\n" + recent
             )
-        parts.append(
-            "Call the tools you need, then answer in the required structure. "
-            "Keep spoken_text under "
-            f"{SPOKEN_WORD_LIMIT} words."
-        )
+        if prefetched:
+            parts.append(
+                "TOOL RESULTS (already called for you, as if you had called them):\n"
+                + "\n".join(
+                    f"- {name}({_as_text(args) if args else ''}): {_as_text(payload)}"
+                    for name, args, payload in prefetched
+                )
+            )
+            parts.append(
+                "If these and the race state settle it, answer now in the required "
+                "structure; call another tool only for a figure that is not here. "
+                f"Keep spoken_text under {SPOKEN_WORD_LIMIT} words."
+            )
+        else:
+            parts.append(
+                "Call the tools you need, then answer in the required structure. "
+                "Keep spoken_text under "
+                f"{SPOKEN_WORD_LIMIT} words."
+            )
         return "\n\n".join(parts)
 
     # ---- output ----------------------------------------------------------
@@ -736,10 +834,21 @@ class AgentRuntime:
         output: AgentOutput,
         report: GroundingReport,
         tools_used: list[str],
+        violation: str | None = None,
     ) -> RadioMessage:
         spoken, detail, priority = output.spoken_text, output.detail_text, output.priority
         refused = False
-        if not report.ok and report.unsupported:
+        speak = True
+        if violation:
+            # A wrong call is worse than a late one, and "standby" on the radio is
+            # noise: the message is kept for the audit trail but never said.
+            self.refusals += 1
+            refused = True
+            speak = False
+            priority = RadioPriority.INFO
+            spoken = POLICY_WITHHELD_SPOKEN
+            detail = f"Withheld: {violation}. Original text: " + output.spoken_text
+        elif not report.ok and report.unsupported:
             # Grounded refusal: we would rather say nothing useful than something
             # wrong. The unsupported figures are kept so an operator can see why.
             self.refusals += 1
@@ -753,8 +862,18 @@ class AgentRuntime:
             )
         elif report.over_word_limit:
             spoken = _truncate_words(spoken, SPOKEN_WORD_LIMIT)
+        if event.event_type is EventType.VISUAL_OBSERVATION:
+            # A camera note is seconds old and number-free: it never pre-empts a
+            # fuel, flag or traffic call, whatever the agent asked for.
+            priority = RadioPriority.INFO
 
         data = _payload_of(output)
+        subject = self.spec.subject(event, output)
+        if violation:
+            data["withheld"] = violation
+            # Its own subject, so it can never supersede a standing call it did
+            # not replace.
+            subject += ":withheld"
         return RadioMessage(
             agent=self.spec.name,
             priority=priority,
@@ -764,12 +883,13 @@ class AgentRuntime:
             event_ref=EventRef.of(event),
             session_time=event.session_time,
             timestamp=self._clock() if self._clock else None,
-            subject=self.spec.subject(event, output),
+            subject=subject,
             grounded=report.ok,
             refused=refused,
             ungrounded=list(report.unsupported),
             tools_used=list(dict.fromkeys(tools_used)),
             model=self.spec.model,
+            speak=speak,
         )
 
     def stats(self) -> dict[str, Any]:
@@ -783,6 +903,8 @@ class AgentRuntime:
             "retries": self.retries,
             "last_latency_ms": self.last_latency_ms,
             "avg_latency_ms": self.avg_latency_ms,
+            "input_tokens": self.tokens["input_tokens"],
+            "output_tokens": self.tokens["output_tokens"],
             "cooldowns": dict(self._last_fired),
         }
 

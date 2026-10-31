@@ -172,7 +172,9 @@ def test_a_reconnect_produces_no_phantom_events():
             interrupted.mark_stale("iRacing telemetry disconnected")
         interrupted.on_frame(frame, catalog)
 
-    assert len(quiet.bus.history()) == 19  # the whole scripted race
+    # The whole scripted race. (19 before the fuel margin counted from the car's
+    # position: a phantom fuel_margin_low fired just after the stop.)
+    assert len(quiet.bus.history()) == 18
     assert [e.key for e in interrupted.bus.history()] == [
         e.key for e in quiet.bus.history()
     ]

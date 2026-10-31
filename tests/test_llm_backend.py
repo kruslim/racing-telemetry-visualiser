@@ -296,3 +296,99 @@ async def test_structured_call_gives_up_after_the_retry():
     client.messages = _SequenceMessages([bad, bad, bad])
     assert await _structured(KimiProvider(client=client)) is None
     assert len(client.messages.calls) == 2
+
+
+def test_the_key_is_read_from_the_env_file_when_the_process_lacks_it(tmp_path, monkeypatch):
+    """pydantic-settings only loads RTV_* from .env; the key has a fixed name."""
+    from rtv import llm
+    from rtv.config import Settings
+
+    (tmp_path / ".env").write_text("KIMI_CODE_API_KEY=from-dotenv\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("KIMI_CODE_API_KEY", raising=False)
+    monkeypatch.delenv("KIMI_API_KEY", raising=False)
+    monkeypatch.setattr(llm, "_from_env_file", llm._from_env_file_real)  # undo the conftest stub
+    s = Settings(llm_api_key_env="")
+    assert llm.api_key(s) == "from-dotenv"
+    monkeypatch.setenv("KIMI_CODE_API_KEY", "from-process")
+    assert llm.api_key(s) == "from-process"  # the process environment wins
+
+
+# --------------------------------------------------------------------------
+# token usage
+# --------------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_kimi_usage_is_returned_and_recorded_per_layer():
+    from types import SimpleNamespace
+
+    from rtv import llm
+
+    llm.USAGE.reset()
+    response = _Response(
+        [_Block("tool_use", id="t1", name=RESPOND_TOOL, input={"call": "box_now", "laps": 5})]
+    )
+    response.usage = SimpleNamespace(
+        input_tokens=1200, output_tokens=85, cache_read_input_tokens=900,
+        cache_creation_input_tokens=None,
+    )
+    provider = KimiProvider(client=_FakeClient(response))
+    out = await _complete(provider)
+    await _complete(provider)
+
+    assert out.usage == {
+        "input_tokens": 1200, "output_tokens": 85, "cache_read_input_tokens": 900
+    }
+    summary = llm.USAGE.summary()
+    assert summary["layers"]["strategist"]["calls"] == 2
+    assert summary["layers"]["strategist"]["input_tokens"] == 2400
+    assert summary["total"]["output_tokens"] == 170
+    llm.USAGE.reset()
+
+
+def test_a_response_without_usage_counts_the_call_but_no_tokens():
+    from rtv import llm
+
+    ledger = llm.UsageLedger()
+    ledger.record("coach_chat", "kimi-k3", llm.usage_of(None))
+    assert ledger.summary()["layers"]["coach_chat"] == {
+        "calls": 1, **dict.fromkeys(llm.USAGE_FIELDS, 0)
+    }
+
+
+def test_langchain_usage_metadata_is_understood():
+    from rtv import llm
+
+    meta = {
+        "input_tokens": 50, "output_tokens": 7, "total_tokens": 57,
+        "input_token_details": {"cache_read": 40},
+    }
+    assert llm.usage_of(meta) == {
+        "input_tokens": 50, "output_tokens": 7, "cache_read_input_tokens": 40
+    }
+
+
+def test_the_usage_endpoint_reports_counts_and_never_the_key(tmp_path, monkeypatch):
+    pytest.importorskip("duckdb")
+    monkeypatch.setenv("RTV_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("RTV_AUTOSTART_LIVE", "false")
+    monkeypatch.setenv("KIMI_CODE_API_KEY", "sk-never-shown")
+    from fastapi.testclient import TestClient
+
+    from rtv import llm
+    from rtv.config import get_settings
+    from rtv.main import create_app
+
+    get_settings.cache_clear()
+    llm.USAGE.reset()
+    llm.USAGE.record("orchestrator.ChiefPlan", "kimi-k3", {"input_tokens": 10, "output_tokens": 2})
+    try:
+        with TestClient(create_app()) as client:
+            r = client.get("/api/v1/llm/usage")
+    finally:
+        get_settings.cache_clear()
+        llm.USAGE.reset()
+    assert r.status_code == 200
+    body = r.json()
+    assert body["total"]["input_tokens"] == 10
+    assert body["layers"]["orchestrator.ChiefPlan"]["calls"] == 1
+    assert "sk-never-shown" not in r.text
