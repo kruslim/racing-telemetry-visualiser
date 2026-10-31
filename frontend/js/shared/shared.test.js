@@ -145,6 +145,8 @@ const TESTS = [
     eq(view.vlmLine, 'Live VLM on · 2 of 10 calls · 1 looking · 1 merged');
     eq(view.notes[0].id, 'b');
     eq(view.notes[0].head.includes('check the sync'), true);
+    eq(view.notes[0].empty, 'The frames did not show the flagged moment.');
+    eq(view.notes[1].empty, null);
     eq(view.notes[1].lines[0].kind, 'kerb use');
     eq(view.notes[1].lines[0].cls, 'conf-high');
   }],

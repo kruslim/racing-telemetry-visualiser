@@ -78,7 +78,13 @@ export function onboardView(status) {
         text: o.text,
         cls: `conf-${o.confidence || 'low'}`,
       })),
-      empty: !(n.kept || []).length,
+      empty: (n.kept || []).length
+        ? null
+        : n.status === 'trigger_not_seen'
+          ? 'The frames did not show the flagged moment.'
+          : n.status === 'ok'
+            ? 'Nothing it could say without a number.'
+            : `No note (${n.status}).`,
     }));
 
   return {
@@ -155,7 +161,7 @@ export class OnboardPanel {
       for (const note of view.notes) {
         const item = el('div', 'onboard-note');
         item.append(el('div', 'onboard-note-head', note.head));
-        if (note.empty) item.append(el('div', 'muted', 'nothing it could say without a number'));
+        if (note.empty) item.append(el('div', 'muted', note.empty));
         for (const line of note.lines) {
           const row = el('div', `onboard-obs ${line.cls}`);
           row.append(el('span', 'k', line.kind), el('span', '', ` ${line.text}`));
@@ -166,8 +172,11 @@ export class OnboardPanel {
     }
   }
 
-  /** Keep a replayed recording at the replay's session time (called at 10 Hz). */
-  follow(sessionTime, running) {
+  /**
+   * Keep a replayed recording at the replay's session time (called at 10 Hz).
+   * `speed` is the replay's rate (0 = as fast as possible: seek only).
+   */
+  follow(sessionTime, running, speed) {
     if (!this.view.video || this.video.hidden) return;
     const target = videoTimeFor(this.view.video.sync, sessionTime);
     if (target === null) return;
@@ -177,7 +186,9 @@ export class OnboardPanel {
       return;
     }
     if (Math.abs(this.video.currentTime - target) > DRIFT_S) this.video.currentTime = target;
-    if (running && this.video.paused) this.video.play().catch(() => {});
+    const rate = Number(speed) > 0 ? Math.min(16, Math.max(0.25, Number(speed))) : null;
+    if (rate !== null && this.video.playbackRate !== rate) this.video.playbackRate = rate;
+    if (running && rate !== null && this.video.paused) this.video.play().catch(() => {});
     if (!running && !this.video.paused) this.video.pause();
   }
 

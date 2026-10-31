@@ -276,7 +276,8 @@ function render() {
     towerView(state, { expanded: towerPanel.expanded, trends, warnings })
   );
   renderFlow(state);
-  onboardPanel.follow(state.session_time, !!(app.replay && app.replay.running));
+  const replay = app.replay || {};
+  onboardPanel.follow(state.session_time, !!replay.running, replay.speed);
 }
 
 function renderActivity() {
