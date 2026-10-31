@@ -10,7 +10,7 @@ pytest.importorskip("pyarrow")
 pytest.importorskip("duckdb")
 pytest.importorskip("fastapi")
 
-MILESTONES = ["flag_change:yellow", "lockup", "pit_window_open", "pit_entry", "pit_exit"]
+MILESTONES = ["flag_change:yellow", "pit_window_open", "lockup", "pit_entry", "pit_exit"]
 
 
 def _make_client(tmp_path, monkeypatch, *, pitwall: bool = True):

@@ -248,6 +248,11 @@ class AgentSpec:
     subject: Callable[[RaceEvent, AgentOutput], str] = field(
         default=lambda event, out: event.event_type.value
     )
+    #: Deterministic decision check: ``(output, state, event) -> reason | None``.
+    #: The validator proves the numbers are real; a policy proves the call is
+    #: one the deterministic data allows (the strategist's stop plan, say). A
+    #: violation gets one repair turn, then the message is withheld, not aired.
+    policy: Callable[[AgentOutput, RaceState, RaceEvent], str | None] | None = None
     #: Ceiling on tool-use round trips before the runtime demands an answer.
     max_tool_iterations: int = 4
     enabled: bool = True
@@ -279,6 +284,8 @@ class AgentSpec:
 # runtime
 # --------------------------------------------------------------------------
 REFUSAL_SPOKEN = "Standby - I can't back that call with data yet."
+#: Shown (never spoken) for a call the agent's policy ruled out.
+POLICY_WITHHELD_SPOKEN = "Call withheld: it contradicts the fuel plan."
 
 
 class AgentRuntime:
@@ -443,15 +450,30 @@ class AgentRuntime:
             return None
 
         report = self._validate(output, facts)
-        self._trace_validate(report, repaired=False)
-        if not report.ok and self._repair_attempts > 0:
-            repaired = await self._repair(system, messages, ctx, facts, tools_used, report)
+        violation = self._check_policy(output, state, event)
+        self._trace_validate(report, repaired=False, policy=violation)
+        if (not report.ok or violation) and self._repair_attempts > 0:
+            repaired = await self._repair(
+                system, messages, ctx, facts, tools_used, report, violation
+            )
             if repaired is not None:
                 output = repaired
                 report = self._validate(output, facts)
-                self._trace_validate(report, repaired=True)
+                violation = self._check_policy(output, state, event)
+                self._trace_validate(report, repaired=True, policy=violation)
 
-        return self._to_message(event, output, report, tools_used)
+        return self._to_message(event, output, report, tools_used, violation)
+
+    def _check_policy(
+        self, output: AgentOutput, state: RaceState, event: RaceEvent
+    ) -> str | None:
+        if self.spec.policy is None:
+            return None
+        try:
+            return self.spec.policy(output, state, event)
+        except Exception:
+            log.exception("Policy check failed for %s", self.spec.name)
+            return None
 
     def _validate(self, output: AgentOutput, facts: FactSet) -> GroundingReport:
         return validate_output(
@@ -606,9 +628,12 @@ class AgentRuntime:
         facts: FactSet,
         tools_used: list[str],
         report: GroundingReport,
+        violation: str | None = None,
     ) -> AgentOutput | None:
         """One corrective turn. Cheaper than a wrong number on the radio."""
         problems = []
+        if violation:
+            problems.append(f"The call contradicts the deterministic data: {violation}.")
         if report.unsupported:
             problems.append(
                 "These figures are not in the race state or in any tool result you were "
@@ -680,10 +705,13 @@ class AgentRuntime:
             **data,
         )
 
-    def _trace_validate(self, report: GroundingReport, *, repaired: bool) -> None:
+    def _trace_validate(
+        self, report: GroundingReport, *, repaired: bool, policy: str | None = None
+    ) -> None:
         self._trace(
             "validate",
-            ok=report.ok,
+            ok=report.ok and policy is None,
+            policy=policy,
             unsupported=list(report.unsupported),
             word_count=report.word_count,
             over_word_limit=report.over_word_limit,
@@ -736,10 +764,21 @@ class AgentRuntime:
         output: AgentOutput,
         report: GroundingReport,
         tools_used: list[str],
+        violation: str | None = None,
     ) -> RadioMessage:
         spoken, detail, priority = output.spoken_text, output.detail_text, output.priority
         refused = False
-        if not report.ok and report.unsupported:
+        speak = True
+        if violation:
+            # A wrong call is worse than a late one, and "standby" on the radio is
+            # noise: the message is kept for the audit trail but never said.
+            self.refusals += 1
+            refused = True
+            speak = False
+            priority = RadioPriority.INFO
+            spoken = POLICY_WITHHELD_SPOKEN
+            detail = f"Withheld: {violation}. Original text: " + output.spoken_text
+        elif not report.ok and report.unsupported:
             # Grounded refusal: we would rather say nothing useful than something
             # wrong. The unsupported figures are kept so an operator can see why.
             self.refusals += 1
@@ -759,6 +798,12 @@ class AgentRuntime:
             priority = RadioPriority.INFO
 
         data = _payload_of(output)
+        subject = self.spec.subject(event, output)
+        if violation:
+            data["withheld"] = violation
+            # Its own subject, so it can never supersede a standing call it did
+            # not replace.
+            subject += ":withheld"
         return RadioMessage(
             agent=self.spec.name,
             priority=priority,
@@ -768,12 +813,13 @@ class AgentRuntime:
             event_ref=EventRef.of(event),
             session_time=event.session_time,
             timestamp=self._clock() if self._clock else None,
-            subject=self.spec.subject(event, output),
+            subject=subject,
             grounded=report.ok,
             refused=refused,
             ungrounded=list(report.unsupported),
             tools_used=list(dict.fromkeys(tools_used)),
             model=self.spec.model,
+            speak=speak,
         )
 
     def stats(self) -> dict[str, Any]:

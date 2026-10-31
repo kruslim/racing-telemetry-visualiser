@@ -39,6 +39,7 @@ from rtv.racestate.models import (
     RaceState,
     Severity,
 )
+from rtv.racestate.strategy_math import lap_left
 
 log = get_logger("racestate.engine")
 
@@ -50,6 +51,9 @@ _LAPS_REMAIN_SENTINEL = 10_000
 #: a value a hair over an integer boundary (0.5000001 L/lap from float32 storage)
 #: must not cost a whole lap of pit window.
 _LAP_EPS = 1e-6
+#: Tolerance on a fuel distance in laps. Level and track position are sampled a
+#: frame apart, so a stop that is exactly reachable must not flicker a lap early.
+_FUEL_EPS_LAPS = 1e-3
 #: Frame-window bounds: no detector looks back further than a handful of frames.
 _WINDOW_KEEP = 32
 _WINDOW_TRIM_AT = 64
@@ -159,6 +163,9 @@ class RaceStateEngine:
 
             # fuel
             self._fuel_used: deque[float] = deque(maxlen=self._fuel_laps)
+            # Recent clean lap times: the pace a timed race's remaining laps are
+            # projected at. Not the last lap alone, which may be an in-lap.
+            self._clean_lap_times: deque[float] = deque(maxlen=self._fuel_laps)
             self._fuel_at_lap_start: float | None = None
             self._pit_window_announced = False
             self._pit_window_closing_announced = False
@@ -1073,6 +1080,8 @@ class RaceStateEngine:
         clean = self._lap_all_green and not self._lap_had_pit
         if clean:
             p.laps_on_tyres += 1
+            if lap_time:
+                self._clean_lap_times.append(lap_time)
         self._roll_fuel(lap, clean, events)
         self._roll_tyres(lap, clean)
         self._check_tyre_band(events)
@@ -1121,9 +1130,26 @@ class RaceStateEngine:
         fuel.per_lap = round(_mean(samples), 4) if samples else None
         std = _stdev(samples)
         fuel.per_lap_std = round(std, 4) if std is not None else None
-        self._recompute_fuel_plan(events)
+        # This frame is the first of the new lap, but LapDistPct can still read
+        # 0.99x for a frame or two around the line: the car is *at* the line.
+        # Mid-lap refreshes count from the car's position instead (lap_left), as
+        # counting whole laps while the tank drained made the margin fall by up
+        # to a lap inside every lap: on the Spa replay it dipped under the 1-lap
+        # threshold right after the stop and fired fuel_margin_low.
+        self._recompute_fuel_plan(events, at_line=True)
 
-    def _recompute_fuel_plan(self, events: list[RaceEvent]) -> None:
+    def _reference_pace(self) -> float | None:
+        """Median of recent clean laps, else the last or best lap."""
+        if self._clean_lap_times:
+            ordered = sorted(self._clean_lap_times)
+            mid = len(ordered) // 2
+            if len(ordered) % 2:
+                return ordered[mid]
+            return (ordered[mid - 1] + ordered[mid]) / 2.0
+        p = self._state.player
+        return p.last_lap_time or p.best_lap_time
+
+    def _recompute_fuel_plan(self, events: list[RaceEvent], *, at_line: bool = False) -> None:
         fuel = self._state.fuel
         state = self._state
         per_lap = fuel.per_lap
@@ -1131,25 +1157,32 @@ class RaceStateEngine:
         if not per_lap or per_lap <= 0 or level is None:
             return
 
-        fuel.laps_remaining = round(level / per_lap, 3)
+        laps_in_tank = level / per_lap
+        fuel.laps_remaining = round(laps_in_tank, 3)
+        left = 1.0 if at_line else lap_left(state)
 
-        # Laps still to run: the flags first, then the sim's own counter, else
-        # time / lap time. The flags settle the end of a timed race, where the
-        # clock is useless: iRacing sends -1 once it runs out and then starts a
-        # new countdown, which read as two more laps on the Spa replay's last lap.
+        # Laps still to run, as a distance from the car's position: the flags
+        # first, then the sim's own counter, else the clock. The flags settle the
+        # end of a timed race, where the clock is useless: iRacing sends -1 once
+        # it runs out and then starts a new countdown, which read as two more
+        # laps on the Spa replay's last lap.
         laps_to_finish: float | None = None
         phase = state.flags.phase
+        pace = self._reference_pace()
         if phase is FlagPhase.CHECKERED:
             laps_to_finish = 0.0
         elif phase is FlagPhase.WHITE:
-            laps_to_finish = 1.0
+            laps_to_finish = left
         elif state.session.laps_remaining is not None:
-            laps_to_finish = float(state.session.laps_remaining)
-        elif state.session.time_remaining and state.player.last_lap_time:
-            laps_to_finish = math.ceil(
-                state.session.time_remaining / state.player.last_lap_time
-            )
-        fuel.laps_to_finish = laps_to_finish
+            # The sim's counter includes the lap being run.
+            laps_to_finish = max(0, state.session.laps_remaining - 1) + left
+        elif state.session.time_remaining is not None and pace:
+            # A timed race ends at the first crossing after the clock reaches
+            # zero. Checked on the Spa file: the white came out at the line with
+            # 98 s left and the race ended one lap later.
+            after_this_lap = max(0.0, state.session.time_remaining - left * pace)
+            laps_to_finish = left + math.ceil(after_this_lap / pace - _LAP_EPS)
+        fuel.laps_to_finish = round(laps_to_finish, 3) if laps_to_finish is not None else None
 
         if laps_to_finish is not None:
             fuel.fuel_to_finish = round(laps_to_finish * per_lap, 3)
@@ -1158,13 +1191,19 @@ class RaceStateEngine:
 
         current_lap = state.player.lap
         if current_lap is not None:
-            fuel.pit_window_latest_lap = current_lap + int(level / per_lap + _LAP_EPS)
+            # The last lap whose end the car still reaches: the rest of this lap,
+            # then whole laps. Counting the full tank from the line here made the
+            # bound one lap late (lap 14 at Spa, where the car would have run dry
+            # on lap 14).
+            fuel.pit_window_latest_lap = current_lap + max(
+                0, math.floor(laps_in_tank - left + _FUEL_EPS_LAPS)
+            )
             if fuel.capacity and laps_to_finish is not None:
                 # Stopping earlier than this leaves more laps than a full tank
                 # can cover, so it would force a second stop.
-                shortfall = laps_to_finish - (fuel.capacity / per_lap)
+                shortfall = laps_to_finish - left - (fuel.capacity / per_lap)
                 fuel.pit_window_earliest_lap = current_lap + max(
-                    0, math.ceil(shortfall - _LAP_EPS)
+                    0, math.ceil(shortfall - _FUEL_EPS_LAPS)
                 )
             else:
                 fuel.pit_window_earliest_lap = None

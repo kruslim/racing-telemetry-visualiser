@@ -96,9 +96,18 @@ One object, versioned by `version` (monotonic per update) and stamped with
   (`RTV_PITWALL_FUEL_LAPS`, default 5), with `per_lap_std` alongside so a consumer
   can see the spread. Derivations refresh at ~1 Hz *and* at lap boundaries, so
   `level` and `laps_remaining` are never mutually inconsistent.
-- **Pit window.** `latest = lap + floor(level / per_lap)` (run-dry bound);
-  `earliest = lap + max(0, ceil(laps_to_finish - capacity / per_lap))` (stopping
-  earlier would force a second stop). `window_open` additionally requires a stop
+- **Fuel distances** count from the car's position: `left = 1 - LapDistPct` (1.0 at
+  the line). `laps_to_finish` is `left` on the white flag, `laps_remain - 1 + left`
+  with a lap counter, and for a timed race `left + ceil(max(0, time_remain -
+  left x pace) / pace)`, where pace is the median of recent clean laps. The timed
+  rule (finish at the first crossing after the clock runs out) is checked on the
+  Spa file: white at the line with 98 s left, checkered one lap later. Counting
+  whole laps while the tank drained made `margin_laps` fall by up to a lap inside
+  every lap and fired a phantom `fuel_margin_low` after the stop.
+- **Pit window.** `latest = lap + floor(level / per_lap - left)` (the last lap whose
+  end the car reaches); `earliest = lap + max(0, ceil(laps_to_finish - left -
+  capacity / per_lap))` (stopping earlier would force a second stop). Both used to
+  be a lap late: at Spa `latest` read 14 where the car would have run dry on 14. `window_open` additionally requires a stop
   to actually be **needed** (`margin_laps < 0`) — otherwise "open" would be
   technically true but useless advice, and would re-announce after every stop.
 - **Tyre trends** are cleared on pit exit: a trend from the set that just came off
@@ -225,15 +234,16 @@ distance never lands in memory at once.
 | Lap / position | Scripted |
 |---|---|
 | 3, 30–80 % | full-course yellow, then green |
+| 3 → 4 boundary | fuel pit window opens |
 | 4, ~40 % | front-axle lock-up under braking |
-| 4 → 5 boundary | fuel pit window opens |
 | 5, 85 % | pit entry |
 | 6, 15 % | pit exit + refuel + new stint |
 
-Fuel arithmetic is chosen so the window lands on lap 5 *exactly*: a 4.0 L tank at
-0.5 L/lap covers 8 laps, the race is 12 laps, and the car starts on 3.0 L — so
-from lap 5 a full tank is both sufficient to reach the flag and necessary to
-avoid running dry. Grid offsets are in laps, so a 10 s lap turns a 0.03-lap
+Fuel arithmetic is chosen so the window lands on lap 4 *exactly*: a 4.0 L tank at
+0.5 L/lap covers 8 laps, the race is 12 laps, and the car starts on 3.0 L — so a
+stop at the end of lap 4 leaves the 8 laps a full tank covers, and the 1.5 L
+aboard at the lap-4 line runs dry after lap 6 (window 4-6; it read 5-7 before the
+fuel distances counted the lap the car was on). Grid offsets are in laps, so a 10 s lap turns a 0.03-lap
 offset into exactly a 0.30 s gap, making gap assertions exact.
 
 `ScenarioSpec(exclude=(...))` omits channels from both the catalog and the frames
@@ -525,7 +535,7 @@ Triggers, all deterministic:
 | `pit_window_closing` | — | 0 s |
 | `fuel_critical` | — | 0 s |
 | `flag_change` | into/out of yellow or red only | 20 s |
-| `fuel_margin_low` | — | 60 s |
+| `fuel_margin_low` | only when `margin_laps < 0` (short of the flag) | 60 s |
 | `rival_pitted` | within 30 s of us | 45 s |
 | `stint_lap_milestone` | only when `margin_laps < 3` | 60 s |
 
@@ -533,10 +543,33 @@ Tools: `get_race_state_slice`, `get_fuel_projection`, `get_tyre_trend`,
 `get_standings_around_player`, `get_stint_history`, `simulate_pit_outcome`.
 
 Output contract `PitCall`: `recommendation` ∈ {`box_now`, `box_next_lap`,
-`pit_under_yellow`, `extend`, `stay_out`, `hold`}, plus `target_lap`,
+`pit_under_yellow`, `plan_stop`, `extend`, `stay_out`, `hold`}, plus `target_lap`,
 `fuel_to_add_l`, `rejoin_position`, `confidence`, `rationale`, `risks[]`.
 `hold` is a first-class answer, not a failure mode: it is what the agent says when
 the data does not support a call.
+
+### `stop_plan` and the strategist policy
+
+`strategy_math.stop_plan(state)` decides *when* to stop from the fuel window
+alone: `target_lap` is the latest lap that keeps 0.5 laps of fuel in hand
+(clamped to the window), and `call` is `no_data`, `no_stop_needed`, `stop_later`,
+`box_next_lap` or `box_this_lap`, with `fuel_to_add_l` from `simulate_pit_outcome`
+at that lap, `caution_stop_available` and a `confidence` that is `low` under three
+fuel samples. It is in the strategist's state slice and in `get_fuel_projection`.
+On the Spa file it plans lap 13 early on, settles on lap 12 by lap 6 as consumption
+rises, and says `box_this_lap` on lap 12, the lap the driver pitted.
+
+`AgentSpec.policy(output, state, event) -> reason | None` is a deterministic check
+on the *decision*, beside the validator's check on the numbers. A violation gets the
+one repair turn (with the reason); if it persists the message is published
+`refused=True, speak=False`, priority info, subject `<subject>:withheld`, with the
+reason in `data.withheld`, so it is audited but never said and never supersedes a
+standing call. `strategist_policy` rules out: a stop call or `plan_stop` when the
+tank reaches the flag or there is no plan; a `target_lap` outside the window;
+`pit_under_yellow` without a full-course caution in the window; and `box_now` /
+`box_next_lap` more than one lap before `target_lap` unless a caution is out or a
+`rival_pitted` trigger fired with live standings. The eval's `expected_calls`
+follows the plan the same way.
 
 ### `simulate_pit_outcome` — the deterministic core
 
@@ -546,6 +579,7 @@ In `racestate/strategy_math.py`, tested independently in `tests/test_strategy_ma
 rejoin_position = position_before + |{cars behind whose cumulative gap < effective_loss}|
 effective_loss  = pit_lane_loss_s x (0.45 under yellow, else 1.0)
 fuel_to_add     = min(capacity, (laps_after_stop + 0.5) x per_lap) - fuel_at_stop
+laps_before_stop = (stop_lap - lap) + left   # a stop this lap still burns this lap
 ```
 
 The model is stated rather than hidden: it assumes the field holds station over
