@@ -203,8 +203,10 @@ class Settings(BaseSettings):
     pitwall_spotter_max_age_s: float | None = Field(
         default=None,
         description=(
-            "Seconds a spotter call may wait for the radio before it airs "
-            "tagged late. Unset = the agent's default (3 s); 0 = never tagged late."
+            "Seconds a spotter template call (car left, closing, blue flag) may wait "
+            "for the radio before it airs tagged late. Unset = 3 s; 0 = never tagged "
+            "late. When set it also applies to the LLM spotter's lap-line summaries, "
+            "which by default are never tagged late and expire after 60 s."
         ),
     )
     pitwall_coach_max_age_s: float | None = Field(
@@ -253,6 +255,12 @@ class Settings(BaseSettings):
         "across every agent and the live VLM. Generous on purpose: it is a runaway guard, not a "
         "budget (a normal race hour is a low-tens number). 0 = unlimited. The "
         "counter is exposed on GET /api/v1/pitwall/status.",
+    )
+    pitwall_typed_grounding: bool = Field(
+        default=True,
+        description="Typed grounding in the pitwall validator: a figure said with a unit "
+        "('6 laps', 'P4', '28 psi') must match a fact of that unit family, not just any "
+        "nearby number. false restores the old any-number check (a rollback switch).",
     )
     pitwall_retry_backoff_s: float = Field(
         default=0.5,

@@ -305,22 +305,26 @@
    "agent": "coach",
    "answers": [
     {
-     "ok": true,
+     "ok": false,
      "over_word_limit": false,
      "policy": null,
      "repaired": false,
-     "same_as_recorded": true,
-     "unsupported": []
+     "same_as_recorded": false,
+     "unsupported": [
+      "two"
+     ]
     }
    ],
    "case_id": "coach-3-offtrack",
-   "check_issues": [],
+   "check_issues": [
+    "ungrounded figures: two (not in the race state)"
+   ],
    "checks": {
     "corner_ok": true,
-    "grounding_ok": true,
+    "grounding_ok": false,
     "one_cue_ok": true,
     "radio_ok": true,
-    "score": 1.0,
+    "score": 0.833,
     "telemetry_ok": true,
     "theme_ok": true
    },
@@ -340,22 +344,26 @@
    "agent": "coach",
    "answers": [
     {
-     "ok": true,
+     "ok": false,
      "over_word_limit": false,
      "policy": null,
      "repaired": false,
-     "same_as_recorded": true,
-     "unsupported": []
+     "same_as_recorded": false,
+     "unsupported": [
+      "three"
+     ]
     }
    ],
    "case_id": "coach-4-recurring_issue",
-   "check_issues": [],
+   "check_issues": [
+    "ungrounded figures: three (not in the race state)"
+   ],
    "checks": {
     "corner_ok": true,
-    "grounding_ok": true,
+    "grounding_ok": false,
     "one_cue_ok": true,
     "radio_ok": true,
-    "score": 1.0,
+    "score": 0.833,
     "telemetry_ok": true,
     "theme_ok": true
    },
@@ -448,10 +456,10 @@
   "answers": 13,
   "cases": 12,
   "corner_issues": 2,
-  "final_answers_failing_checks": 1,
-  "mean_check_score": 0.986,
-  "validator_changed_vs_recorded": 0,
-  "validator_failures": 1,
+  "final_answers_failing_checks": 3,
+  "mean_check_score": 0.958,
+  "validator_changed_vs_recorded": 2,
+  "validator_failures": 3,
   "validity_rules_changed": 0,
   "validity_verdicts_changed": 0
  }

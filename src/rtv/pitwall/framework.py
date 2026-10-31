@@ -127,6 +127,10 @@ class RadioMessage(BaseModel):
     #: Tools the agent actually called, for the pitwall's audit panel.
     tools_used: list[str] = Field(default_factory=list)
     model: str = ""
+    #: Who wrote the words: ``"model"`` (an agent's LLM run), ``"template"`` (a
+    #: deterministic caller, :mod:`rtv.pitwall.callers`: no model call), ``"driver"``
+    #: (a push-to-talk transcript) or ``"pitwall"`` (a notice about the pitwall).
+    source: str = "model"
     #: False for anything that is *shown* but must not be *said* -- the driver's
     #: own push-to-talk transcript, for instance. The audio manager drops these.
     speak: bool = True
@@ -825,7 +829,7 @@ class AgentRuntime:
         if report.unsupported:
             problems.append(
                 "These figures are not in the race state or in any tool result you were "
-                f"given: {', '.join(report.unsupported)}."
+                f"given: {'; '.join(report.unsupported_detail or report.unsupported)}."
             )
         if report.over_word_limit:
             problems.append(

@@ -52,6 +52,11 @@ class EventType(StrEnum):
     TYRE_OUT_OF_BAND = "tyre_out_of_band"
     CAR_HEALTH_WARNING = "car_health_warning"
     TRAFFIC_CLOSE = "traffic_close"
+    #: iRacing's own proximity sensor (``CarLeftRight``) changed: a car (or two)
+    #: is now alongside on the left or right, or the sides are clear again. The
+    #: one lateral signal the sim exposes; live telemetry only (``.ibt`` files do
+    #: not record it). ``payload.side`` is the new state, ``payload.from`` the old.
+    CAR_ALONGSIDE = "car_alongside"
     #: Director-only (see :mod:`rtv.director`). No detector emits these two: the
     #: catalog contract in ``racestate/channels.py`` has no channel that would
     #: say "rain is coming in ten minutes" or "a mandatory stop is now required",
@@ -101,6 +106,8 @@ class RaceEvent(BaseModel):
         """Stable discriminator used by tests/smoke: ``flag_change:yellow``."""
         if self.event_type is EventType.FLAG_CHANGE:
             return f"{self.event_type.value}:{self.payload.get('to')}"
+        if self.event_type is EventType.CAR_ALONGSIDE:
+            return f"{self.event_type.value}:{self.payload.get('side')}"
         return self.event_type.value
 
     def to_api(self) -> dict[str, Any]:
@@ -124,6 +131,8 @@ class Capabilities(BaseModel):
     wheelspin: bool = False
     offtrack: bool = False
     incidents: bool = False
+    #: ``CarLeftRight`` is present (live sessions only), so ``car_alongside`` fires.
+    car_alongside: bool = False
     #: Channels the engine looked for and did not find, for operator diagnosis.
     missing: list[str] = Field(default_factory=list)
 
