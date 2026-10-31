@@ -39,6 +39,9 @@ PLAYER_TRACK_SURFACE = "PlayerTrackSurface"
 PLAYER_TRACK_SURFACE_MATERIAL = "PlayerTrackSurfaceMaterial"
 PLAYER_INCIDENTS = "PlayerCarMyIncidentCount"
 
+# iRacing's spotter sensor: is a car alongside, left or right (irsdk_CarLeftRight).
+CAR_LEFT_RIGHT = "CarLeftRight"
+
 # --- flags ---------------------------------------------------------------
 SESSION_FLAGS = "SessionFlags"
 CAR_IDX_SESSION_FLAGS = "CarIdxSessionFlags"
@@ -105,6 +108,7 @@ REQUIRED: dict[str, tuple[str, ...]] = {
     "pit": (ON_PIT_ROAD,),
     "incidents": (PLAYER_INCIDENTS,),
     "offtrack": (PLAYER_TRACK_SURFACE,),
+    "car_alongside": (CAR_LEFT_RIGHT,),
 }
 
 # Health/conditions are "any-of" groups rather than "all-of".

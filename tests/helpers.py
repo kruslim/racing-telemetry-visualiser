@@ -149,7 +149,7 @@ def record_live_session(tmp_path, monkeypatch, spec):
     info["WeekendInfo"] = {**info["WeekendInfo"], "SubSessionID": 4242}
     done = threading.Event()
     fake = types.ModuleType("irsdk")
-    fake.IRSDK = lambda: FakeIRSDK(_headers(), scenario_frames(spec), info, done)
+    fake.IRSDK = lambda: FakeIRSDK(_headers(spec), scenario_frames(spec), info, done)
     monkeypatch.setitem(sys.modules, "irsdk", fake)
 
     db = Database(tmp_path / "telemetry.duckdb")
