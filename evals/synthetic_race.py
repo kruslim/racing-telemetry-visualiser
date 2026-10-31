@@ -7,16 +7,16 @@ order:
 
 ======================  ==================================================
 lap 3, 30%-80%          full-course yellow, then back to green
+lap 3 -> 4 boundary     the fuel pit window opens
 lap 4, ~40%             a front-axle lock-up under braking
-lap 4 -> 5 boundary     the fuel pit window opens
 lap 5, 85%              pit entry
 lap 6, 15%              pit exit (refuel to a full tank) + new stint
 ======================  ==================================================
 
-Fuel is scripted so the window arithmetic lands on lap 5 exactly: a 4.0 L tank
+Fuel is scripted so the window arithmetic lands on lap 4 exactly: a 4.0 L tank
 burning 0.5 L/lap covers 8 laps, the race is 12 laps, and the car starts on 3.0 L
--- so from lap 5 a full tank is both *sufficient* to reach the flag and *needed*
-to avoid running dry. See ``docs/PITWALL.md`` for the derivation.
+-- so a stop at the end of lap 4 leaves the 8 laps a full tank covers, and the
+1.5 L aboard at the lap-4 line runs dry after lap 6. See ``docs/PITWALL.md`` for the derivation.
 
 Everything here is a pure function of the spec: no clocks, no randomness, so two
 runs produce byte-identical frames (which is what the determinism test relies on).

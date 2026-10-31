@@ -21,6 +21,7 @@ from rtv.racestate.models import (
 from rtv.racestate.strategy_math import (
     YELLOW_PIT_DISCOUNT,
     fuel_projection,
+    lap_left,
     simulate_pit_outcome,
     standings_around_player,
     stint_history,
@@ -169,10 +170,12 @@ def test_no_lap_counter_refuses_outright():
 # fuel arithmetic
 # --------------------------------------------------------------------------
 def test_refuel_target_covers_the_remaining_laps_plus_a_reserve():
-    """20 laps at 2.5 L plus half a lap reserve = 51.25 L, against 20 L aboard."""
+    """A stop this lap still burns this lap: 17.5 L aboard at the pit entry, then
+    19 laps at 2.5 L plus half a lap reserve = 48.75 L."""
     outcome = simulate_pit_outcome(_state(), pit_lane_loss_s=25.0)
-    assert outcome.laps_after_stop == pytest.approx(20.0)
-    assert outcome.fuel_to_add_l == pytest.approx(51.25 - 20.0)
+    assert outcome.laps_before_stop == pytest.approx(1.0)
+    assert outcome.laps_after_stop == pytest.approx(19.0)
+    assert outcome.fuel_to_add_l == pytest.approx(48.75 - 17.5)
     assert outcome.covers_to_finish is True
 
 
@@ -180,7 +183,7 @@ def test_the_refuel_target_is_capped_at_tank_capacity():
     outcome = simulate_pit_outcome(
         _state(capacity=40.0, laps_to_finish=30.0), pit_lane_loss_s=25.0
     )
-    assert outcome.fuel_to_add_l == pytest.approx(20.0)  # 40 L tank, 20 L aboard
+    assert outcome.fuel_to_add_l == pytest.approx(22.5)  # 40 L tank, 17.5 L at the stop
     # 40 L at 2.5 L/lap covers 16 laps of the 30 still to run: a second stop.
     assert outcome.covers_to_finish is False
     assert any("capped at tank capacity" in a for a in outcome.assumptions)
@@ -195,9 +198,10 @@ def test_a_later_stop_burns_fuel_before_it_takes_any_on():
     """
     now = simulate_pit_outcome(_state(), stop_lap=10, pit_lane_loss_s=25.0)
     later = simulate_pit_outcome(_state(), stop_lap=14, pit_lane_loss_s=25.0)
-    assert later.laps_before_stop == 4.0
-    assert later.fuel_at_stop_l == pytest.approx(20.0 - 4 * 2.5)
-    assert later.laps_after_stop == pytest.approx(16.0)
+    # The rest of lap 10, then laps 11-14.
+    assert later.laps_before_stop == 5.0
+    assert later.fuel_at_stop_l == pytest.approx(20.0 - 5 * 2.5)
+    assert later.laps_after_stop == pytest.approx(15.0)
     assert later.fuel_to_add_l == pytest.approx(now.fuel_to_add_l)
 
     # A tank too small to reach the flag *does* reward waiting: the same full
@@ -258,5 +262,6 @@ def test_projections_over_the_scripted_race_match_the_engine():
 
     assert projection["per_lap_l"] == pytest.approx(0.5, abs=1e-6)
     assert projection["capacity_l"] == pytest.approx(4.0, abs=1e-6)
-    assert projection["laps_to_finish"] == pytest.approx(7.0)
+    # Part-way round lap 6 of 12: the rest of it plus laps 7-12.
+    assert projection["laps_to_finish"] == pytest.approx(6.0 + lap_left(state), abs=1e-3)
     assert "unavailable" not in projection

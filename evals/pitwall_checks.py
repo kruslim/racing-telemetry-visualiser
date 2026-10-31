@@ -32,14 +32,14 @@ from typing import Any
 
 from rtv.pitwall.validator import FactSet, validate_output
 from rtv.racestate.models import FlagPhase, RaceState
-from rtv.racestate.strategy_math import simulate_pit_outcome
+from rtv.racestate.strategy_math import simulate_pit_outcome, stop_plan
 
 #: Laps of tolerance when checking a called stop lap against the window.
 LAP_TOL = 0
 #: Positions of tolerance when checking a claimed rejoin against the projection.
 POSITION_TOL = 1
 
-BOXING = {"box_now", "box_next_lap", "pit_under_yellow"}
+BOXING = {"box_now", "box_next_lap", "pit_under_yellow", "plan_stop"}
 
 
 def expected_calls(state: RaceState) -> set[str]:
@@ -62,14 +62,21 @@ def expected_calls(state: RaceState) -> set[str]:
     stop_required = fuel.margin_laps is not None and fuel.margin_laps < 0
     under_yellow = state.flags.phase is FlagPhase.YELLOW
     if stop_required and fuel.window_open:
-        allowed = {"box_now", "box_next_lap"}
+        plan = stop_plan(state)
+        if plan.call in ("box_this_lap", "box_next_lap"):
+            allowed = {"box_now", "box_next_lap"}
+        else:
+            # An open window means a stop is possible, not that it is due: the
+            # call is the planned lap. (Box-now from the first open lap was the
+            # Spa replay's main strategist failure.)
+            allowed = {"plan_stop", "extend", "stay_out"}
         if under_yellow:
-            allowed.add("pit_under_yellow")
+            allowed |= {"pit_under_yellow", "box_now"}
         return allowed
     if stop_required:
         # A stop is needed but the window has not opened: extending is correct,
         # and taking a cheap caution is defensible.
-        allowed = {"extend", "stay_out"}
+        allowed = {"extend", "stay_out", "plan_stop"}
         if under_yellow:
             allowed |= {"pit_under_yellow", "box_now"}
         return allowed
