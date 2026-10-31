@@ -15,18 +15,24 @@ copy kept in step by hand.
 
 The record, version :data:`INPUT_VERSION`::
 
-    {"v": 1,
+    {"v": 2,
      "agent": "strategist", "model": "kimi-k3", "max_tokens": 1500,
      "max_tool_iterations": 4, "provider": {"name": "kimi", "thinking": false},
      "system_prompt": "<role prompt + grounding rules>", "prompt_sha": "1a2b...",
      "state_slice": {...}, "event": {<RaceEvent.to_api()>},
      "radio": [{"message_id", "agent", "priority", "spoken_text"}, ...],
+     "previous": [{"message_id", "subject", "lap", "session_time", "spoken_text",
+                   "status", "late_by_s", "expired_reason"}, ...],
      "prefetched": [{"tool": "fuel_plan", "args": {...}, "result": {...}}, ...],
      "tools": ["fuel_plan", ...], "tools_sha": "...",
      "output_contract": "StrategistOutput", "output_schema_sha": "..."}
 
 ``radio`` is only the calls the model was shown (the last five); the ``run_start``
-record's ``context_radio`` still lists every id the run was given. Tool results the
+record's ``context_radio`` still lists every id the run was given. ``previous`` is
+the agent's own last call on each of its last :data:`PREVIOUS_SUBJECTS` subjects, with
+what the radio did with it (aired, aired late, dropped, still queued), so the agent
+revises its earlier call instead of restating it (task D1). Version 1 records have no
+``previous`` and rebuild exactly as before. Tool results the
 model asks for *during* the run are on its ``tool_call`` records (``result_full``).
 
 This module imports nothing from the runtime so the evals and the review can use it
@@ -43,11 +49,24 @@ from typing import Any
 from pydantic import BaseModel
 
 #: Version of the ``run_start`` ``input`` record. Bump on any change to its shape
-#: or to how :func:`model_input` reads it.
-INPUT_VERSION = 1
+#: or to how :func:`model_input` reads it. 2 added ``previous``.
+INPUT_VERSION = 2
+
+#: Versions :func:`model_input` can rebuild.
+READABLE_VERSIONS = (1, 2)
+
+#: How many of an agent's own subjects its first message recalls (one line each).
+PREVIOUS_SUBJECTS = 2
+
+#: ``status`` of a recalled call: what the radio did with it.
+AIRED, LATE, EXPIRED, QUEUED = "aired", "late", "expired", "queued"
 
 #: Radio is a scarce channel; a message longer than this stops being radio.
 SPOKEN_WORD_LIMIT = 25
+
+#: Prefix the radio puts on a call that aired late (``rtv.pitwall.framework``
+#: re-exports it; defined here so this module imports nothing from the runtime).
+LATE_PREFIX = "Late call: "
 
 #: How many recent radio calls an agent's first message shows.
 RADIO_SHOWN = 5
@@ -101,8 +120,10 @@ def instruction(
     event: Mapping[str, Any],
     radio: Sequence[Mapping[str, Any]] = (),
     prefetched: Sequence[Mapping[str, Any]] = (),
+    previous: Sequence[Mapping[str, Any]] = (),
 ) -> str:
-    """The run's first user message, from the event, the radio and prefetched results."""
+    """The run's first user message, from the event, the agent's own earlier calls,
+    the radio and prefetched results."""
     lap = event.get("lap")
     parts = [
         f"TRIGGER: {event['key']} (severity {event['severity']}) at "
@@ -110,6 +131,12 @@ def instruction(
         + (f", lap {lap}" if lap is not None else "")
         + f".\nEvent payload: {as_text(event.get('payload'))}"
     ]
+    if previous:
+        parts.append(
+            "YOUR EARLIER CALLS (revise or confirm them; do not restate one that still "
+            "stands word for word, and say what changed if you change it):\n"
+            + "\n".join("- " + previous_line(p) for p in previous)
+        )
     if radio:
         recent = "\n".join(
             f"- [{m['agent']}/{m['priority']}] {m['spoken_text']}" for m in radio
@@ -138,6 +165,57 @@ def instruction(
     return "\n\n".join(parts)
 
 
+def previous_line(call: Mapping[str, Any]) -> str:
+    """One recalled call as the agent is shown it.
+
+    ``You said on lap 4: "Plan to box lap 13." (aired late by 9 s)``
+    """
+    lap = call.get("lap")
+    when = f"on lap {lap}" if lap is not None else f"at {float(call['session_time']):.0f}s"
+    status = call.get("status")
+    if status == LATE:
+        late_by = call.get("late_by_s")
+        note = f"aired late by {late_by:.0f} s" if late_by is not None else "aired late"
+    elif status == EXPIRED:
+        reason = call.get("expired_reason")
+        note = "never aired, dropped" + (f": {reason}" if reason else "")
+    elif status == QUEUED:
+        note = "not aired yet, still queued"
+    else:
+        note = "aired"
+    return f'You said {when}: "{call["spoken_text"]}" ({note})'
+
+
+def previous_call(message: Any, *, queued: bool = False) -> dict[str, Any]:
+    """The ``previous`` entry for one of the agent's own ``RadioMessage`` s.
+
+    ``queued`` = the message is still waiting for the channel. Otherwise the air-time
+    fields the radio set (task B1) say whether it aired, aired late or was dropped.
+    The spoken text is the agent's own words, without the late tag the radio added.
+    """
+    spoken = message.spoken_text
+    if spoken.startswith(LATE_PREFIX):
+        spoken = spoken[len(LATE_PREFIX) :]
+    if message.expired:
+        status = EXPIRED
+    elif queued:
+        status = QUEUED
+    elif message.late:
+        status = LATE
+    else:
+        status = AIRED
+    return {
+        "message_id": message.message_id,
+        "subject": message.subject,
+        "lap": message.event_ref.lap,
+        "session_time": message.session_time,
+        "spoken_text": spoken,
+        "status": status,
+        "late_by_s": message.late_by_s if status == LATE else None,
+        "expired_reason": message.expired_reason if status == EXPIRED else None,
+    }
+
+
 def tools_sha(tools: Sequence[Any]) -> str:
     """Hash of the tool definitions offered (name, description, schema)."""
     defs = [t.to_api() if hasattr(t, "to_api") else t for t in tools]
@@ -158,8 +236,13 @@ def build_input(
     radio_history: Sequence[Any] = (),
     prefetched: Sequence[tuple[str, Mapping[str, Any], Any]] = (),
     provider: Mapping[str, Any] | None = None,
+    previous: Sequence[Mapping[str, Any]] = (),
 ) -> dict[str, Any]:
-    """The ``run_start`` input record of one run of ``spec`` (an ``AgentSpec``)."""
+    """The ``run_start`` input record of one run of ``spec`` (an ``AgentSpec``).
+
+    ``previous`` are :func:`previous_call` entries, oldest first; only the last
+    :data:`PREVIOUS_SUBJECTS` are kept.
+    """
     shown = list(radio_history)[-RADIO_SHOWN:] if RADIO_SHOWN else []
     return {
         "v": INPUT_VERSION,
@@ -181,6 +264,11 @@ def build_input(
             }
             for m in shown
         ],
+        "previous": [
+            jsonable(dict(p)) for p in list(previous)[-PREVIOUS_SUBJECTS:]
+        ]
+        if PREVIOUS_SUBJECTS
+        else [],
         "prefetched": [
             {"tool": name, "args": jsonable(dict(args)), "result": jsonable(payload)}
             for name, args, payload in prefetched
@@ -215,7 +303,7 @@ def model_input(record: Mapping[str, Any]) -> dict[str, Any]:
     if data is None:
         raise ValueError("This run_start record has no input (journal schema version 1).")
     version = data.get("v")
-    if version != INPUT_VERSION:
+    if version not in READABLE_VERSIONS:
         raise ValueError(f"Unsupported run input version {version!r}.")
     return {
         "agent": data["agent"],
@@ -227,7 +315,12 @@ def model_input(record: Mapping[str, Any]) -> dict[str, Any]:
         "messages": [
             {
                 "role": "user",
-                "content": instruction(data["event"], data["radio"], data["prefetched"]),
+                "content": instruction(
+                    data["event"],
+                    data["radio"],
+                    data["prefetched"],
+                    data.get("previous", ()),
+                ),
             }
         ],
     }

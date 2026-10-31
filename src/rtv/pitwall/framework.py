@@ -100,7 +100,7 @@ class EventRef(BaseModel):
 
 
 #: What a call aired after its ``max_age_s`` starts with, on the radio and in TTS.
-LATE_PREFIX = "Late call: "
+LATE_PREFIX = agent_input.LATE_PREFIX
 
 
 class RadioMessage(BaseModel):
@@ -490,14 +490,20 @@ class AgentRuntime:
         *,
         events: Sequence[RaceEvent] = (),
         radio_history: Sequence[RadioMessage] = (),
+        previous_calls: Sequence[Mapping[str, Any]] = (),
     ) -> RadioMessage | None:
-        """Run the agent once. Returns ``None`` only on an unrecoverable error."""
+        """Run the agent once. Returns ``None`` only on an unrecoverable error.
+
+        ``previous_calls`` are this agent's own earlier calls
+        (:func:`rtv.pitwall.agent_input.previous_call` entries, oldest first), shown
+        so it revises them rather than restating them.
+        """
         self.invocations += 1
         started = time.perf_counter()
         turns_before = self.turns
         run = self._begin_trace(event, events, radio_history)
         try:
-            message = await self._invoke(event, state, events, radio_history)
+            message = await self._invoke(event, state, events, radio_history, previous_calls)
         finally:
             # A run that failed before its input was built still gets a run_start.
             self._start_run(None)
@@ -526,6 +532,7 @@ class AgentRuntime:
         state: RaceState,
         events: Sequence[RaceEvent],
         radio_history: Sequence[RadioMessage],
+        previous_calls: Sequence[Mapping[str, Any]] = (),
     ) -> RadioMessage | None:
         spec = self.spec
         slice_ = spec.state_slice(state)
@@ -553,6 +560,7 @@ class AgentRuntime:
             radio_history=radio_history,
             prefetched=prefetched,
             provider=self._provider_info(),
+            previous=previous_calls,
         )
         self._start_run(record)
         first = agent_input.model_input(record)
