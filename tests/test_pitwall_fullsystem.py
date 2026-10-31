@@ -176,6 +176,12 @@ def test_the_health_endpoint_sees_the_whole_stack(client):
     assert body["agents"]["running"] is True
     assert body["agents"]["degraded"] == []
     assert body["agents"]["director"]["status"] == "planned"
+    # One session budget over every model call, split by layer (vision is not
+    # mounted here, so the agents are all of it).
+    layers = body["agents"]["calls_by_layer"]
+    assert layers["agents"] == body["agents"]["calls_used"]
+    assert sum(layers.values()) == body["agents"]["calls_used"]
+    assert body["agents"]["budget_exhausted"] is False
 
 
 # --------------------------------------------------------------------------
