@@ -7,6 +7,7 @@ recorded earlier stays readable.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -14,6 +15,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from rtv.api.deps import get_services
 from rtv.racestate.summary import race_summary
 from rtv.services import AppServices
+from rtv.session_end import run_summary
 from rtv.store import journal
 
 router = APIRouter(tags=["journal"])
@@ -122,16 +124,27 @@ def get_summary(
 ) -> dict:
     if services.repo.get_session(session_id) is None:
         raise HTTPException(404, f"Unknown session {session_id}")
-    laps = services.repo.get_laps(session_id)
-    run_id: str | None = None
-    records = None
+    out: dict | None = None
     try:
         run_id, path = _run_file(services, session_id, run)
-        records = journal.iter_records(path)
     except HTTPException as exc:
         if run is not None or exc.status_code != 404:
             raise
-    out = {"session_id": session_id, "run_id": run_id, **race_summary(laps, records)}
+        path = None
+    if path is None:
+        laps = services.repo.get_laps(session_id)
+        out = {"session_id": session_id, "run_id": None, **race_summary(laps, None)}
+    else:
+        # The session-end hook stores each run's summary; compute it otherwise
+        # (a run still recording, or one journaled before stage 07).
+        stored = journal.summary_path(path)
+        if stored.is_file():
+            try:
+                out = json.loads(stored.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                out = None
+        if out is None:
+            out = run_summary(services.repo, session_id, path)
     if services.vision is not None:
         out["vision"] = services.vision.summary(session_id)
     return out

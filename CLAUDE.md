@@ -100,7 +100,7 @@ files that were already formatted and sorts imports in every edited file.
   never re-runs the agents.
 - Pitwall agents never assert a number that isn't traceable to deterministic data; the
   race-state engine has no LLM in it. `docs/PITWALL.md` records the v2 interfaces and
-  the pending build stages (`prompts/07-10`; done ones are in `prompts/done/`).
+  the pending build stages (`prompts/08-10`; done ones are in `prompts/done/`).
 - Commit messages: one imperative sentence-case subject, no prefix (see `git log`).
 
 ## Environment
@@ -134,7 +134,7 @@ the hermetic eval runner, `--dry-run` and `--findings-only` are free.
 
 ## Staged pitwall build
 
-The v2 pitwall was built by headless prompts in `prompts/` (01-06 done, 07-10 pending),
+The v2 pitwall was built by headless prompts in `prompts/` (01-07 done, 08-10 pending),
 run by `run_pitwall.ps1` / `run_pitwall.sh`. When running one of those stages, read
 `docs/PITWALL.md` first (it is the shared state between stages) and finish by updating
 it with what was built, the interfaces exposed and any deviations. Each stage must leave

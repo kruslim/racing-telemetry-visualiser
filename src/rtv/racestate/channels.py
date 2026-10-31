@@ -16,6 +16,7 @@ from __future__ import annotations
 SESSION_TIME = "SessionTime"
 SESSION_TICK = "SessionTick"
 SESSION_STATE = "SessionState"
+SESSION_NUM = "SessionNum"
 SESSION_TIME_REMAIN = "SessionTimeRemain"
 SESSION_LAPS_REMAIN = "SessionLapsRemainEx"
 SESSION_LAPS_REMAIN_FALLBACK = "SessionLapsRemain"
@@ -105,6 +106,7 @@ REQUIRED: dict[str, tuple[str, ...]] = {
     "pit": (ON_PIT_ROAD,),
     "incidents": (PLAYER_INCIDENTS,),
     "offtrack": (PLAYER_TRACK_SURFACE,),
+    "lifecycle": (SESSION_NUM, SESSION_STATE, SESSION_FLAGS),
 }
 
 # Health/conditions are "any-of" groups rather than "all-of".

@@ -70,6 +70,9 @@ class _Run:
         self.last_state_lap: int | None = None
         self.last_flush = time.monotonic()
         self.last_time: tuple[float | None, int | None] = (None, None)
+        #: The session segment this run records (session_num, session_type,
+        #: segment), once known; see :mod:`rtv.racestate.lifecycle`.
+        self.segment: dict[str, Any] | None = None
 
 
 class SessionRecorder:
@@ -107,8 +110,32 @@ class SessionRecorder:
             return None
         return {"session_id": run.session_id, "run_id": run.run_id, "source": run.source}
 
-    def begin(self, session_id: str, source: str, **meta: Any) -> str:
-        """Open a new run for ``session_id``; closes any run already open."""
+    def active_run(self) -> dict[str, Any] | None:
+        """:attr:`active` plus the run's file ``path`` and its ``segment``."""
+        run = self._run
+        if run is None:
+            return None
+        return {
+            "session_id": run.session_id,
+            "run_id": run.run_id,
+            "source": run.source,
+            "path": str(run.path),
+            "segment": dict(run.segment) if run.segment else None,
+        }
+
+    def begin(
+        self,
+        session_id: str,
+        source: str,
+        *,
+        segment: dict[str, Any] | None = None,
+        **meta: Any,
+    ) -> str:
+        """Open a new run for ``session_id``; closes any run already open.
+
+        ``segment`` (``session_num``, ``session_type``, ``segment``) goes into the
+        start record when the session segment is already known.
+        """
         self.end()
         _check_id(session_id)
         stamp = datetime.fromtimestamp(self._wall_clock(), tz=UTC).strftime("%Y%m%dT%H%M%SZ")
@@ -120,25 +147,53 @@ class SessionRecorder:
         run_id = f"{stamp}-{n:02d}-{source}"
         with self._lock:
             self._run = _Run(run_dir / f"{run_id}.jsonl", session_id, run_id, source)
+            self._run.segment = dict(segment) if segment else None
             self._write_locked(
                 "lifecycle",
-                {"phase": "start", "source": source, "session_id": session_id, **meta},
+                {
+                    "phase": "start",
+                    "source": source,
+                    "session_id": session_id,
+                    **(segment or {}),
+                    **meta,
+                },
             )
         log.info("Journal run %s/%s started", session_id, run_id)
         return run_id
 
-    def end(self, **meta: Any) -> None:
-        """Write the final state and close the open run, if any."""
+    def annotate_segment(self, segment: dict[str, Any]) -> bool:
+        """Name the session segment of the open run (a ``lifecycle`` ``segment`` record).
+
+        Used when the run was opened before the first frame said which session
+        it is. False when no run is open or the run already has a segment.
+        """
+        with self._lock:
+            run = self._run
+            if run is None or run.segment is not None:
+                return False
+            run.segment = dict(segment)
+            self._write_locked("lifecycle", {"phase": "segment", **segment})
+            return True
+
+    def end(self, *, state: Any = None, **meta: Any) -> dict[str, Any] | None:
+        """Write the final state and close the open run, if any.
+
+        ``state`` overrides the final snapshot (the engine's last state of a
+        segment that has already been reset). Returns what :meth:`active_run`
+        said about the run, or None when nothing was open.
+        """
         if self._run is None:
-            return
+            return None
         # Snapshot before taking our lock: the engine publishes race events (and
         # so calls on_race_event) while holding its own lock, so taking the two in
         # the other order here could deadlock.
-        state = self._take_snapshot()
+        if state is None:
+            state = self._take_snapshot()
+        closed = self.active_run()
         with self._lock:
             run = self._run
             if run is None:
-                return
+                return None
             self._write_state_locked(state, force=True)
             self._write_locked("lifecycle", {"phase": "end", **meta})
             try:
@@ -147,6 +202,7 @@ class SessionRecorder:
                 log.exception("Could not close journal %s", run.path)
             self._run = None
         log.info("Journal run %s/%s closed", run.session_id, run.run_id)
+        return closed
 
     # ---- sources -------------------------------------------------------
 
@@ -289,6 +345,51 @@ class SessionRecorder:
 # ---- reading -------------------------------------------------------------
 
 
+#: Lifecycle fields naming a run's session segment.
+_SEGMENT_KEYS = ("session_num", "session_type", "segment")
+
+
+def summary_path(journal_path: Path) -> Path:
+    """Where a run's stored summary lives: ``<run_id>.summary.json`` beside it."""
+    journal_path = Path(journal_path)
+    return journal_path.with_name(f"{journal_path.stem}.summary.json")
+
+
+def laps_for_run(
+    laps: list[dict[str, Any]], records: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """The lap rows one run covers: a session's lap table spans every segment.
+
+    A lap belongs to the run when the run's state snapshots saw the player on
+    that lap and its start time lies inside the run's session-time bounds.
+    A run with no snapshots keeps every lap (nothing to judge by).
+    """
+    seen: set[int] = set()
+    t0 = t1 = None
+    for rec in records:
+        t = rec.get("session_time")
+        if isinstance(t, int | float):
+            t0 = t if t0 is None else min(t0, t)
+            t1 = t if t1 is None else max(t1, t)
+        if rec.get("kind") == "state":
+            lap = ((rec.get("data") or {}).get("player") or {}).get("lap")
+            if isinstance(lap, int):
+                seen.add(lap)
+    if not seen:
+        return list(laps)
+    out = []
+    for lap in laps:
+        if lap.get("lap") not in seen:
+            continue
+        start = lap.get("start_session_time")
+        if isinstance(start, int | float) and t0 is not None and t1 is not None:
+            # A lap starts a frame or two before the snapshot that first sees it.
+            if not (t0 - 1.0 <= start <= t1):
+                continue
+        out.append(lap)
+    return out
+
+
 def session_dir(root: Path, session_id: str) -> Path:
     return Path(root) / _check_id(session_id) / "runs"
 
@@ -315,6 +416,7 @@ def summarize_run(path: Path) -> dict[str, Any]:
     counts: dict[str, int] = {}
     agents: set[str] = set()
     start: dict[str, Any] = {}
+    segment: dict[str, Any] = {}
     end: dict[str, Any] | None = None
     t0 = t1 = None
     for rec in iter_records(path):
@@ -330,9 +432,13 @@ def summarize_run(path: Path) -> dict[str, Any]:
             phase = (rec.get("data") or {}).get("phase")
             if phase == "start":
                 start = rec
+            elif phase == "segment":
+                segment = rec.get("data") or {}
             elif phase == "end":
                 end = rec
     data = start.get("data") or {}
+    seg = {**{k: data.get(k) for k in _SEGMENT_KEYS if k in data}, **segment}
+    end_data = (end or {}).get("data") or {}
     return {
         "run_id": path.stem,
         "source": data.get("source"),
@@ -344,7 +450,17 @@ def summarize_run(path: Path) -> dict[str, Any]:
         "counts": counts,
         "agents": sorted(agents),
         "has_agents": bool(counts.get("run_start") or counts.get("radio")),
-        "meta": {k: v for k, v in data.items() if k not in {"phase", "source", "session_id"}},
+        # The session segment (practice / qualify / race) this run recorded.
+        "session_num": seg.get("session_num"),
+        "session_type": seg.get("session_type"),
+        "segment": seg.get("segment"),
+        "end_reason": end_data.get("reason"),
+        "calls_used": end_data.get("calls_used"),
+        "meta": {
+            k: v
+            for k, v in data.items()
+            if k not in {"phase", "source", "session_id", *_SEGMENT_KEYS}
+        },
     }
 
 

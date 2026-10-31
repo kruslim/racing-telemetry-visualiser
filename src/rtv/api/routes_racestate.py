@@ -135,6 +135,10 @@ def replay_start(
         raise HTTPException(404, str(exc)) from exc
 
     engine.reset()
+    if services.pitwall is not None:
+        # A second replay in one server run must not inherit the first one's
+        # cooldowns, radio, breakers, director state or spent call budget.
+        services.pitwall.reset()
     driver.start(source, speed=body.speed)
     return driver.status().to_api()
 
