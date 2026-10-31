@@ -178,3 +178,24 @@ body.app #live-view {
 
 /* --- replay picker ------------------------------------------------------- */
 #replay-session { max-width: 320px; }
+
+/* --- onboard: the camera (live capture or a synced replay) and visual notes */
+.live-grid .right-column .panel-onboard { flex: 0 0 auto; }
+.panel-onboard h2 button { margin-left: auto; }
+.onboard-frame {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  background: #000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+.onboard-frame img, .onboard-frame video { width: 100%; height: 100%; object-fit: contain; display: block; }
+.onboard-frame .muted { padding: 12px; text-align: center; }
+.onboard-notes { max-height: 160px; overflow-y: auto; }
+.onboard-note { padding: 4px 0; border-top: 1px solid var(--line, #2a2f36); }
+.onboard-note-head { color: var(--muted); font-size: 12px; }
+.onboard-obs { font-size: 13px; }
+.onboard-obs .k { text-transform: uppercase; font-size: 11px; }
+.onboard-obs.conf-low { opacity: 0.6; }

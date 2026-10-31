@@ -315,6 +315,50 @@ class Settings(BaseSettings):
     )
     vision_ffmpeg: str = Field(default="ffmpeg", description="ffmpeg binary name or path.")
     vision_ffprobe: str = Field(default="ffprobe", description="ffprobe binary name or path.")
+    vision_capture_input: str = Field(
+        default='-f gdigrab -framerate 30 -draw_mouse 0 -i "title=iRacing.com Simulator"',
+        description="ffmpeg input arguments for live capture. Default: the iRacing window "
+        "on Windows (gdigrab). Any ffmpeg input works, e.g. '-f dshow -i video=OBS "
+        "Virtual Camera'.",
+    )
+    vision_capture_record: bool = Field(
+        default=True,
+        description="Also write the capture to an MP4 in the session's vision folder and "
+        "register it, synced, when the capture stops.",
+    )
+    vision_capture_preview_fps: float = Field(
+        default=10.0, gt=0, le=60, description="Frames per second kept for the live view."
+    )
+    vision_capture_ring_s: float = Field(
+        default=20.0, ge=5, le=600, description="Seconds of live frames kept in memory."
+    )
+    vision_capture_lag_s: float = Field(
+        default=0.0,
+        ge=0,
+        le=2,
+        description="Capture latency taken off each frame's session-time stamp (s).",
+    )
+    vision_capture_auto: bool = Field(
+        default=False,
+        description="Start capture when a live iRacing session begins, stop when it ends.",
+    )
+    vision_live_triggers: str = Field(
+        default="incident,offtrack,lockup",
+        description="Race events that send the frames around them to the VLM in live mode "
+        "(any of incident, offtrack, lockup, wheelspin, traffic_close, recurring_issue).",
+    )
+    vision_live_max_calls: int = Field(
+        default=10,
+        ge=0,
+        le=500,
+        description="VLM calls per session run in live mode; 0 turns the live VLM off.",
+    )
+    vision_live_min_gap_s: float = Field(
+        default=5.0,
+        ge=0,
+        description="Live events closer than this (session s) to the last analysed one "
+        "are merged into it.",
+    )
 
     # --- server ----------------------------------------------------------
     host: str = "127.0.0.1"

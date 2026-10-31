@@ -57,6 +57,7 @@ def _imports(source: str) -> list[str]:
         "js/shared/flow-graph.js",
         "js/live/runs-panel.js",
         "js/live/telemetry-strip.js",
+        "js/live/onboard-panel.js",
     ],
 )
 def test_the_live_view_ships_and_serves_the_file(client, relative):

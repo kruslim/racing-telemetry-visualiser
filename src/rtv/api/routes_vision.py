@@ -8,11 +8,12 @@ quota): ``POST .../vision/analyses``, which needs ``RTV_VISION_MODE`` set to
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from rtv.api.deps import get_vision
@@ -86,6 +87,88 @@ def _sync_kwargs(body: SyncBody) -> dict:
 @router.get("/vision/status", summary="Vision mode, key, ffmpeg and the frame budget")
 def vision_status(vision: VisionService = Depends(get_vision)) -> dict:
     return vision.status()
+
+
+# ---- live -----------------------------------------------------------------
+
+
+class CaptureBody(BaseModel):
+    session_id: str | None = Field(
+        None, description="Session to stamp and register under; default the live one."
+    )
+
+
+@router.get("/vision/live", summary="Live onboard: capture, frame source and the live VLM")
+def live_status(vision: VisionService = Depends(get_vision)) -> dict:
+    return vision.live_status()
+
+
+@router.post("/vision/live/capture/start", summary="Start capturing the sim window (free)")
+def capture_start(
+    body: CaptureBody | None = None, vision: VisionService = Depends(get_vision)
+) -> dict:
+    try:
+        return vision.start_capture((body or CaptureBody()).session_id)
+    except RuntimeError as exc:
+        if isinstance(exc, VideoToolError):
+            raise _errors(exc) from exc
+        raise HTTPException(409, str(exc)) from exc
+    except Exception as exc:
+        raise _errors(exc) from exc
+
+
+@router.post(
+    "/vision/live/capture/stop", summary="Stop capturing; register the recording, synced"
+)
+def capture_stop(vision: VisionService = Depends(get_vision)) -> dict:
+    return vision.stop_capture()
+
+
+@router.get("/vision/live/frame", summary="The newest live frame (image/jpeg; 204 when none)")
+def live_frame(vision: VisionService = Depends(get_vision)) -> Response:
+    jpeg = vision.latest_frame()
+    if jpeg is None:
+        return Response(status_code=204)
+    return Response(jpeg, media_type="image/jpeg", headers={"Cache-Control": "no-store"})
+
+
+MJPEG_BOUNDARY = "rtvframe"
+
+
+@router.get(
+    "/vision/live/mjpeg",
+    summary="The live frames as multipart MJPEG, for an <img> element",
+)
+async def live_mjpeg(
+    request: Request,
+    max_frames: int | None = Query(None, ge=1, description="End after this many (tests)."),
+    vision: VisionService = Depends(get_vision),
+) -> StreamingResponse:
+    period = 1.0 / vision.settings.vision_capture_preview_fps
+
+    async def frames():
+        # Poll the newest frame at the preview rate: it covers stamped frames and
+        # the unstamped ones a capture shows before a live session starts.
+        last: bytes | None = None
+        sent = 0
+        while max_frames is None or sent < max_frames:
+            if await request.is_disconnected():
+                return
+            jpeg = vision.latest_frame()
+            if jpeg is None or jpeg is last:
+                await asyncio.sleep(period)
+                continue
+            last, sent = jpeg, sent + 1
+            yield (
+                f"--{MJPEG_BOUNDARY}\r\nContent-Type: image/jpeg\r\n"
+                f"Content-Length: {len(jpeg)}\r\n\r\n"
+            ).encode() + jpeg + b"\r\n"
+
+    return StreamingResponse(
+        frames(),
+        media_type=f"multipart/x-mixed-replace; boundary={MJPEG_BOUNDARY}",
+        headers={"Cache-Control": "no-store"},
+    )
 
 
 # ---- videos ---------------------------------------------------------------
