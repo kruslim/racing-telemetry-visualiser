@@ -59,6 +59,8 @@ def get_channel(
         )
     except KeyError as exc:
         raise HTTPException(400, str(exc)) from exc
+    except QueryError as exc:
+        raise HTTPException(400, str(exc)) from exc
     except FileNotFoundError as exc:
         raise HTTPException(404, str(exc)) from exc
 
@@ -80,7 +82,7 @@ def compare(
         raise HTTPException(400, "laps must be comma-separated integers") from exc
     try:
         return repo.compare(session_id, name, lap_nums, grid=grid)
-    except KeyError as exc:
+    except (KeyError, QueryError) as exc:
         raise HTTPException(400, str(exc)) from exc
 
 
@@ -100,6 +102,8 @@ def trackmap(
             session_id, lap=lap, color=color, max_points=max_points
         )
     except KeyError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except QueryError as exc:
         raise HTTPException(400, str(exc)) from exc
     except FileNotFoundError as exc:
         raise HTTPException(404, str(exc)) from exc

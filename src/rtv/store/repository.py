@@ -153,6 +153,8 @@ class Repository:
 
         total = self._db.query(q.count_rows_sql(), [glob])[0][0]
         bucket = 1 if mode == "raw" else q.bucket_size(total, max_points)
+        if bucket > 1:
+            self._refuse_arrays(session_id, names, "downsampled")
         rows = self._db.query_dicts(q.channels_sql(names, x, bucket), [glob])
 
         x_values = [r["x"] for r in rows]
@@ -186,6 +188,7 @@ class Repository:
         self, session_id: str, name: str, laps: list[int], *, grid: int = 1000
     ) -> dict:
         self._require_columns(session_id, [name, "LapDistPct"])
+        self._refuse_arrays(session_id, [name], "compared across laps")
         series: dict[str, list] = {}
         for lap in laps:
             glob = q.lap_glob(self.session_dir(session_id), lap)
@@ -217,6 +220,7 @@ class Repository:
             raise FileNotFoundError("Session has no Lat/Lon channels for a track map")
         if color:
             self._require_columns(session_id, [color])
+            self._refuse_arrays(session_id, [color], "used to colour the track map")
         glob = (
             q.lap_glob(self.session_dir(session_id), lap)
             if lap is not None
@@ -241,6 +245,24 @@ class Repository:
         missing = [n for n in names if n not in valid]
         if missing:
             raise KeyError(f"Unknown channels: {missing}")
+
+    def _refuse_arrays(self, session_id: str, names: list[str], what: str) -> None:
+        """List-stored arrays (``CarIdx*``: one entry per car) cannot be averaged.
+
+        A bucketed avg/min/max of "every car's position" is not a number anyone can
+        use, and DuckDB rejects it anyway; say so instead of failing with a 500.
+        Raw mode returns the arrays whole.
+        """
+        rows = self._db.query_dicts(
+            "SELECT name FROM variable_catalog WHERE session_id = ? AND storage = 'list'",
+            [session_id],
+        )
+        arrays = sorted({r["name"] for r in rows} & set(names))
+        if arrays:
+            raise q.QueryError(
+                f"{', '.join(arrays)} is a per-car array (one entry per car) and cannot be "
+                f"{what}; request it with mode=raw"
+            )
 
     def _units(self, session_id: str, names: list[str]) -> dict[str, str | None]:
         # Map a (possibly flattened) column name back to its variable's unit.
