@@ -77,6 +77,22 @@ def _window_columns(ibt, names: list[str], start: int, count: int) -> dict[str, 
     return out
 
 
+def _complete_records(ibt) -> int:
+    """Records actually in the file: the header count, capped at what the bytes hold.
+
+    A file copied while iRacing was still writing it can claim more records than
+    it has; reading past the end would abort the whole import on the last chunk.
+    """
+    declared = int(ibt._disk_header.session_record_count)
+    header = ibt._header
+    if header.buf_len <= 0:
+        return declared
+    available = (len(ibt._shared_mem) - header.var_buf[0].buf_offset) // header.buf_len
+    if available < declared:
+        log.warning("Truncated .ibt: header says %d records, file holds %d", declared, available)
+    return max(0, min(declared, available))
+
+
 def import_ibt(
     path: str | Path,
     sink: TelemetrySink,
@@ -104,7 +120,7 @@ def import_ibt(
         catalog.car_id = car_id
         catalog.track_id = track_id
 
-        total = int(ibt._disk_header.session_record_count)
+        total = _complete_records(ibt)
         now = time.time()
         session = Session(
             session_id=session_id,

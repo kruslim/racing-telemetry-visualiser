@@ -250,6 +250,8 @@ src/rtv/
   store/     duckdb, schema, parquet writer, query builders, repository
   stream/    live hub (fan-out)
   api/       FastAPI routes + /ws/live
+  tracks/    pre-loaded venue reference data (OSM corner names, data/*.json),
+             venue matching and per-session corner map
   coaching/  Layer-1 feature extraction, models, Layer-3a orchestrator
     agent/   Layer-3b LangGraph coach (provider, tools, graph, refusal, validator)
   racestate/ v2 pitwall: deterministic race-state engine, detectors, event bus,
@@ -389,6 +391,8 @@ reports `calls_used` and per-agent call counts and latencies.
 | GET | `/sessions/{id}/channels/{name}?lap=5` | Single channel |
 | GET | `/sessions/{id}/compare?name=Speed&laps=3,7&grid=1000` | Lap comparison aligned on lap distance |
 | GET | `/sessions/{id}/trackmap?color=Speed` | Decimated GPS polyline |
+| GET | `/sessions/{id}/track?lap=` | Layout facts from the header + the venue's named corners located on the lap |
+| GET | `/tracks` · `/tracks/{key}` | Pre-loaded venues (named corners, straights, pit lane; OSM, ODbL) |
 | GET | `/coaching/lap-findings?session_id=…&main_lap=5&ref_lap=3` | Layer-1 corner findings, driver KPIs, analyst stats |
 | GET | `/coaching/agents` | The deterministic analysts behind the findings (ids, names, codes) |
 | POST | `/coaching/chat` | LLM race engineer: `{session_id, main_lap, ref_lap, question}` → grounded answer + graph annotations (needs `KIMI_CODE_API_KEY`) |
@@ -460,6 +464,8 @@ either way.
 
 - `docs/VARIABLES.md` — the standard iRacing variable set and the six-type system.
 - `docs/COACHING.md` — the tiered coaching architecture in depth.
+- `docs/TRACKS.md` — what is per-track and where it comes from: header facts, and
+  corner names from OpenStreetMap for 33 GT3 venues, with coverage and how to rebuild.
 - `docs/PITWALL.md` — the v2 live pitwall: race-state schema, event catalog, replay,
   the event-driven agent layer (framework, grounding, radio, and the four agents:
   strategist, vehicle engineer, spotter, coach), the TTS radio voice, the planned
