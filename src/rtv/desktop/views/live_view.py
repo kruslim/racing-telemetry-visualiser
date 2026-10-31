@@ -37,6 +37,7 @@ from ..widgets.live import (
     TickerStrip,
     TowerPanel,
 )
+from ..widgets.live_onboard import LiveOnboardPanel
 from ..widgets.radio import RadioFeed
 from .hub import Hub
 
@@ -136,7 +137,14 @@ class LiveView(QWidget):
         holder = QWidget()
         hl = QVBoxLayout(holder)
         hl.setContentsMargins(0, 12, 16, 12)
-        hl.addWidget(radio_frame)
+        hl.setSpacing(12)
+        # The onboard camera (live capture or a synced recording) above the radio.
+        self.onboard = LiveOnboardPanel()
+        self.onboard.bind(
+            hub.api, hub.now, on_notice=lambda m: self.notice.show_message(m, "info")
+        )
+        hl.addWidget(self.onboard)
+        hl.addWidget(radio_frame, 1)
         splitter.addWidget(holder)
         splitter.setSizes([820, 560, 480])
 
