@@ -178,7 +178,7 @@ COACH = AgentSpec(
         T.GET_TYRE_TREND,
     ),
     triggers=COACH_TRIGGERS,
-    model="kimi-k3",
+    tier="fast",
     max_tokens=1200,
     cooldown_s=120.0,
     state_slice=coach_slice,

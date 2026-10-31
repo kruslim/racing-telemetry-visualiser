@@ -402,20 +402,9 @@ def build_pitwall(
         )
         return None
 
-    from rtv.llm import model
-
     only = [n.strip() for n in settings.pitwall_agents_only.split(",") if n.strip()]
-    agents = build_agents(
-        models={
-            "strategist": model("reasoning", settings.pitwall_strategist_model, settings),
-            "vehicle_engineer": model(
-                "fast", settings.pitwall_vehicle_engineer_model, settings
-            ),
-            "spotter": model("fast", settings.pitwall_spotter_model, settings),
-            "coach": model("fast", settings.pitwall_coach_model, settings),
-        },
-        only=only or None,
-    )
+    # Each agent's model: RTV_PITWALL_<NAME>_MODEL, else the rtv.llm tier default.
+    agents = build_agents(only=only or None, settings=settings)
     if not agents:
         log.warning(
             "Pitwall agents disabled: RTV_PITWALL_AGENTS_ONLY=%r matched no agent.",

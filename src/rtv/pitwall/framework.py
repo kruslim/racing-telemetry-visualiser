@@ -24,7 +24,7 @@ import asyncio
 import hashlib
 import time
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from enum import StrEnum
 from typing import Any
 
@@ -226,6 +226,25 @@ class Trigger:
             return False
 
 
+def agent_model(spec: AgentSpec, settings: Any = None, override: str = "") -> str:
+    """The model id an agent runs on.
+
+    First non-empty wins: ``override``, the spec's own ``model``, the per-agent
+    setting ``RTV_PITWALL_<NAME>_MODEL``, then the ``rtv.llm`` default for the
+    spec's tier (``RTV_LLM_KIMI_MODEL_FAST`` or ``..._REASONING``).
+    """
+    from rtv import llm
+    from rtv.config import get_settings
+
+    if override.strip():
+        return override.strip()
+    if spec.model.strip():
+        return spec.model.strip()
+    s = settings or get_settings()
+    per_agent = str(getattr(s, f"pitwall_{spec.name}_model", "") or "")
+    return llm.model(spec.tier, per_agent, s)
+
+
 @dataclass(frozen=True)
 class AgentSpec:
     """One agent, entirely declarative."""
@@ -235,7 +254,12 @@ class AgentSpec:
     output_model: type[AgentOutput]
     tools: tuple[ToolSpec, ...] = ()
     triggers: tuple[Trigger, ...] = ()
-    model: str = "kimi-k3"
+    #: ``"fast"`` or ``"reasoning"``: which ``rtv.llm`` default the agent falls
+    #: back to when neither ``model`` nor ``RTV_PITWALL_<NAME>_MODEL`` is set.
+    tier: str = "fast"
+    #: The model id. Empty means "resolve from settings" (:func:`agent_model`),
+    #: which :func:`~rtv.pitwall.agents.build_agents` and :class:`AgentRuntime` do.
+    model: str = ""
     max_tokens: int = 1500
     #: Default cooldown for triggers that do not set their own.
     cooldown_s: float = 30.0
@@ -315,6 +339,8 @@ class AgentRuntime:
         retry_backoff_s: float = RETRY_BACKOFF_S,
         tracer: Tracer | None = None,
     ) -> None:
+        if not spec.model:
+            spec = replace(spec, model=agent_model(spec))
         self.spec = spec
         #: Optional activity tracer (see :mod:`rtv.pitwall.activity`). Passive:
         #: ``None`` costs one check per step and nothing else.

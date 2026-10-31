@@ -202,7 +202,7 @@ VEHICLE_ENGINEER = AgentSpec(
     triggers=VEHICLE_ENGINEER_TRIGGERS,
     # The numbers are all computed upstream; this is pattern-reading, not
     # reasoning about a decision tree, so it sits on the fast model.
-    model="kimi-k3",
+    tier="fast",
     max_tokens=1200,
     cooldown_s=45.0,
     state_slice=vehicle_engineer_slice,
