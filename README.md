@@ -5,6 +5,12 @@
 > The app serves real data only. The old GitHub Pages showcase ran on simulated data and
 > has been taken down; it will come back as an export of a real recorded session.
 
+> **RTV Desktop is the primary UI.** The native app (`rtv.desktop`, see
+> [RTV Desktop](#rtv-desktop-the-primary-ui)) gets every new UI feature. The web pages
+> at `/`, `/review/` and `/radio.html` are frozen: they keep working and get bug fixes,
+> but no new features. The web review stays because the GitHub Pages export of a real
+> session is built from it.
+
 Racing Telemetry Visualiser (RTV) captures *every* channel iRacing exposes — from
 the live 60 Hz shared-memory feed or from recorded `.ibt` files — stores it
 columnar in DuckDB/Parquet, and serves it three ways:
@@ -265,7 +271,8 @@ src/rtv/
   llm.py     the Kimi Code client (endpoint, key, models), shared by every LLM layer
   services.py  wiring; main.py  app factory
 mcp_server/  Layer-2 MCP server (telemetry_coach.py)
-frontend/    vanilla JS, no build step: the live view at / (index.html, js/live/,
+frontend/    frozen web pages (bug fixes only; the desktop app is the primary UI).
+             Vanilla JS, no build step: the live view at / (index.html, js/live/,
              js/pitwall/), the post-race review at /review/ (js/review/), shared
              timeline / activity model / flow graph (js/shared/), radio page,
              two self-test pages
@@ -311,10 +318,11 @@ Layer-3a orchestration;
 `pip install -e ".[agent]"` for the Layer-3b LangGraph coach. The Layer-3b graph and
 its eval harness run **offline with a scripted model** — no key — under the `dev` extra.
 
-### RTV Desktop (native app)
+### RTV Desktop (the primary UI)
 
-The same pitwall and review as a native Windows app (PySide6), with the server
-embedded — one window, no browser:
+The pitwall, the radio and the review as a native Windows app (PySide6), with the
+server embedded — one window, no browser. New UI work lands here only; the web pages
+are frozen to bug fixes:
 
 ```powershell
 uv pip install --python .venv\Scripts\python.exe -e ".[desktop]"
@@ -473,6 +481,14 @@ The browser-side modules have their own suites with no JS toolchain at all:
 `/audio-test.html` and `/pitwall-test.html`. `pytest` runs both when `node` happens
 to be on `PATH` and skips them otherwise, so the offline guarantee is unchanged
 either way.
+
+The view logic exists twice, in the JS modules and in their Python ports in
+`src/rtv/desktop/model/`, so both run one shared golden file:
+`tests/fixtures/view_golden/` holds `payload -> expected view fields` cases built from
+the real Spa payloads. `tests/test_view_golden.py` checks the Python side and
+`node frontend/js/run-golden-tests.mjs` the JS side (pytest runs it when `node` is on
+`PATH`). After an intended view change, `python scripts/build_view_golden.py`
+rebuilds it; it refuses to write while the two sides disagree.
 
 ## Docs
 

@@ -4,9 +4,12 @@ A native Windows app (PySide6 / Qt 6) for the live pitwall, the radio and the
 post-race review, built from the UI redesign brief
 (`docs/ui-redesign/UI_REDESIGN_BRIEF.md`, PR #11). It is a client of the same
 FastAPI API as the web frontend; by default the server runs **embedded** in the
-app, so there is one thing to start. The web frontend is unchanged and still
-served (the embedded server serves it too, so `/radio.html` on a tablet keeps
-working).
+app, so there is one thing to start.
+
+**This is the primary UI.** New UI features are built here only. The web frontend
+(`/`, `/review/`, `/radio.html`) is frozen: it is still served (the embedded server
+serves it too, so `/radio.html` on a tablet keeps working) and gets bug fixes, but no
+new features. The web review stays for the GitHub Pages export of a real session.
 
 ## Run
 
@@ -63,7 +66,9 @@ src/rtv/desktop/
 The pure models keep the meaning of every number in one tested place, as the web
 frontend does in its node-tested modules. `tests/test_desktop_model.py` restates
 the JS suites' rules and runs the ports over the real Spa payloads from the
-brief's zip; `tests/test_desktop_widgets.py` paints every panel with those payloads
+brief's zip; `tests/test_view_golden.py` runs the shared golden file
+(`tests/fixtures/view_golden/`) that the JS modules must also pass under node, so a
+rule that drifts between the two clients fails a test; `tests/test_desktop_widgets.py` paints every panel with those payloads
 offscreen; `tests/test_desktop_server.py` boots the embedded server and the window
 on an empty store; `tests/test_desktop_vision.py` covers the onboard video panel and
 drives the review's add/sync/plan/analyse flow against a fake API. CI runs the Qt tests in their own `desktop` job.
