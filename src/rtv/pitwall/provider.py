@@ -141,7 +141,14 @@ class KimiProvider:
         kwargs["tools"] = api_tools
         if not self._thinking:
             kwargs["thinking"] = {"type": "disabled"}
-        if tools:
+        if tools and not self._thinking:
+            # "any": a turn must be a tool call, real or the respond tool. With
+            # "auto", kimi-k3 answered in plain text on about a third of the calls
+            # on the second Spa replay once the tool results were prefetched, and
+            # a text answer is no answer (verified 2026-10-31: "any" is accepted
+            # with thinking disabled).
+            kwargs["tool_choice"] = {"type": "any"}
+        elif tools:
             kwargs["tool_choice"] = {"type": "auto"}
         elif self._thinking:
             kwargs["tool_choice"] = {"type": "any"}
