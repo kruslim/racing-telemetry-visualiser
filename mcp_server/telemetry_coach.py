@@ -91,6 +91,20 @@ async def get_lap_findings(session_id: str, main_lap: int, ref_lap: int) -> dict
 
 
 @mcp.tool()
+async def get_visual_notes(session_id: str, lap: int | None = None) -> dict:
+    """Get the visual notes from the onboard video for a session (optionally one lap).
+
+    A vision model described the onboard frames at moments the telemetry flagged (offs,
+    lock-ups, incidents, the top time-loss corners): kerb use, the line against the track
+    edges, other cars, visible damage. Words only, never figures, and already checked
+    against telemetry. Use them to explain how a corner went wrong; get_lap_findings stays
+    the source of every number. An empty list means no video was analysed.
+    """
+    params: dict = {} if lap is None else {"lap": lap}
+    return await _get(f"/sessions/{session_id}/vision/coach-notes", params)
+
+
+@mcp.tool()
 async def compare_channel(
     session_id: str, name: str, laps: list[int], grid: int = 200
 ) -> dict:

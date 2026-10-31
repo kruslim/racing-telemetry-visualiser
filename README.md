@@ -256,6 +256,8 @@ src/rtv/
              replay, strategy math
   pitwall/   v2 pitwall: agent framework, tools, citation validator, radio feed,
              TTS, orchestrator, agents/ (strategist, vehicle engineer, spotter, coach)
+  vision/    onboard video: sync to session time, event-triggered frames, grounded
+             VLM visual notes (docs/VISION.md)
   director/  v2 pitwall: race-director INTERFACES ONLY (scenario schema, protocol,
              NoopDirector). Planned -- see docs/PITWALL.md stage 5.
   llm.py     the Kimi Code client (endpoint, key, models), shared by every LLM layer
@@ -268,7 +270,8 @@ frontend/    vanilla JS, no build step: the live view at / (index.html, js/live/
 evals/       ground-truth checks, LLM judge, hermetic fixtures, trace, seed cases,
              golden laps, runner
 docs/        VARIABLES.md (catalog reference), COACHING.md (coaching deep-dive),
-             PITWALL.md (v2 pitwall), director_scenario.example.json
+             PITWALL.md (v2 pitwall), VISION.md (onboard video + VLM notes),
+             director_scenario.example.json
 ```
 
 ---
@@ -480,6 +483,9 @@ either way.
   from its spec with the reasoning.
 - `docs/DESKTOP.md` — RTV Desktop, the native Qt client: running, building
   `RTV.exe`, its architecture, how it maps onto the UI brief, and its deviations.
+- `docs/VISION.md` — onboard video and VLM visual notes: syncing a video to the
+  telemetry, which moments are looked at, the grounding rules, storage, and the full
+  API for the review UI.
 - `docs/director_scenario.example.json` — a worked `ScenarioScript` for the
   **planned** race director (safety car → restart → rain → mandatory stop).
 

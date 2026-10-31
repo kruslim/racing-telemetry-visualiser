@@ -40,6 +40,8 @@ class ProviderResponse:
     text: str = ""
     #: The assistant content to append verbatim to the message history.
     assistant_content: Any = field(default_factory=list)
+    #: Token counts reported by the backend (``rtv.llm.usage_of``), when it sent them.
+    usage: dict[str, int] | None = None
 
 
 class LLMProvider(Protocol):  # pragma: no cover - structural type
@@ -146,6 +148,9 @@ class KimiProvider:
         else:
             kwargs["tool_choice"] = {"type": "tool", "name": RESPOND_TOOL}
         response = await self._client.messages.create(**kwargs)
+        from rtv.llm import record_usage
+
+        usage = record_usage(agent, model, response)
         parsed = None
 
         content = getattr(response, "content", []) or []
@@ -185,6 +190,7 @@ class KimiProvider:
             output=parsed,
             text=text,
             assistant_content=content,
+            usage=usage,
         )
 
 

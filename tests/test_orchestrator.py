@@ -102,3 +102,64 @@ def test_every_call_ships_cached_findings_block():
         assert all(b["cache_control"] == {"type": "ephemeral"} for b in system)
         assert "FINDINGS:" in system[1]["text"]
         assert call["tools"] == []  # one structured answer, no tool loop
+
+
+# The real Spa T7 corner (lap 12 vs 6) and the brake advice the Kimi run actually gave for it:
+# from 6540 m to ~6570 m is later, while the driver was already 32 m late. Its verifier agreed.
+SPA_T7 = {
+    "index": 6, "label": "T7", "distance": 6753.161, "min_main": 55.594, "min_ref": 66.041,
+    "net_dt": 2.851, "entry_m": 6605.397, "exit_m": 6924.137,
+    "diags": [
+        {"agent": "speed", "text": "Min speed -10 km/h vs reference", "distance": 6753.161,
+         "time_loss": 1.259},
+        {"agent": "brake", "text": "Brake point 32 m late", "distance": 6540.355,
+         "time_loss": 1.284},
+    ],
+}
+SPA_FINDINGS = {
+    "corners": [SPA_T7],
+    "chief": {"top3": [{"index": 6, "label": "T7", "gain": 2.851, "why": "Brake point 32 m late"}],
+              "net_lap": 5.641, "lost": 4.230, "losing_n": 1, "total": 1},
+}
+
+
+class SpaProvider(FakeProvider):
+    def __init__(self, cue: str) -> None:
+        super().__init__()
+        self.cue = cue
+
+    async def complete(self, *, output_model, messages, system, tools, **kw):
+        self.calls.append({"schema": output_model.__name__})
+        if output_model is CornerAdvice:
+            out = CornerAdvice(corner="T7", diagnosis="Brake point 32 m late, 10 km/h down.",
+                               cues=[self.cue], est_gain_s=2.851)
+        elif output_model is SessionPlan:
+            out = SessionPlan(
+                headline="T7 is worth 2.85 s.",
+                priorities=[Priority(corner="T7", why="Brake point 32 m late", gain_s=2.851)],
+                one_lap_focus=f"T7: {self.cue}",
+            )
+        else:
+            out = VerdictReport(claims=[Claim(text=self.cue, corner="T7", supported=True,
+                                              reason="derivation follows")])
+        return ProviderResponse(output=out)
+
+
+def test_deterministic_check_overrules_the_verifier_on_a_wrong_brake_direction():
+    provider = SpaProvider("Move your brake point from 6540 m to ~6570 m.")
+    result = asyncio.run(CoachOrchestrator(provider).coach(SPA_FINDINGS))
+
+    assert [c["schema"] for c in provider.calls][-1] == "VerdictReport"  # no extra model call
+    assert any("brake later at T7" in i and "6508 m" in i for i in result.fact_issues)
+    assert any("~6570 m" in i for i in result.fact_issues)
+    rejected = [c for c in result.verdict.claims if not c.supported]
+    assert rejected and all(c.corner == "T7" for c in rejected)
+    assert all(c.reason.startswith("Deterministic check") for c in rejected)
+    assert any(c.supported for c in result.verdict.claims)  # the model's own claim is kept
+
+
+def test_grounded_advice_adds_no_fact_issues():
+    provider = SpaProvider("Move your brake point from 6540 m to 6508 m.")
+    result = asyncio.run(CoachOrchestrator(provider).coach(SPA_FINDINGS))
+    assert result.fact_issues == []
+    assert all(c.supported for c in result.verdict.claims)

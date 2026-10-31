@@ -290,10 +290,22 @@ def test_summary_counts_laps_stints_fuel_and_the_radio():
     assert s["notes"] == []
 
 
+def test_summary_totals_the_tokens_each_model_call_reported():
+    from rtv.racestate.summary import race_summary
+
+    records = [
+        {"kind": "llm_call_end", "data": {"ok": True, "input_tokens": 1500, "output_tokens": 90}},
+        {"kind": "llm_call_end", "data": {"ok": True, "input_tokens": 1700, "output_tokens": 60}},
+    ]
+    s = race_summary([_lap(1, 100)], records)
+    assert (s["model_input_tokens"], s["model_output_tokens"]) == (3200, 150)
+
+
 def test_summary_without_a_journal_says_what_it_cannot_know():
     from rtv.racestate.summary import race_summary
 
     s = race_summary([_lap(1, 100)], None)
+    assert s["model_input_tokens"] is None  # unknown, not zero
     assert s["best_time"] == 100 and s["fuel_used_l"] is None and s["start_position"] is None
     assert any("No race journal" in n for n in s["notes"])
     s = race_summary([], [{"kind": "state", "data": {"player": {}}}])

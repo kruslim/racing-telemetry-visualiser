@@ -27,6 +27,7 @@ from rtv.pitwall import tools as T
 from rtv.pitwall.framework import AgentOutput, AgentSpec, RadioPriority, Trigger
 from rtv.racestate.models import EventType, FlagPhase, RaceEvent, RaceState
 from rtv.racestate.strategy_math import standings_around_player
+from rtv.vision.live import SPOTTER_KINDS
 
 AGENT_NAME = "spotter"
 
@@ -52,6 +53,10 @@ What you may say:
 If the gap basis is null the gaps are unknown for this session. Say "no gaps" and
 give the threat type only - do not convert a lap fraction into seconds yourself.
 Threat 'clear' is a real answer: use it when the trigger has resolved.
+
+A visual_observation trigger is the onboard camera's description of a moment the
+telemetry already flagged: words, no numbers, and seconds old. Pass it on only if
+it is still worth knowing (a car behaving oddly, debris, damage), never as urgent.
 """
 
 
@@ -87,6 +92,11 @@ def _hazard_flag(event: RaceEvent, state: RaceState) -> bool:
     return to in (FlagPhase.YELLOW.value, FlagPhase.RED.value)
 
 
+def _visual_for_spotter(event: RaceEvent, state: RaceState) -> bool:
+    """Only what the camera saw around the car; line and kerb notes are the coach's."""
+    return event.payload.get("kind") in SPOTTER_KINDS
+
+
 SPOTTER_TRIGGERS: tuple[Trigger, ...] = (
     Trigger(
         EventType.TRAFFIC_CLOSE.value,
@@ -101,6 +111,12 @@ SPOTTER_TRIGGERS: tuple[Trigger, ...] = (
         cooldown_s=10.0,
     ),
     Trigger(EventType.INCIDENT.value, label="incident", cooldown_s=10.0),
+    Trigger(
+        EventType.VISUAL_OBSERVATION.value,
+        predicate=_visual_for_spotter,
+        label="the onboard camera saw traffic, debris or damage",
+        cooldown_s=60.0,
+    ),
 )
 
 
@@ -147,6 +163,11 @@ SPOTTER = AgentSpec(
     cooldown_s=15.0,
     state_slice=spotter_slice,
     subject=spotter_subject,
+    # Both of its tools, which every run on the Spa replay called first.
+    prefetch=(
+        ("get_standings_around_player", {}),
+        ("get_recent_detector_events", {"limit": 10}),
+    ),
     max_tool_iterations=2,
 )
 

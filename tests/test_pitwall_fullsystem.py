@@ -35,9 +35,11 @@ from rtv.racestate.models import RaceEvent, RaceState  # noqa: E402
 ANSWERS = {
     "strategist": lambda: PitCall(
         priority=RadioPriority.ADVISORY,
-        spoken_text="Window is open, box when you are ready.",
-        detail_text="Fuel covers it either way; no figures asserted.",
-        recommendation="box_next_lap",
+        spoken_text="Window is open, stop is planned, stay out for now.",
+        detail_text="The stop plan sets the lap; no figures asserted.",
+        # Not a box call: the strategist policy withholds a box laps before the
+        # planned stop, and this canned answer is given to every trigger.
+        recommendation="plan_stop",
         confidence="medium",
         rationale="Grounded in the fuel projection tool.",
     ),

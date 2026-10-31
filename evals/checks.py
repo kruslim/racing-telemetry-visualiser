@@ -3,7 +3,9 @@
 The coach's structured output carries explicit figures (which corner, how much time). The
 deterministic findings carry the true figures. So factuality is a numeric comparison, not a
 vibe check: a claimed ``gain_s`` must match the corner's ``net_dt``; a cited corner must exist;
-the top priority should be the corner that actually loses the most time.
+the top priority should be the corner that actually loses the most time. The prose (diagnosis,
+cues, headline, focus) is checked too: every distance, speed, gear, time and brake direction it
+states must agree with the findings (:mod:`rtv.coaching.agent.prose`).
 
 The per-figure numeric core lives in :mod:`rtv.coaching.agent.validation` (in the installed
 package) so it is shared with the graph coach's in-loop validate node — the same truth that
@@ -15,6 +17,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from rtv.coaching.agent.prose import check_prose, result_prose
 from rtv.coaching.agent.validation import GAIN_TOL, corner_map, gain_issue
 
 __all__ = ["GAIN_TOL", "cross_check", "aggregate"]
@@ -60,6 +63,11 @@ def cross_check(
     for a in result.get("advices", []):
         check_gain(a.get("corner", "?"), float(a.get("est_gain_s", 0.0)), "advice")
 
+    prose = check_prose(result_prose(result), findings)
+    claims += prose.claims
+    supported += prose.supported
+    issues += prose.issues
+
     factuality = supported / claims if claims else 1.0
     return {
         "outcome_accuracy": outcome_ok,
@@ -67,6 +75,8 @@ def cross_check(
         "claims": claims,
         "supported": supported,
         "hallucinations": len(issues) - (0 if outcome_ok else 1),
+        "prose_claims": prose.claims,
+        "prose_issues": prose.issues,
         "issues": issues,
     }
 

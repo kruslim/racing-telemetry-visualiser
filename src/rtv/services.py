@@ -28,6 +28,7 @@ from rtv.store.journal import SessionRecorder
 from rtv.store.repository import Repository
 from rtv.store.writer import TelemetryWriter
 from rtv.stream.hub import LiveHub
+from rtv.vision.service import VisionService
 
 log = get_logger("services")
 
@@ -117,6 +118,9 @@ class AppServices:
     activity: ActivityLog | None = None
     #: The race journal writer; None when RTV_PITWALL is false (no engine to record).
     recorder: SessionRecorder | None = None
+    #: Onboard video and VLM visual notes (see docs/VISION.md). Always present;
+    #: it makes no VLM call unless RTV_VISION_MODE allows it.
+    vision: VisionService | None = None
 
     def close(self) -> None:
         try:
@@ -291,6 +295,7 @@ def build_services(settings: Settings) -> AppServices:
         tts=tts,
         activity=activity,
         recorder=recorder,
+        vision=VisionService(settings, repo, coaching, engine=engine),
     )
 
 

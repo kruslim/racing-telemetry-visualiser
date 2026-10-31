@@ -20,7 +20,11 @@ from pydantic import Field
 from rtv.pitwall import tools as T
 from rtv.pitwall.framework import AgentOutput, AgentSpec, RadioPriority, Trigger
 from rtv.racestate.models import EventType, FlagPhase, RaceEvent, RaceState
-from rtv.racestate.strategy_math import CAUTION_FLAGS, standings_around_player
+from rtv.racestate.strategy_math import (
+    CAUTION_FLAGS,
+    standings_around_player,
+    stop_plan,
+)
 
 AGENT_NAME = "strategist"
 
@@ -32,26 +36,34 @@ not call traffic, you do not comment on car setup - other engineers own those.
 You are talking to a driver at racing speed. Say the call first, then at most one
 reason. "Box this lap, fuel only, we come out P4" - not a briefing.
 
-How to think about a stop:
-- Fuel sets the boundaries. get_fuel_projection gives the earliest lap a stop can
-  reach the flag from and the latest lap before the tank runs dry. Outside those
-  bounds there is no decision to make.
-- Track position decides inside them. simulate_pit_outcome converts a stop lap
-  into a rejoin position from the live gaps. Quote its rejoin_position; never
-  estimate one yourself.
-- A yellow is cheap. Under a full-course caution the field is slowed, so the same
-  stop costs far less track position. If a stop is needed at all and a caution is
-  out, that is usually the moment - price it with simulate_pit_outcome and say so.
+The RACE STATE carries a stop_plan, worked out deterministically from the fuel
+window. It is your starting point:
+- stop_plan.call is "no_stop_needed": the tank reaches the flag. The answer is
+  stay_out. A low fuel margin that is still positive is not a reason to stop.
+- stop_plan.call is "stop_later": a stop is needed, but not yet. Answer plan_stop
+  with target_lap = stop_plan.target_lap, so the driver knows the lap. An open
+  window means a stop is possible, not that it is due.
+- stop_plan.call is "box_next_lap" or "box_this_lap": answer box_next_lap or
+  box_now, with stop_plan.fuel_to_add_l.
+- stop_plan.call is "no_data": answer hold and say which number is missing.
+
+Reasons to move away from the plan, each priced with simulate_pit_outcome:
+- A full-course caution (stop_plan.caution_stop_available) makes a stop cheap.
+  If a stop is needed and the caution is out, pit_under_yellow is usually right.
+  A local yellow is not a caution.
 - A rival stopping only matters if covering them changes our finishing position.
   Undercut or overcut on the numbers, not on reflex.
-- Tyres extend or shorten a stint. A rising temperature trend across a stint is a
-  reason to bring a stop forward; flat trends are a reason to stretch it.
+- A rising tyre temperature trend across a stint can bring a stop forward; flat
+  trends are a reason to stretch it.
+Never call a stop later than stop_plan.latest_lap: the tank runs dry after it.
+When stop_plan.confidence is low, say the fuel figure may still move.
 
 Recommendation values:
 - box_now: pit at the end of this lap.
 - box_next_lap: pit at the end of the lap after this one.
-- pit_under_yellow: take the current caution, opportunistically.
-- extend: stay out longer than the obvious lap; say how many laps.
+- pit_under_yellow: take the current full-course caution.
+- plan_stop: a stop is needed later; target_lap says which lap.
+- extend: stay out past the planned lap; say how many laps.
 - stay_out: no stop is called for.
 - hold: you do not have the data to decide. Use it. It is a real answer.
 
@@ -67,6 +79,7 @@ class PitCall(AgentOutput):
         "box_now",
         "box_next_lap",
         "pit_under_yellow",
+        "plan_stop",
         "extend",
         "stay_out",
         "hold",
@@ -123,6 +136,16 @@ def _stop_is_needed(event: RaceEvent, state: RaceState) -> bool:
     return margin is None or margin < 3.0
 
 
+def _short_of_the_flag(event: RaceEvent, state: RaceState) -> bool:
+    """A low margin that still reaches the flag is a number to watch, not a call.
+
+    On the Spa replay the margin read 0.998 laps right after the stop and the
+    strategist answered "box this lap" with 0.0 L to add.
+    """
+    margin = event.payload.get("margin_laps", state.fuel.margin_laps)
+    return margin is not None and float(margin) < 0
+
+
 STRATEGIST_TRIGGERS: tuple[Trigger, ...] = (
     Trigger(EventType.PIT_WINDOW_OPEN.value, label="pit window opens", cooldown_s=0.0),
     Trigger(
@@ -136,7 +159,10 @@ STRATEGIST_TRIGGERS: tuple[Trigger, ...] = (
         cooldown_s=20.0,
     ),
     Trigger(
-        EventType.FUEL_MARGIN_LOW.value, label="fuel margin below threshold", cooldown_s=60.0
+        EventType.FUEL_MARGIN_LOW.value,
+        predicate=_short_of_the_flag,
+        label="fuel short of the flag",
+        cooldown_s=60.0,
     ),
     Trigger(
         EventType.RIVAL_PITTED.value,
@@ -169,6 +195,7 @@ def strategist_slice(state: RaceState) -> dict:
         "flags": state.flags.model_dump(mode="json"),
         "player": state.player.model_dump(mode="json"),
         "fuel": state.fuel.model_dump(mode="json"),
+        "stop_plan": stop_plan(state).to_tool(),
         "tyres": state.tyres.model_dump(mode="json"),
         "standings": standings_around_player(state, window=3),
         "capabilities": state.capabilities.model_dump(mode="json"),
@@ -183,6 +210,62 @@ def strategist_subject(event: RaceEvent, output: AgentOutput) -> str:
     driver needs one current answer to "when am I stopping", not a log of them.
     """
     return "pit_stop"
+
+
+# --------------------------------------------------------------------------
+# policy: the calls the fuel picture rules out
+# --------------------------------------------------------------------------
+_BOX_CALLS = frozenset({"box_now", "box_next_lap", "pit_under_yellow"})
+
+
+def strategist_policy(output: AgentOutput, state: RaceState, event: RaceEvent) -> str | None:
+    """Why a call contradicts the deterministic stop plan, or ``None``.
+
+    The validator checks that every number is real; this checks that the
+    decision is. It rules out only what the fuel arithmetic settles: stopping
+    when the tank reaches the flag, boxing laps before the planned stop without
+    a caution to justify it, and stop laps outside the window.
+    """
+    rec = getattr(output, "recommendation", None)
+    target = getattr(output, "target_lap", None)
+    plan = stop_plan(state)
+    lap = plan.current_lap
+    if rec not in _BOX_CALLS and rec != "plan_stop":
+        return None
+    if not plan.grounded:
+        return f"a stop was called but the stop plan has no data ({plan.reason})"
+    if not plan.stop_required:
+        return (
+            f"the tank reaches the flag (stop_plan.call is no_stop_needed, margin "
+            f"{state.fuel.margin_laps} laps), so no stop is needed"
+        )
+    if target is not None:
+        if plan.latest_lap is not None and target > plan.latest_lap:
+            return f"target_lap {target} is after the run-dry lap {plan.latest_lap}"
+        if plan.earliest_lap is not None and target < plan.earliest_lap:
+            return f"target_lap {target} is before the window opens at {plan.earliest_lap}"
+    if rec == "pit_under_yellow" and not plan.caution_stop_available:
+        return "pit_under_yellow needs a full-course caution inside the window"
+    # Covering a rival's stop is a real reason to box early, when there are live
+    # gaps to price it against.
+    covering = (
+        event.event_type is EventType.RIVAL_PITTED and state.capabilities.standings
+    )
+    if rec in ("box_now", "box_next_lap") and not (plan.caution_stop_available or covering):
+        stop_lap = lap if rec == "box_now" else (lap or 0) + 1
+        if plan.target_lap is not None and stop_lap < plan.target_lap - 1:
+            return (
+                f"{rec} stops on lap {stop_lap}, but stop_plan.target_lap is "
+                f"{plan.target_lap}: answer plan_stop with that lap, or price a "
+                "caution or a rival's stop to stop early"
+            )
+    return None
+
+
+def _simulate_planned_stop(state: RaceState, event: RaceEvent) -> dict:
+    """Price the planned stop lap (or this lap, when there is no plan)."""
+    target = stop_plan(state).target_lap
+    return {"stop_lap": target} if target is not None else {}
 
 
 STRATEGIST = AgentSpec(
@@ -205,6 +288,12 @@ STRATEGIST = AgentSpec(
     cooldown_s=30.0,
     state_slice=strategist_slice,
     subject=strategist_subject,
+    policy=strategist_policy,
+    # Every run on the Spa replay opened with these two calls.
+    prefetch=(
+        ("get_fuel_projection", {}),
+        ("simulate_pit_outcome", _simulate_planned_stop),
+    ),
     max_tool_iterations=4,
 )
 
@@ -213,6 +302,6 @@ def priority_for(recommendation: str) -> RadioPriority:
     """The severity a given call *should* carry. Used by the eval harness."""
     if recommendation in ("box_now", "pit_under_yellow"):
         return RadioPriority.CRITICAL
-    if recommendation in ("box_next_lap", "extend"):
+    if recommendation in ("box_next_lap", "extend", "plan_stop"):
         return RadioPriority.ADVISORY
     return RadioPriority.INFO

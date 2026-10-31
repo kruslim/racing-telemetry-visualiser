@@ -131,4 +131,7 @@ def get_summary(
     except HTTPException as exc:
         if run is not None or exc.status_code != 404:
             raise
-    return {"session_id": session_id, "run_id": run_id, **race_summary(laps, records)}
+    out = {"session_id": session_id, "run_id": run_id, **race_summary(laps, records)}
+    if services.vision is not None:
+        out["vision"] = services.vision.summary(session_id)
+    return out

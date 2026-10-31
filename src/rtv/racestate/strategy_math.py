@@ -14,7 +14,8 @@ worse than one that says it doesn't know.
 
 from __future__ import annotations
 
-from typing import Any
+import math
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -42,6 +43,24 @@ def full_course_caution(state: RaceState) -> bool:
 
 #: Laps of fuel to leave in hand when computing a refuel target.
 DEFAULT_FUEL_RESERVE_LAPS = 0.5
+
+
+def lap_left(state: RaceState) -> float:
+    """Fraction of the current lap still to run, from LapDistPct (1.0 if unknown).
+
+    Every fuel distance is measured from where the car is now, so "stop at the
+    end of lap N" is the rest of this lap plus ``N - lap`` whole laps.
+    """
+    pct = state.player.lap_dist_pct
+    if pct is None or not 0.0 <= pct < 1.0:
+        return 1.0
+    return 1.0 - pct
+
+
+def laps_to_end_of(state: RaceState, stop_lap: int) -> float:
+    """Distance in laps from the car to the line at the end of ``stop_lap``."""
+    lap = state.player.lap or 0
+    return max(0, stop_lap - lap) + lap_left(state)
 
 
 class PitOutcome(BaseModel):
@@ -148,7 +167,9 @@ def simulate_pit_outcome(
 
     effective = pit_lane_loss_s * (YELLOW_PIT_DISCOUNT if under_yellow else 1.0)
     outcome.effective_loss_s = round(effective, 3)
-    outcome.laps_before_stop = float(max(0, stop_lap - current_lap))
+    # Distance to the pit entry at the end of the stop lap, from the car's
+    # position: stopping "this lap" still burns the rest of this lap.
+    outcome.laps_before_stop = round(laps_to_end_of(state, stop_lap), 3)
     outcome.assumptions.append(
         f"Pit-lane loss {pit_lane_loss_s:.1f}s"
         + (
@@ -234,6 +255,132 @@ def _rejoin_into(outcome: PitOutcome, state: RaceState, effective_loss_s: float)
 
 
 # --------------------------------------------------------------------------
+# the stop plan: *when* to stop, decided deterministically
+# --------------------------------------------------------------------------
+#: Fewer green-lap fuel samples than this and the plan says its confidence is low.
+MIN_CONFIDENT_FUEL_SAMPLES = 3
+
+StopCall = Literal[
+    "no_data",
+    "no_stop_needed",
+    "box_this_lap",
+    "box_next_lap",
+    "stop_later",
+]
+
+
+class StopPlan(BaseModel):
+    """The one stop the fuel picture calls for, and when to make it.
+
+    The window says when a stop is *possible*; this says when to take it. With no
+    standings there is nothing to trade track position against, so the default is
+    the latest lap that still leaves ``reserve_laps`` in the tank: it keeps the
+    option of a cheap stop under a caution for as long as possible. On the Spa
+    replay that is lap 12, the lap the driver actually pitted on, where the
+    strategist had been calling "box this lap" since lap 2.
+    """
+
+    grounded: bool = False
+    reason: str | None = None
+    call: StopCall = "no_data"
+
+    current_lap: int | None = None
+    stop_required: bool = False
+    #: Laps of fuel short of the flag (positive when a stop is needed).
+    laps_short: float | None = None
+    earliest_lap: int | None = None
+    latest_lap: int | None = None
+    target_lap: int | None = None
+    laps_until_target: int | None = None
+    reserve_laps: float = DEFAULT_FUEL_RESERVE_LAPS
+    fuel_to_add_l: float | None = None
+    #: A full-course caution is out and this lap is inside the window.
+    caution_stop_available: bool = False
+    #: ``low`` while fuel use rests on fewer than MIN_CONFIDENT_FUEL_SAMPLES laps.
+    confidence: Literal["low", "high"] = "low"
+    fuel_samples: int = 0
+    assumptions: list[str] = Field(default_factory=list)
+
+    def to_tool(self) -> dict[str, Any]:
+        return self.model_dump(mode="json", exclude_none=False)
+
+
+def stop_plan(
+    state: RaceState,
+    *,
+    reserve_laps: float = DEFAULT_FUEL_RESERVE_LAPS,
+) -> StopPlan:
+    """Decide the stop lap from the fuel window alone. Pure; no LLM."""
+    fuel = state.fuel
+    lap = state.player.lap
+    plan = StopPlan(
+        current_lap=lap,
+        reserve_laps=reserve_laps,
+        fuel_samples=fuel.samples,
+        confidence="high" if fuel.samples >= MIN_CONFIDENT_FUEL_SAMPLES else "low",
+    )
+    if lap is None:
+        plan.reason = "No lap counter in this session's catalog."
+        return plan
+    if not fuel.per_lap or fuel.per_lap <= 0 or fuel.laps_remaining is None:
+        plan.reason = "Fuel consumption has not been learned yet."
+        return plan
+    if fuel.margin_laps is None or fuel.laps_to_finish is None:
+        plan.reason = "Race distance unknown, so no stop can be planned."
+        return plan
+
+    plan.grounded = True
+    plan.stop_required = fuel.margin_laps < 0
+    plan.earliest_lap = fuel.pit_window_earliest_lap
+    plan.latest_lap = fuel.pit_window_latest_lap
+    if not plan.stop_required:
+        plan.call = "no_stop_needed"
+        plan.laps_short = 0.0
+        plan.assumptions.append(
+            f"The tank covers the {fuel.laps_to_finish:.1f} laps to the flag with "
+            f"{fuel.margin_laps:.2f} laps to spare."
+        )
+        return plan
+
+    plan.laps_short = round(-fuel.margin_laps, 3)
+    # The latest stop lap that still arrives with the reserve in the tank.
+    reach = math.floor(fuel.laps_remaining - lap_left(state) - reserve_laps + 1e-3)
+    target = lap + max(0, reach)
+    if plan.latest_lap is not None:
+        target = min(target, plan.latest_lap)
+    if plan.earliest_lap is not None and target < plan.earliest_lap:
+        # Even the reserve-free run-dry lap is before a one-stop finish is
+        # possible: the earliest lap is the least-bad single stop.
+        plan.assumptions.append(
+            f"No single stop reaches the flag with {reserve_laps:.1f} laps in hand; "
+            f"stopping at the earliest one-stop lap {plan.earliest_lap}."
+        )
+        target = plan.earliest_lap
+    target = max(target, lap)
+    plan.target_lap = target
+    plan.laps_until_target = target - lap
+    if target <= lap:
+        plan.call = "box_this_lap"
+    elif target == lap + 1:
+        plan.call = "box_next_lap"
+    else:
+        plan.call = "stop_later"
+
+    outcome = simulate_pit_outcome(state, stop_lap=target, fuel_reserve_laps=reserve_laps)
+    plan.fuel_to_add_l = outcome.fuel_to_add_l
+    plan.caution_stop_available = bool(
+        full_course_caution(state)
+        and plan.earliest_lap is not None
+        and plan.earliest_lap <= lap <= (plan.latest_lap if plan.latest_lap is not None else lap)
+    )
+    plan.assumptions.append(
+        f"Target lap {target} is the latest lap that keeps {reserve_laps:.1f} laps "
+        "of fuel in hand; no standings, rival or caution trade is priced in."
+    )
+    return plan
+
+
+# --------------------------------------------------------------------------
 # compact projections the strategist's tools hand to the model
 # --------------------------------------------------------------------------
 def fuel_projection(state: RaceState) -> dict[str, Any]:
@@ -254,6 +401,7 @@ def fuel_projection(state: RaceState) -> dict[str, Any]:
         "pit_window_latest_lap": fuel.pit_window_latest_lap,
         "window_open": fuel.window_open,
         "current_lap": state.player.lap,
+        "stop_plan": stop_plan(state).to_tool(),
     }
     if not state.capabilities.fuel:
         out["unavailable"] = "This session's catalog has no fuel channels."
