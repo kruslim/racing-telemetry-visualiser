@@ -10,6 +10,7 @@ No Qt needed.
 from __future__ import annotations
 
 import ast
+import json
 from pathlib import Path
 
 from rtv.desktop.model import activity, audio_queue, radio, review
@@ -474,3 +475,35 @@ def test_runs_and_radio_are_placed_on_the_race_clock():
     aired = next(i for i in lanes["radio"] if i["agent"] == "strategist")
     assert abs(aired["t0"] - 317.75) < 0.01 and aired["event_t"] < 230
     assert not any(r["data"]["agent"] == "strategist" for r in review.radio_up_to(records, 300))
+
+
+# ---- track names (rtv.tracks) ------------------------------------------------
+#: A real ``/sessions/{id}/track`` response for the Spa race, reference lap 6.
+SPA_TRACK = json.loads(
+    (Path(__file__).parent / "fixtures" / "spa_session_track.json").read_text(encoding="utf-8")
+)
+
+
+def test_track_names_are_corners_in_lap_order():
+    names = review.track_names(SPA_TRACK)
+    assert names[0]["name"] == "La Source" and names[-1]["name"] == "Chicane"
+    assert "Kemmel" not in [n["name"] for n in names]  # a straight, not a corner
+    assert [n["pct"] for n in names] == sorted(n["pct"] for n in names)
+    assert review.track_names(None) == []
+
+
+def test_track_facts_line():
+    line = review.track_facts(SPA_TRACK)
+    assert line.startswith("Circuit de Spa-Francorchamps · Grand Prix Pit · 6.93 km · 21 turns")
+    assert "pit 80 km/h" in line and "OpenStreetMap" in line
+    unknown = {"header": {"display_name": "Somewhere"}, "reference": None, "corners": []}
+    assert review.track_facts(unknown) == "Somewhere · no corner names for this venue"
+    assert review.track_facts(None) == ""
+
+
+def test_corner_titles_use_the_name_only_when_mapped():
+    assert review.corner_title({"label": "T1", "name": "La Source"}) == "T1 La Source"
+    assert review.corner_title({"label": "T4", "name": None}) == "T4"
+    corners = [{"label": "T8", "name": "Chicane"}]
+    assert review.priority_title({"label": "T8"}, corners) == "T8 Chicane"
+    assert review.priority_title({"label": "T2"}, corners) == "T2"
