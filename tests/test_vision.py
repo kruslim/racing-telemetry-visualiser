@@ -188,6 +188,7 @@ def seeded(tmp_path):
     pytest.importorskip("duckdb")
     pytest.importorskip("pyarrow")
     from evals.synthetic_session import SYNTHETIC_SESSION_ID, seed_synthetic_session
+
     from rtv.coaching.features import CoachingService
     from rtv.store.duck import Database
     from rtv.store.repository import Repository
@@ -440,9 +441,9 @@ def client(tmp_path, monkeypatch):
     from rtv.config import get_settings
 
     get_settings.cache_clear()
+    from evals.synthetic_session import seed_synthetic_session
     from fastapi.testclient import TestClient
 
-    from evals.synthetic_session import seed_synthetic_session
     from rtv.main import create_app
     from rtv.vision import service as vision_service
     from rtv.vision.video import ProbeResult
@@ -518,7 +519,8 @@ def test_api_end_to_end(client, monkeypatch):
 
     plan = c.post(base + "/vision/plan", json={"video_id": vid, "sources": ["findings"]}).json()
     assert plan["count"] > 0 and plan["frames"] == plan["count"] * 4
-    assert c.post(base + "/vision/plan", json={"video_id": vid, "sources": ["x"]}).status_code == 400
+    bad_source = {"video_id": vid, "sources": ["x"]}
+    assert c.post(base + "/vision/plan", json=bad_source).status_code == 400
 
     # Paid analyses are refused while the mode is off, then without a key.
     body = {"video_id": vid, "sources": ["findings"], "max_moments": 2}

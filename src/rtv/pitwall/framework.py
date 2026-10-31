@@ -33,7 +33,7 @@ from pydantic import BaseModel, Field, computed_field
 from rtv.logging import get_logger
 from rtv.pitwall.activity import Tracer, safe_trace, summarize
 from rtv.pitwall.validator import FactSet, GroundingReport, validate_output
-from rtv.racestate.models import RaceEvent, RaceState
+from rtv.racestate.models import EventType, RaceEvent, RaceState
 
 log = get_logger("pitwall.framework")
 
@@ -753,6 +753,10 @@ class AgentRuntime:
             )
         elif report.over_word_limit:
             spoken = _truncate_words(spoken, SPOKEN_WORD_LIMIT)
+        if event.event_type is EventType.VISUAL_OBSERVATION:
+            # A camera note is seconds old and number-free: it never pre-empts a
+            # fuel, flag or traffic call, whatever the agent asked for.
+            priority = RadioPriority.INFO
 
         data = _payload_of(output)
         return RadioMessage(
