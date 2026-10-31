@@ -19,6 +19,7 @@ from rtv.pitwall.activity import ActivityLog
 from rtv.pitwall.agents import build_agents
 from rtv.pitwall.agents.spotter import spotter_validity
 from rtv.pitwall.agents.strategist import STRATEGIST, PitCall, strategist_validity
+from rtv.pitwall.callers import spotter_max_age
 from rtv.pitwall.framework import (
     LATE_PREFIX,
     EventRef,
@@ -288,11 +289,18 @@ def test_stamp_records_the_snapshot_and_survives_a_broken_rule():
 
 def test_default_max_ages_and_the_settings_override():
     ages = {spec.name: spec.max_age_s for spec in build_agents()}
-    assert ages == {"strategist": 30.0, "vehicle_engineer": 20.0, "spotter": 3.0, "coach": 30.0}
-    spotter = next(s for s in build_agents() if s.name == "spotter")
-    assert agent_max_age(spotter, Settings(_env_file=None)) == 3.0
-    assert agent_max_age(spotter, Settings(_env_file=None, pitwall_spotter_max_age_s=5)) == 5.0
-    assert agent_max_age(spotter, Settings(_env_file=None, pitwall_spotter_max_age_s=0)) is None
+    # B2: the LLM spotter only gives slow summaries, which are never tagged late.
+    assert ages == {"strategist": 30.0, "vehicle_engineer": 20.0, "spotter": None, "coach": 30.0}
+    engineer = next(s for s in build_agents() if s.name == "vehicle_engineer")
+    assert agent_max_age(engineer, Settings(_env_file=None)) == 20.0
+    over = Settings(_env_file=None, pitwall_vehicle_engineer_max_age_s=5)
+    assert agent_max_age(engineer, over) == 5.0
+    off = Settings(_env_file=None, pitwall_vehicle_engineer_max_age_s=0)
+    assert agent_max_age(engineer, off) is None
+    # The spotter's 3 s limit belongs to its template calls now.
+    assert spotter_max_age(Settings(_env_file=None)) == 3.0
+    assert spotter_max_age(Settings(_env_file=None, pitwall_spotter_max_age_s=5)) == 5.0
+    assert spotter_max_age(Settings(_env_file=None, pitwall_spotter_max_age_s=0)) is None
 
 
 def test_the_engine_learns_where_the_pit_entry_is():

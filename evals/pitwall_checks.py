@@ -240,6 +240,8 @@ SPOTTER_THREATS: dict[str, set[str]] = {
     "blue_flag": {"lapped_traffic", "clear"},
     "flag_change": {"hazard", "clear"},
     "incident": {"hazard", "clear"},
+    # B2: the LLM spotter's one live job, the lap-line traffic picture.
+    "lap_completed": {"traffic_summary", "lapped_traffic", "car_closing", "clear"},
 }
 
 COACH_THEMES: dict[str, set[str]] = {

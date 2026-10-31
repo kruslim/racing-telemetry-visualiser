@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 
 from rtv import llm
 from rtv.api.deps import get_services
+from rtv.pitwall.activity import public
 from rtv.pitwall.agents import AGENT_REGISTRY
 from rtv.pitwall.tts import TTSError, TTSUnavailable
 from rtv.services import AppServices
@@ -77,7 +78,7 @@ def pitwall_activity(
         "last_seq": records[-1]["seq"] if records else since,
         "agents_mounted": services.pitwall is not None,
         "stats": activity.stats(),
-        "records": records,
+        "records": [public(r) for r in records],
     }
 
 

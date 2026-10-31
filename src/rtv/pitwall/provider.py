@@ -106,6 +106,10 @@ class KimiProvider:
         self._thinking = thinking
         self._effort = effort
 
+    def describe(self) -> dict[str, Any]:
+        """The call settings that are not in the messages, for the run journal."""
+        return {"name": "kimi", "thinking": self._thinking, "effort": self._effort}
+
     async def complete(
         self,
         *,
@@ -214,6 +218,9 @@ class ScriptedProvider:
         self._handler = handler
         #: Every call, for assertions on prompt shape and tool exposure.
         self.calls: list[dict[str, Any]] = []
+
+    def describe(self) -> dict[str, Any]:
+        return {"name": "scripted"}
 
     async def complete(
         self,

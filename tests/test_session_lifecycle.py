@@ -537,3 +537,22 @@ def test_the_frame_path_never_waits_for_the_hook(client):
     release.set()
     assert services.on_session_end.wait()
     assert services.on_session_end.fired == 3
+
+
+def test_standby_still_lets_the_free_template_calls_through():
+    """B2's deterministic spotter costs no model call, so autonomy never holds it."""
+    from rtv.pitwall.agents import build_agents
+
+    engine = RaceStateEngine(source="replay")
+    replay_scenario(engine, ScenarioSpec())
+    orch = _orch(engine, build_agents(), autonomous=True)
+    assert orch.mode == "standby"
+    red = _ev("flag_change", 30.0, **{"from": "green", "to": "red", "active": ["red"]})
+    assert orch.dispatch(red) == []  # no agent run in standby ...
+    spoken = [m.spoken_text for m in orch.feed.pending() + orch.feed.history()]
+    assert spoken == ["Red flag, red flag."]  # ... but the template call is on the channel
+    assert orch.template_calls == 1 and orch.calls_used == 0
+    # The kill switch still silences templates too.
+    orch.set_enabled(False)
+    orch.dispatch(_ev("incident", 60.0, incidents=4, delta=2, lap_dist_pct=0.31))
+    assert orch.template_calls == 1

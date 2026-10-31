@@ -214,11 +214,17 @@ def test_no_role_agent_can_reach_the_strategists_pit_projection(spec):
 # routing
 # --------------------------------------------------------------------------
 def _routes(engine, event, state):
+    return _dispatch(engine, event, state)[0]
+
+
+def _dispatch(engine, event, state):
+    """``(agents woken, template calls published)`` for one event."""
     orch = PitwallOrchestrator(
         engine, ScriptedProvider(lambda **_: None), list(AGENT_REGISTRY),
         feed=RadioFeed(), clock=None,
     )
-    return set(orch.dispatch(event, state))
+    agents = set(orch.dispatch(event, state))
+    return agents, [(m.agent, m.spoken_text) for m in orch.feed.pending()]
 
 
 def test_a_recurrence_wakes_the_car_and_the_driver_but_not_strategy(
@@ -232,20 +238,27 @@ def test_a_tyre_finding_is_the_engineers_alone(engine, state):
     assert _routes(engine, event, state) == {"vehicle_engineer"}
 
 
-def test_a_traffic_call_is_the_spotters_alone(engine, state):
-    event = _event("traffic_close", {"car_idx": 1, "gap": 0.5, "side": "behind"})
-    assert _routes(engine, event, state) == {"spotter"}
+def test_a_traffic_call_is_a_spotter_template_with_no_model_call(engine, state):
+    """B2: per-event spotter calls are templates; no agent is woken for them."""
+    event = _event("traffic_close", {"car_idx": 1, "gap": 0.5, "side": "behind", "position": 4})
+    agents, calls = _dispatch(engine, event, state)
+    assert agents == set()
+    assert calls == [("spotter", "P4 behind, 0.5, closing.")]
 
 
-def test_a_caution_wakes_both_the_strategist_and_the_spotter(engine, state):
+def test_a_caution_wakes_the_strategist_and_the_spotter_template(engine, state):
     event = _event("flag_change", {"from": "green", "to": "yellow", "active": ["caution"]})
-    assert _routes(engine, event, state) == {"strategist", "spotter"}
+    agents, calls = _dispatch(engine, event, state)
+    assert agents == {"strategist"}
+    assert calls == [("spotter", "Full course yellow.")]
 
 
 def test_a_local_yellow_is_the_spotters_alone(engine, state):
     """Spa replay: a waving local yellow had the strategist calling a cheap stop."""
     event = _event("flag_change", {"from": "green", "to": "yellow", "active": ["yellow_waving"]})
-    assert _routes(engine, event, state) == {"spotter"}
+    agents, calls = _dispatch(engine, event, state)
+    assert agents == set()
+    assert calls == [("spotter", "Yellow flag, careful.")]
 
 
 def test_a_single_lockup_wakes_nobody(engine, state):

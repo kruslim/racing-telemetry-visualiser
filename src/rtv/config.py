@@ -203,8 +203,10 @@ class Settings(BaseSettings):
     pitwall_spotter_max_age_s: float | None = Field(
         default=None,
         description=(
-            "Seconds a spotter call may wait for the radio before it airs "
-            "tagged late. Unset = the agent's default (3 s); 0 = never tagged late."
+            "Seconds a spotter template call (car left, closing, blue flag) may wait "
+            "for the radio before it airs tagged late. Unset = 3 s; 0 = never tagged "
+            "late. When set it also applies to the LLM spotter's lap-line summaries, "
+            "which by default are never tagged late and expire after 60 s."
         ),
     )
     pitwall_coach_max_age_s: float | None = Field(
