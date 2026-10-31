@@ -101,6 +101,9 @@ files that were already formatted and sorts imports in every edited file.
   The endpoint speaks the Anthropic Messages format, so the `anthropic` and
   `langchain-anthropic` packages are only the transport. Structured answers come from
   a forced respond tool (`KimiProvider`); never use `messages.parse(output_format=)`.
+- The single exception to Kimi-only is the eval judge: `evals/judge_provider.py` grades on
+  Gemini (`GEMINI_API_KEY`, `judge` extra) by default, set by `RTV_JUDGE_PROVIDER`. It stays in
+  `evals/`; nothing under `src/rtv/` may import it or `google.genai` (a test enforces it).
 - Runtime data lands in `./data/` (gitignored). A fresh store is empty.
 - `.mcp.json` runs `${RTV_PYTHON:-python}`; set `RTV_PYTHON=.venv/Scripts/python.exe`
   since `python` is not on PATH here.
@@ -108,7 +111,7 @@ files that were already formatted and sorts imports in every edited file.
 ## Costs: ask first
 
 Anything that calls Kimi uses the user's Kimi Code quota and needs the user's go-ahead
-first: `evals/run.py` (coach plus judge; `--no-judge`
+first: `evals/run.py` (coach on Kimi plus the judge on Gemini; `--no-judge`
 still calls the coach), `evals/run_pitwall.py` without `--dry-run`,
 `scripts/deep_coach.py` without `--findings-only`, `scripts/check_llm.py`, the
 `orchestrator`, the pitwall agents (`RTV_PITWALL_AGENTS=true`), vision analyses
