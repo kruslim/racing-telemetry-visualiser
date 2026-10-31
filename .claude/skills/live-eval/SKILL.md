@@ -12,8 +12,8 @@ run it once, with the flags given, and no more.
 
 Arguments: $ARGUMENTS (default: all cases in `evals/golden_laps.json`, with the judge).
 
-1. Check the setup without reading `.env`: `KIMI_CODE_API_KEY` must be set in the
-   environment (print only whether it is set, never its value), and the store must hold
+1. Check the setup without reading `.env`: `KIMI_CODE_API_KEY` (coach) and, for the
+   default Gemini judge, `GEMINI_API_KEY` must be set in the environment (print only whether it is set, never its value), and the store must hold
    the sessions the cases name. Cases whose `session_id` is still
    `REPLACE_WITH_REAL_SESSION_ID` can't run; list real ones with
    `GET /api/v1/sessions` and `/sessions/{id}/laps` and ask the user which to use.
@@ -21,7 +21,8 @@ Arguments: $ARGUMENTS (default: all cases in `evals/golden_laps.json`, with the 
 3. Report per case: outcome accuracy, claim factuality (supported/claims), the issues it
    printed and, with the judge, clarity, actionability and grounding. Then the summary
    block. Note the model used (`RTV_LLM_KIMI_MODEL_REASONING` under Kimi, else
-   `RTV_COACHING_MODEL`; defaults in `src/rtv/config.py`).
+   `RTV_COACHING_MODEL`; defaults in `src/rtv/config.py`) and the judge label it printed
+   (`RTV_JUDGE_PROVIDER`, default Gemini; `--judge-provider gemini,kimi` grades with both).
 4. If a factuality issue points at a real bug in the coach or the checks, say so and
    propose a fix; don't change code in this skill.
 

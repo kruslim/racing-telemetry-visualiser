@@ -40,7 +40,7 @@ mcp = [
     "mcp>=1.2,<2",  # 2.x renamed FastMCP; telemetry_coach.py targets the v1 API
     "httpx>=0.27",
 ]
-# The pitwall agents, the Layer-3a orchestrator and the eval judge. They all talk to
+# The pitwall agents and the Layer-3a orchestrator (and the eval judge on kimi). They talk to
 # Kimi Code, whose endpoint speaks the Anthropic Messages format, so the anthropic SDK
 # is the transport (it never calls Anthropic).
 ai = [
@@ -55,6 +55,11 @@ agent = [
     "langchain-core>=0.3",
     "anthropic>=0.40",
     "langchain-anthropic>=0.2",
+]
+# The eval judge on Gemini (evals/judge_provider.py), the one non-Kimi model, used only
+# in evals/. Nothing under src/rtv imports it.
+judge = [
+    "google-genai>=1.0",
 ]
 # RTV Desktop — the native Qt client (rtv.desktop); the server runs embedded in it.
 desktop = [
