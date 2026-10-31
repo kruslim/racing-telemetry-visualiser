@@ -54,10 +54,13 @@ files that were already formatted and sorts imports in every edited file.
   Code client), `config.py`, `services.py`, `main.py`, and `desktop/` (RTV Desktop, the
   PySide6 client: `model/` holds pure Python ports of the frontend's tested view
   models, the rest is Qt; PySide6 is imported only inside `rtv.desktop`).
-- `frontend/` served by FastAPI at `/`: the live view (`index.html`, `css/`, `js/`), the
+- `frontend/` (frozen web pages, see Conventions) served by FastAPI at `/`: the live view (`index.html`, `css/`, `js/`), the
   post-race review at `/review/` (`review/index.html`, `js/review/`), `radio.html` and
   two self-test pages; `js/shared/` is used by both views. `docs/*.md` are hand-written
-  docs (nothing is published to GitHub Pages until a real session export exists).
+  docs. GitHub Pages serves `docs/`: `docs/review`, `docs/css`, `docs/js` are copies
+  made by `scripts/build_pages.py`, `docs/data/<name>/` is a session exported by
+  `scripts/export_session.py`, read by the review's static mode (`?static=`). See the
+  `publish-pages` skill.
 - `mcp_server/telemetry_coach.py` Layer 2 MCP server over the REST API.
 - `evals/` checks shared with the in-loop validator, fixtures, cases, runner, LLM judge,
   `run.py` (the live, paid eval), and the test-only generated data
@@ -80,6 +83,16 @@ files that were already formatted and sorts imports in every edited file.
 - No fake data in the app: nothing generated is seeded, served or replayed at runtime.
   Generated sessions live in `evals/synthetic_*.py` for tests only; real behaviour is
   checked against the real `.ibt` fixture.
+- RTV Desktop (`rtv.desktop`) is the primary UI: new UI features go in the desktop app
+  only. The web pages (`/`, `/review/`, `/radio.html`) are frozen: they keep working and
+  get bug fixes, no new features (the web review stays for the GitHub Pages export).
+  Web fixes are edited in `frontend/`; rebuild the Pages copy in `docs/` with
+  `scripts/build_pages.py` in the same change (`tests/test_export_session.py` fails on a
+  stale copy).
+- View rules live in the JS modules and their Python ports in `rtv/desktop/model/`; both
+  must pass the golden file `tests/fixtures/view_golden/` (`tests/test_view_golden.py`,
+  `node frontend/js/run-golden-tests.mjs`). After an intended view change, rebuild it with
+  `scripts/build_view_golden.py`, which refuses to write while the two sides disagree.
 - Coaching heuristics exist once, in `src/rtv/coaching/features.py`; UIs render
   `/coaching/lap-findings` and never recompute it.
 - Every session the engine consumes is written to a race journal
@@ -101,6 +114,9 @@ files that were already formatted and sorts imports in every edited file.
   The endpoint speaks the Anthropic Messages format, so the `anthropic` and
   `langchain-anthropic` packages are only the transport. Structured answers come from
   a forced respond tool (`KimiProvider`); never use `messages.parse(output_format=)`.
+- The single exception to Kimi-only is the eval judge: `evals/judge_provider.py` grades on
+  Gemini (`GEMINI_API_KEY`, `judge` extra) by default, set by `RTV_JUDGE_PROVIDER`. It stays in
+  `evals/`; nothing under `src/rtv/` may import it or `google.genai` (a test enforces it).
 - Runtime data lands in `./data/` (gitignored). A fresh store is empty.
 - `.mcp.json` runs `${RTV_PYTHON:-python}`; set `RTV_PYTHON=.venv/Scripts/python.exe`
   since `python` is not on PATH here.
@@ -108,7 +124,7 @@ files that were already formatted and sorts imports in every edited file.
 ## Costs: ask first
 
 Anything that calls Kimi uses the user's Kimi Code quota and needs the user's go-ahead
-first: `evals/run.py` (coach plus judge; `--no-judge`
+first: `evals/run.py` (coach on Kimi plus the judge on Gemini; `--no-judge`
 still calls the coach), `evals/run_pitwall.py` without `--dry-run`,
 `scripts/deep_coach.py` without `--findings-only`, `scripts/check_llm.py`, the
 `orchestrator`, the pitwall agents (`RTV_PITWALL_AGENTS=true`), vision analyses

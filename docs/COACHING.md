@@ -64,7 +64,9 @@ comparison, not an LLM-judge vibe. That covers the structured gains and the pros
 headline and focus must match the corner it is about, and a brake-direction claim ("brake
 earlier", "32 m late", "from 6540 m to 6508 m") must agree with the brake-point finding. A cue
 with no corner label is only checked against a corner when it sits in that corner's advice.
-An optional LLM judge scores clarity/actionability/grounding.
+An optional LLM judge scores clarity/actionability/grounding. It runs on Gemini by default
+(`evals/judge_provider.py`, `RTV_JUDGE_PROVIDER`) so Kimi is not grading its own coach; it is
+the only non-Kimi model in the project and lives only in `evals/`.
 
 ## Layer 3b — the graph agent (`src/rtv/coaching/agent/`)
 

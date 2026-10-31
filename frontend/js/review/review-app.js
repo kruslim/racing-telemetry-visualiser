@@ -15,6 +15,10 @@
  *
  * Grouping lives in review-model.js (tested under node); this file is wiring.
  * State lives in the URL (session, run, main, ref, t), never in storage.
+ *
+ * Static mode (`?static=<folder>/`, the GitHub Pages export): the same requests are
+ * answered from the JSON files scripts/export_session.py wrote (static-data.js maps
+ * them); recording and importing are hidden because there is no server.
  */
 
 import { AGENTS, edgesFor, meanLatency, reduce } from '../shared/activity-model.js';
@@ -24,6 +28,7 @@ import { RunsPanel } from '../live/runs-panel.js';
 import { NA, humanise, isNum, lapTime, num, signed } from '../pitwall/format.js';
 import { clear, el, setText } from '../pitwall/dom.js';
 import { TraceStack, TrackMap } from './charts.js';
+import { mergeCompare, stateAt, staticBase, staticPlan } from './static-data.js';
 import {
   auditRows,
   bounds,
@@ -54,6 +59,8 @@ const TRACE_CHANNELS = [
 ];
 
 const params = new URLSearchParams(window.location.search);
+/** The exported-session folder in static mode, else null (talk to the API). */
+const STATIC = staticBase(params.get('static'));
 const view = {
   sessions: [],
   sessionId: params.get('session') || '',
@@ -91,6 +98,7 @@ const trackMap = new TrackMap(q('trackmap'));
 // helpers
 // --------------------------------------------------------------------------
 async function getJson(path) {
+  if (STATIC) return getStatic(path);
   const response = await fetch(`${API}${path}`);
   const body = await response.json().catch(() => ({}));
   if (!response.ok) {
@@ -99,6 +107,49 @@ async function getJson(path) {
     throw error;
   }
   return body;
+}
+
+const staticCache = new Map();
+async function staticFile(file) {
+  if (!staticCache.has(file)) {
+    staticCache.set(
+      file,
+      fetch(`${STATIC}${file}`).then(async (response) => {
+        if (!response.ok) {
+          const error = new Error(response.status === 404 ? 'not part of this export' : `${response.status}`);
+          error.status = response.status;
+          throw error;
+        }
+        return response.json();
+      })
+    );
+  }
+  try {
+    return await staticCache.get(file);
+  } catch (error) {
+    staticCache.delete(file);
+    throw error;
+  }
+}
+
+/** getJson() in static mode: the same payloads, read from the exported files. */
+async function getStatic(path) {
+  const plan = staticPlan(path);
+  if (!plan) {
+    const error = new Error('not part of this export');
+    error.status = 404;
+    throw error;
+  }
+  if (plan.file) return staticFile(plan.file);
+  if (plan.compare) {
+    const merged = mergeCompare(await Promise.all(plan.compare.files.map((f) => staticFile(f).catch(() => null))));
+    if (!merged) throw new Error('not part of this export');
+    return merged;
+  }
+  const body = await staticFile(plan.state.file);
+  const record = stateAt(body.records, plan.state.t);
+  if (!record) throw new Error('no state snapshots in this run');
+  return { session_id: body.session_id, run_id: body.run_id, record };
 }
 
 function notice(text) {
@@ -111,6 +162,7 @@ function saveUrl() {
   clearTimeout(urlTimer);
   urlTimer = setTimeout(() => {
     const next = new URLSearchParams();
+    if (STATIC) next.set('static', params.get('static'));
     if (view.sessionId) next.set('session', view.sessionId);
     if (view.runId) next.set('run', view.runId);
     if (isNum(view.main)) next.set('main', String(view.main));
@@ -265,7 +317,7 @@ async function loadRun() {
         ? `${run.source} run · ${run.counts.run_start || 0} agent runs · ${run.counts.radio || 0} radio calls`
         : `${run.source} run · race engine only (no agents were running, so no radio)`
   );
-  $('analyse').hidden = false;
+  $('analyse').hidden = !!STATIC;
   renderAuditFilters();
   renderAudit();
   await loadSummary();
@@ -919,6 +971,12 @@ $('ref-lap').onchange = (e) => {
 $('play').onclick = () => setPlaying(!view.playing);
 $('analyse').onclick = () => analyse();
 $('ibt-file').onchange = (e) => importFile(e.target.files && e.target.files[0]);
+if (STATIC) {
+  // A published export: no server to record a run, import a file or serve the
+  // other pages, so those controls go and the page says what it is showing.
+  document.body.classList.add('static'); // review.css hides [data-server-only]
+  notice('A published export of a recorded session: the real telemetry and the pitwall run as recorded. Nothing here is re-run.');
+}
 for (const id of ['audit-agent', 'audit-outcome', 'audit-sort']) $(id).onchange = () => renderAudit();
 
 loadSessions();

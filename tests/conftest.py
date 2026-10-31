@@ -27,6 +27,9 @@ _LLM_KEY_ENVS = (
     "ANTHROPIC_AUTH_TOKEN",
     "KIMI_CODE_API_KEY",
     "KIMI_API_KEY",
+    # The eval judge's keys (evals/judge_provider.py); google-genai also reads the second.
+    "GEMINI_API_KEY",
+    "GOOGLE_API_KEY",
 )
 
 

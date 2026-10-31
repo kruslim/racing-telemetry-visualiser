@@ -6,10 +6,16 @@ v1 (post-hoc analysis + coach) into v2 (live multi-agent AI pitwall).
 Stages 01-06 built the backend, the four agents, the voice and the UI, and are
 complete. Stages 07-10 turn it into an autonomous race engineer:
 
-    07  session lifecycle + autonomy    arm/disarm itself, race journal, debrief hook
-    08  race plan + projection layer    a plan it revises; tyre deg, fuel save, traffic
-    09  race control + debrief analyst   the only two agents worth adding
-    10  director scheduler               implement the seam stage 05 left open
+    07  session lifecycle + autonomy    arm/disarm itself, one clean segment per session, session-end hook
+    08  race plan + projection layer    a plan it revises; lap-time deg, fuel save, traffic
+    09  race control + debrief analyst   two parts (D6a, D6b), buildable as separate PRs
+    10  director scheduler               the seam stage 05 left open, eval path only
+
+The prompts were revised on 2026-10-31 against the code on main (plan task D0 of
+the project review). Run them in the order 07, 08, 10, 09, one at a time: 08
+needs the typed FactSet (A1) and the radio decision groups (B3) merged first,
+and each prompt lists its own dependencies at the top. The runner below goes in
+filename order, so do not use it for 09 and 10 unattended.
 
 ## Contents
 - CLAUDE.md ................ shared context, auto-read by every Claude Code session

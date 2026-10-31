@@ -1,0 +1,170 @@
+/*
+ * The post-race review. Loaded after pitwall.css (palette, buttons), app.css and
+ * live.css (timeline, flow graph and agent-run styles it shares with the live
+ * view). Everything here is scoped under body.review.
+ */
+
+body.review { min-height: 100vh; }
+
+body.review .review-main {
+  max-width: 1500px;
+  margin: 0 auto;
+  padding: 14px 16px 40px;
+  display: grid;
+  gap: 14px;
+}
+
+body.review h3 {
+  margin: 12px 0 6px;
+  font-size: 11.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 600;
+}
+body.review h3 .sub,
+body.review h2 .sub { text-transform: none; letter-spacing: 0; font-weight: 400; color: var(--muted); }
+body.review .sub { color: var(--muted); font-size: 12px; }
+body.review .k { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; }
+
+#app-notice {
+  margin: 0;
+  padding: 7px 22px;
+  background: rgba(210, 153, 34, 0.12);
+  border-bottom: 1px solid var(--advisory);
+  color: var(--advisory);
+  font-size: 13px;
+}
+
+body.review select {
+  background: var(--panel-2);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 5px 8px;
+  font: inherit;
+  font-size: 13px;
+  max-width: 100%;
+}
+
+/* --- session bar ---------------------------------------------------------- */
+.session-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; }
+#session-select { min-width: 260px; }
+.upload input { display: none; }
+.upload .button-like {
+  display: inline-block;
+  padding: 6px 12px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--panel-2);
+  cursor: pointer;
+  font-size: 13px;
+}
+.upload .button-like:hover { border-color: var(--accent); }
+
+/* --- summary ------------------------------------------------------------- */
+.summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 8px;
+}
+.summary-cell { background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
+.summary-cell .k { display: block; }
+.summary-cell .v { display: block; font: 600 20px var(--mono); }
+.summary-cell .sub { display: block; }
+.notes { margin: 8px 0 0; padding-left: 18px; color: var(--advisory); font-size: 12.5px; }
+.notes:empty { display: none; }
+
+/* --- tables -------------------------------------------------------------- */
+table.data { width: 100%; border-collapse: collapse; font: 12.5px var(--mono); margin-top: 8px; }
+table.data th {
+  text-align: left;
+  font: 600 11px "Segoe UI", system-ui, sans-serif;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  border-bottom: 1px solid var(--line);
+  padding: 4px 6px;
+}
+table.data td { padding: 3px 6px; border-bottom: 1px solid rgba(38, 45, 56, 0.6); vertical-align: top; }
+table.data td.num, table.data th.num { text-align: right; }
+table.data tr.clickable { cursor: pointer; }
+table.data tr.clickable:hover td { background: var(--panel-2); }
+table.data tr.selected td { background: rgba(47, 129, 247, 0.14); }
+table.data tr.ref td { background: rgba(210, 153, 34, 0.12); }
+table.data .muted, .muted { color: var(--muted); }
+.gain { color: var(--info); }
+.loss { color: var(--critical); }
+table.stints:empty { display: none; }
+
+/* --- replay -------------------------------------------------------------- */
+.replay-controls { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; flex-wrap: wrap; }
+.replay-controls .clock { font: 600 15px var(--mono); min-width: 150px; }
+.replay-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(320px, 1fr);
+  gap: 14px;
+  margin-top: 10px;
+}
+@media (max-width: 1100px) { .replay-grid { grid-template-columns: 1fr; } }
+.sub-panel { background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 4px 10px 10px; margin-top: 10px; }
+.sub-panel h3 { margin-top: 8px; }
+.state-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.state-cell .k { display: block; font-size: 11px; }
+.state-cell .v { font: 600 15px var(--mono); }
+ol.log { list-style: none; margin: 0; padding: 0; max-height: 230px; overflow-y: auto; font-size: 12.5px; }
+ol.log li { padding: 3px 4px; border-left: 3px solid var(--agent, var(--line)); margin-bottom: 2px; cursor: pointer; }
+ol.log li:hover { background: var(--panel-2); }
+ol.log .t { color: var(--muted); font-family: var(--mono); margin-right: 6px; }
+ol.log .refused { color: var(--advisory); }
+ol.log li.sev-critical { border-left-color: var(--critical); }
+ol.log li.sev-advisory { border-left-color: var(--advisory); }
+
+.tl-item.lap-clean { fill: #2c3a4d; }
+.tl-item.lap-other { fill: #3a2f22; }
+.tl-item.flag-green { fill: var(--info); opacity: 0.55; }
+.tl-item.flag-yellow { fill: #e3b341; }
+.tl-item.flag-red { fill: var(--critical); }
+.tl-item.flag-white { fill: var(--ink); opacity: 0.7; }
+.tl-item.flag-checkered { fill: var(--ink); }
+.tl-item.run-quiet { opacity: 0.45; }
+.tl-item.refused { opacity: 0.5; }
+
+/* --- laps ---------------------------------------------------------------- */
+.lap-pick { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.legend { color: var(--muted); font-size: 12px; margin-left: 8px; }
+.swatch { display: inline-block; width: 12px; height: 3px; vertical-align: middle; margin: 0 4px 0 10px; }
+.swatch.main { background: var(--accent); }
+.swatch.ref { background: var(--advisory); }
+.laps-grid {
+  display: grid;
+  grid-template-columns: 250px minmax(0, 1fr) 300px;
+  gap: 12px;
+  margin-top: 8px;
+  align-items: start;
+}
+@media (max-width: 1250px) { .laps-grid { grid-template-columns: 1fr; } }
+.lap-table-wrap { max-height: 640px; overflow-y: auto; }
+.trace-wrap canvas, .map-wrap canvas { width: 100%; display: block; }
+
+/* --- findings ------------------------------------------------------------ */
+.chief { display: flex; gap: 18px; flex-wrap: wrap; font-size: 14px; }
+.chief .big { font: 600 20px var(--mono); }
+.findings-grid { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); gap: 14px; }
+@media (max-width: 1100px) { .findings-grid { grid-template-columns: 1fr; } }
+table.corners td.diags { font-family: "Segoe UI", system-ui, sans-serif; }
+table.corners .diag { display: block; }
+table.corners .diag.good { color: var(--info); }
+table.corners .diag.bad { color: var(--ink); }
+table.corners .tag { color: var(--muted); font-family: var(--mono); font-size: 11px; margin-right: 4px; }
+
+/* --- audit --------------------------------------------------------------- */
+.audit-filters { display: flex; gap: 8px; flex-wrap: wrap; }
+.audit-wrap { max-height: 520px; overflow: auto; }
+table.audit td.said { font-family: "Segoe UI", system-ui, sans-serif; max-width: 420px; }
+table.audit td.agent { color: var(--agent); }
+
+/* Static mode (the Pages export): no server, so its controls are gone. */
+body.static [data-server-only] {
+  display: none !important;
+}

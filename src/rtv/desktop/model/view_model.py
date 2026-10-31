@@ -118,7 +118,8 @@ def connection_view(state: dict | None, ctx: dict | None = None) -> dict:
         return {
             "state": "replay",
             "label": "REPLAY",
-            "detail": f"{speed_text} · {replay.get('frames') or 0} frames",
+            "detail": (f"{replay['session_id']} · " if replay.get("session_id") else "")
+            + f"{speed_text} · {replay.get('frames') or 0} frames",
         }
     source = _d(state.get("session")).get("source")
     if source == "replay":

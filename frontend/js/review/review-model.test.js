@@ -19,6 +19,7 @@ import {
   toMetres,
   trackEvents,
 } from './review-model.js';
+import { mergeCompare, stateAt, staticBase, staticPlan } from './static-data.js';
 
 const LAPS = [
   { lap: 0, start_session_time: 20, lap_time: 59, is_valid: false, is_in_lap: false, is_out_lap: false },
@@ -34,7 +35,9 @@ function journal() {
   let seq = 0;
   const r = (kind, t, extra = {}) => ({
     seq: ++seq,
-    wall_ms: 1000 + seq,
+    // The wall clock runs with the race clock, as in a real journal: the review
+    // puts a run's end on the race clock through it.
+    wall_ms: 1_000_000 + Math.round(t * 1000),
     session_time: t,
     tick: Math.round(t * 60),
     kind,
@@ -113,6 +116,24 @@ test('lanes: laps are spans, flags close at the next change, agent runs span sta
   eq(lanes.radio.map((r) => r.label), ['strategist: Box this lap.']);
 });
 
+test('agent records carry the waking time: run ends and radio go on the race clock', () => {
+  // As recorded: run_end and radio keep the event's session time (500); the clock
+  // records around them (state, radio_aired) say when they really happened.
+  const records = [
+    { seq: 1, kind: 'state', wall_ms: 10_000, session_time: 500, data: {} },
+    { seq: 2, kind: 'run_start', agent: 'strategist', run_id: 'r1', wall_ms: 10_000, session_time: 500, data: {} },
+    { seq: 3, kind: 'run_end', agent: 'strategist', run_id: 'r1', wall_ms: 22_000, session_time: 500, data: { outcome: 'radio', message_id: 'm1' } },
+    { seq: 4, kind: 'radio', agent: 'strategist', wall_ms: 22_000, session_time: 500, data: { agent: 'strategist', message_id: 'm1' } },
+    { seq: 5, kind: 'radio_aired', agent: 'strategist', wall_ms: 23_000, session_time: 513, data: { message_id: 'm1' } },
+    { seq: 6, kind: 'state', wall_ms: 30_000, session_time: 520, data: {} },
+  ];
+  const lanes = laneItems(records, []);
+  eq([lanes.strategist[0].t0, lanes.strategist[0].t1], [500, 512]);
+  eq(lanes.radio[0].t0, 513);
+  eq(radioUpTo(records, 510).length, 0, 'not on air yet');
+  eq(radioUpTo(records, 513).length, 1);
+});
+
 test('audit rows join each run to what it said', () => {
   const rows = auditRows(journal());
   eq(rows.map((r) => r.runId), ['strategist-1', 'coach-1', 'spotter-1']);
@@ -148,6 +169,54 @@ test('geometry helpers', () => {
   eq(pointAtPct(points, 0.999).lap_dist_pct, 0.99);
   eq(pointAtPct(points, 0.002).lap_dist_pct, 0.01);
   eq(trackEvents(journal()).map((e) => [e.type, e.pct]), [['offtrack', 0.48]]);
+});
+
+test('static mode only reads a relative export folder', () => {
+  eq(staticBase('../data/spa'), '../data/spa/');
+  eq(staticBase('data/spa/'), 'data/spa/');
+  for (const bad of [null, '', 'https://x.test/', '//x.test/', '/data/', 'javascript:alert(1)', '..\\x']) {
+    eq(staticBase(bad), null);
+  }
+});
+
+test('static plan: the file layout scripts/export_session.py writes', () => {
+  const S = 'fe4b';
+  const R = '20261031T043329Z-01-replay';
+  eq(staticPlan('/sessions?limit=200'), { file: 'sessions.json' });
+  eq(staticPlan(`/sessions/${S}/laps`), { file: `sessions/${S}/laps.json` });
+  eq(staticPlan(`/sessions/${S}/pitwall-runs`), { file: `sessions/${S}/pitwall-runs.json` });
+  eq(staticPlan(`/sessions/${S}/summary?run=${R}`), { file: `sessions/${S}/summary/${R}.json` });
+  eq(staticPlan(`/sessions/${S}/summary`), { file: `sessions/${S}/summary/none.json` });
+  eq(staticPlan(`/sessions/${S}/pitwall-log?run=${R}&limit=200000`), {
+    file: `sessions/${S}/pitwall-log/${R}.json`,
+  });
+  eq(staticPlan(`/sessions/${S}/pitwall-log/state?run=${R}&t=12.5`), {
+    state: { file: `sessions/${S}/pitwall-log/${R}-state.json`, t: 12.5 },
+  });
+  eq(staticPlan(`/sessions/${S}/trackmap?lap=6&max_points=1500`), { file: `sessions/${S}/trackmap/6.json` });
+  eq(staticPlan(`/sessions/${S}/compare?name=Speed&laps=9,6&grid=1000`), {
+    compare: { name: 'Speed', laps: ['9', '6'], files: [`sessions/${S}/compare/Speed/9.json`, `sessions/${S}/compare/Speed/6.json`] },
+  });
+  const base = `session_id=${S}&main_lap=9&ref_lap=6`;
+  eq(staticPlan(`/coaching/lap-findings?${base}`), { file: `sessions/${S}/lap-findings/9-6.json` });
+  eq(staticPlan(`/coaching/delta?${base}`), { file: `sessions/${S}/delta/9-6.json` });
+  eq(staticPlan('/pitwall/status'), null);
+  eq(staticPlan(`/sessions/${S}/pitwall-log`), null);
+});
+
+test('static compare merges per-lap files; state is the last snapshot at or before t', () => {
+  const a = { channel: 'Speed', x_values: [0, 1], laps: { 9: [1, 2] } };
+  const b = { channel: 'Speed', x_values: [0, 1], laps: { 6: [3, 4] } };
+  eq(mergeCompare([a, null, b]).laps, { 9: [1, 2], 6: [3, 4] });
+  eq(mergeCompare([null]), null);
+  const states = [
+    { kind: 'state', session_time: 10, data: 'a' },
+    { kind: 'state', session_time: 20, data: 'b' },
+  ];
+  eq(stateAt(states, 15).data, 'a');
+  eq(stateAt(states, 25).data, 'b');
+  eq(stateAt(states, 5).data, 'a');
+  eq(stateAt([], 5), null);
 });
 
 export function runReviewTests() {

@@ -33,6 +33,7 @@ event reaches the agents through exactly the same path a detected one does.
 from __future__ import annotations
 
 import asyncio
+import threading
 import time
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any
@@ -50,7 +51,7 @@ from rtv.pitwall.framework import (
 from rtv.pitwall.radio import RadioFeed
 from rtv.pitwall.tts import RadioTTS
 from rtv.racestate.engine import RaceStateEngine
-from rtv.racestate.models import RaceEvent, RaceState, Severity
+from rtv.racestate.models import EventType, RaceEvent, RaceState, Severity
 
 log = get_logger("pitwall.orchestrator")
 
@@ -90,6 +91,7 @@ class PitwallOrchestrator:
         max_calls_per_session: int = DEFAULT_MAX_CALLS,
         retry_backoff_s: float | None = None,
         activity: ActivityLog | None = None,
+        vision_radio: bool = False,
     ) -> None:
         self.engine = engine
         self.feed = feed or RadioFeed()
@@ -150,7 +152,16 @@ class PitwallOrchestrator:
         #: wake-ups: one wake-up is a tool round trip or two plus the answer.
         self._max_calls = max(0, max_calls_per_session)
         self._call_baseline = 0
+        #: Model calls made outside the agents (the live VLM) that the same
+        #: session budget covers, by layer. See :meth:`record_call`.
+        self._layer_calls: dict[str, int] = {}
+        self._layer_lock = threading.Lock()
         self._budget_announced = False
+        #: Whether a live ``visual_observation`` may wake an agent. Off by
+        #: default: a camera note arrives 25-40 s after the moment and is
+        #: unproven on real footage, so it is review material (the timeline and
+        #: the journal) until RTV_VISION_LIVE_RADIO says otherwise.
+        self.vision_radio = vision_radio
 
     def attach_activity(self, activity: ActivityLog | None) -> None:
         """Trace routing, every agent run and the radio into ``activity``."""
@@ -334,6 +345,11 @@ class PitwallOrchestrator:
         if not self._enabled or self._suspended:
             self._trace_dispatch(event, [], {}, "disabled" if not self._enabled else "suspended")
             return []
+        if event.event_type is EventType.VISUAL_OBSERVATION and not self.vision_radio:
+            # Still on the bus, so the recorder journals it and the timeline and
+            # the review show it; it just never reaches the radio.
+            self._trace_dispatch(event, [], {}, "vision_review_only")
+            return []
         if self.budget_exhausted:
             self._announce_budget_exhausted()
             self._trace_dispatch(event, [], {}, "budget_exhausted")
@@ -516,8 +532,26 @@ class PitwallOrchestrator:
     # ---- the cost guard ---------------------------------------------------
     @property
     def calls_used(self) -> int:
-        """Billable model calls since the last :meth:`reset`."""
+        """Billable model calls since the last :meth:`reset`, every layer included."""
+        with self._layer_lock:
+            return self._agent_calls() + sum(self._layer_calls.values())
+
+    def _agent_calls(self) -> int:
         return sum(r.turns for r in self.runtimes.values()) - self._call_baseline
+
+    @property
+    def calls_by_layer(self) -> dict[str, int]:
+        """``calls_used`` split by layer: ``agents`` plus each :meth:`record_call` layer."""
+        with self._layer_lock:
+            return {"agents": self._agent_calls(), **self._layer_calls}
+
+    def record_call(self, layer: str, n: int = 1) -> None:
+        """Count ``n`` model calls another layer made (the live VLM) against the budget.
+
+        Thread-safe: the live vision worker calls it from its own thread.
+        """
+        with self._layer_lock:
+            self._layer_calls[layer] = self._layer_calls.get(layer, 0) + n
 
     @property
     def calls_remaining(self) -> int | None:
@@ -664,6 +698,8 @@ class PitwallOrchestrator:
         # A new session gets a fresh cost budget, without discarding the
         # per-agent lifetime counters the status endpoint reports.
         self._call_baseline = sum(r.turns for r in self.runtimes.values())
+        with self._layer_lock:
+            self._layer_calls.clear()
         self._budget_announced = False
         self.director.reset()
         self.feed.clear()
@@ -687,6 +723,7 @@ class PitwallOrchestrator:
             "restarts": dict(self.restarts),
             # The session cost guard, in billable model calls.
             "calls_used": self.calls_used,
+            "calls_by_layer": self.calls_by_layer,
             "calls_remaining": self.calls_remaining,
             "max_calls_per_session": self._max_calls or None,
             "budget_exhausted": self.budget_exhausted,

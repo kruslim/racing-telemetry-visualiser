@@ -16,7 +16,11 @@ consuming:
 
 Spend is bounded: it runs only with ``RTV_VISION_MODE=live`` and a key, merges
 events closer together than ``RTV_VISION_LIVE_MIN_GAP_S``, and stops after
-``RTV_VISION_LIVE_MAX_CALLS`` VLM calls per session run. Every skip is counted.
+``RTV_VISION_LIVE_MAX_CALLS`` VLM calls per session run. Each call also counts against
+the pitwall's session budget (``RTV_PITWALL_MAX_CALLS_PER_SESSION``, the ``budget``
+argument), so that budget's "max calls" is every model call in the session; the
+vision cap is an inner limit. Every skip is counted, and a moment skipped for the
+budget is written to the vision journal too.
 """
 
 from __future__ import annotations
@@ -92,6 +96,7 @@ class LiveVisionWorker:
         min_gap_s: float,
         facts_for: Callable[[str, Moment], dict[str, Any]] | None = None,
         ready_timeout_s: float = 6.0,
+        budget: Any | None = None,
     ) -> None:
         self.engine = engine
         self.store = store
@@ -104,6 +109,10 @@ class LiveVisionWorker:
         self.min_gap_s = min_gap_s
         self._facts_for = facts_for
         self.ready_timeout_s = ready_timeout_s
+        #: The session call budget shared with the agents (the pitwall
+        #: orchestrator): ``calls_remaining`` (``None`` = uncapped) and
+        #: ``record_call(layer)``. ``None`` = no shared budget.
+        self.budget = budget
         self._queue: queue.Queue[tuple[RunState, LiveSource, Moment] | None] = queue.Queue()
         self._runs: dict[str, RunState] = {}
         self._lock = threading.Lock()
@@ -176,6 +185,9 @@ class LiveVisionWorker:
             if run.calls + self.pending >= self.max_calls:
                 run.skip("over_cap")
                 return
+            if self._over_budget(self.pending):
+                self._skip_over_budget(run, t, etype)
+                return
             run.last_t = t
             self.pending += 1
             self._n += 1
@@ -197,6 +209,29 @@ class LiveVisionWorker:
             ],
         )  # fmt: skip
         self._queue.put((run, source, moment))
+
+    def _over_budget(self, reserved: int) -> bool:
+        """Whether the shared session budget has no call left after ``reserved`` ones."""
+        if self.budget is None:
+            return False
+        try:
+            remaining = self.budget.calls_remaining
+        except Exception:  # pragma: no cover - a budget that cannot answer is no limit
+            return False
+        return remaining is not None and remaining - reserved <= 0
+
+    @staticmethod
+    def _skip_over_budget(run: RunState, t: float, trigger: str) -> None:
+        run.skip("over_budget")
+        run.writer.write("skip", {"reason": "over_budget", "trigger": trigger}, session_time=t)
+
+    def _record_call(self) -> None:
+        if self.budget is None:
+            return
+        try:
+            self.budget.record_call("vision")
+        except Exception:  # pragma: no cover - accounting never breaks a note
+            log.exception("Live vision could not record a call against the budget")
 
     def _run(self, sid: str, source: LiveSource) -> RunState:
         run = self._runs.get(sid)
@@ -248,6 +283,12 @@ class LiveVisionWorker:
             with self._lock:
                 run.skip("no_frames")
             return
+        # The agents may have spent the budget while this moment waited for frames.
+        # This moment is itself one of ``pending``, so nothing else is reserved.
+        if self._over_budget(0):
+            with self._lock:
+                self._skip_over_budget(run, moment.session_time, moment.primary.kind.value)
+            return
         if self._facts_for is not None:
             try:
                 moment.facts = self._facts_for(run.session_id, moment)
@@ -264,6 +305,7 @@ class LiveVisionWorker:
                 run.skip("no_frames")
             run.writer.note(note)
             return
+        self._record_call()
         published = live.publish_note(self.engine, run.session_id, note)
         with self._lock:
             run.calls += 1
@@ -285,6 +327,7 @@ class LiveVisionWorker:
                 "enabled": self._enabled(),
                 "triggers": sorted(self.triggers),
                 "max_calls": self.max_calls,
+                "shared_budget": self.budget is not None,
                 "min_gap_s": self.min_gap_s,
                 "pending": self.pending,
                 "session_id": sid,

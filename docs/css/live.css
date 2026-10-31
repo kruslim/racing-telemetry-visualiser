@@ -1,0 +1,202 @@
+/*
+ * The live view: the pitwall at work beside the race state. Loaded after
+ * pitwall.css (palette, buttons, pills) and app.css (status strip, panels).
+ * Shared components (timeline, flow graph) are styled here by their own class
+ * names so the post-race review can load this file for them too.
+ */
+
+/* --- header views ------------------------------------------------------- */
+header nav.views { margin-left: 18px; gap: 4px; }
+header nav.views a {
+  padding: 5px 12px;
+  border-radius: 7px;
+  border: 1px solid transparent;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-size: 12px;
+}
+header nav.views a.active { background: var(--accent); color: #fff; }
+header nav.views a:not(.active):hover { border-color: var(--line); }
+header nav.views + nav { margin-left: auto; }
+
+body.app #live-view {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* --- grid --------------------------------------------------------------- */
+.live-grid { grid-template-columns: minmax(560px, 1.7fr) minmax(400px, 1fr); }
+.left-column {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+  overflow-y: auto;
+}
+@media (max-width: 1180px) {
+  .live-grid { grid-template-columns: 1fr; }
+  .left-column, .right-column { overflow: visible; }
+}
+.panel h2 .sub { text-transform: none; letter-spacing: 0; font-weight: 400; }
+
+/* --- agent colours, shared by every component --------------------------- */
+.agent-strategist { --agent: var(--strategist); }
+.agent-vehicle_engineer { --agent: var(--engineer); }
+.agent-spotter { --agent: var(--spotter); }
+.agent-coach { --agent: var(--coach); }
+.agent-driver { --agent: var(--ink); }
+.agent-pitwall { --agent: var(--muted); }
+
+/* --- flow graph ---------------------------------------------------------- */
+.flow-host { width: 100%; }
+.flow-graph { max-height: 38vh; }
+.flow-graph { width: 100%; height: auto; display: block; }
+.fg-edge { fill: none; stroke: var(--line); stroke-width: 1.5; transition: stroke 0.3s; }
+.fg-edge.fg-context { stroke-dasharray: 3 4; }
+.fg-edge.fg-hot { stroke: #3a4656; }
+.fg-node rect { fill: var(--panel-2); stroke: var(--line); stroke-width: 1.2; transition: stroke 0.2s; }
+.fg-node .fg-label { fill: var(--ink); font: 600 12px "Segoe UI", system-ui, sans-serif; }
+.fg-node .fg-sub { fill: var(--muted); font: 10.5px var(--mono); }
+.fg-node .fg-dot { fill: var(--line); }
+.fg-node.fg-flash rect { stroke: var(--accent); }
+.fg-node.status-queued .fg-dot { fill: var(--advisory); }
+.fg-node.status-thinking .fg-dot,
+.fg-node.status-tool .fg-dot,
+.fg-node.status-validating .fg-dot { fill: var(--info); animation: fg-blink 0.8s infinite alternate; }
+.fg-node.status-thinking rect,
+.fg-node.status-tool rect,
+.fg-node.status-validating rect { stroke: var(--info); }
+.fg-node.status-off { opacity: 0.45; }
+.node-strategist .fg-label { fill: var(--strategist); }
+.node-vehicle_engineer .fg-label { fill: var(--engineer); }
+.node-spotter .fg-label { fill: var(--spotter); }
+.node-coach .fg-label { fill: var(--coach); }
+@keyframes fg-blink { from { opacity: 1; } to { opacity: 0.35; } }
+
+.fg-pulse { fill: var(--accent); }
+.fg-pulse.agent-strategist,
+.fg-pulse.agent-vehicle_engineer,
+.fg-pulse.agent-spotter,
+.fg-pulse.agent-coach,
+.fg-pulse.agent-driver { fill: var(--agent); }
+.fg-pulse.fg-ctx { fill: none; stroke: var(--agent, var(--accent)); stroke-width: 1.6; }
+.fg-pulse.fg-bad { fill: var(--critical); }
+
+.flow-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-top: 6px;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+.flow-legend .swatch {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  margin-right: 5px;
+  background: var(--agent, var(--accent));
+  vertical-align: -1px;
+}
+.flow-legend .swatch.ctx { background: none; border: 1.6px solid var(--muted); }
+.flow-legend .swatch.bad { background: var(--critical); }
+
+/* --- timeline ------------------------------------------------------------ */
+.timeline-host { width: 100%; }
+.timeline { width: 100%; display: block; user-select: none; }
+.tl-grid { stroke: var(--line); stroke-width: 1; }
+.tl-lane-line { stroke: var(--line); stroke-width: 0.6; opacity: 0.6; }
+.tl-tick { fill: var(--muted); font: 10px var(--mono); }
+.tl-lane-label { fill: var(--muted); font: 11px "Segoe UI", system-ui, sans-serif; }
+.tl-item { fill: var(--agent, var(--accent)); cursor: pointer; }
+.tl-item.sev-critical { fill: var(--critical); }
+.tl-item.sev-advisory { fill: var(--advisory); }
+.tl-item.sev-info { fill: var(--muted); }
+.tl-item.selected { stroke: var(--ink); stroke-width: 1.4; }
+.tl-cursor { stroke: var(--ink); stroke-width: 1.2; opacity: 0.8; }
+
+/* --- agent runs ---------------------------------------------------------- */
+.runs-body { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 12px; }
+@media (max-width: 1400px) { .runs-body { grid-template-columns: 1fr; } }
+.runs-list { display: flex; flex-direction: column; gap: 2px; max-height: 320px; overflow-y: auto; }
+.run-row {
+  display: grid;
+  grid-template-columns: 112px minmax(90px, 1fr) minmax(120px, 1.6fr) 64px 46px;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-left: 3px solid var(--agent);
+  border-radius: 4px;
+  text-align: left;
+  font: 12px var(--mono);
+  color: var(--ink);
+}
+.run-row:hover, .run-row.selected { background: var(--panel-2); border-color: var(--line); border-left-color: var(--agent); }
+.run-agent { color: var(--agent); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.run-event { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.run-track { position: relative; height: 12px; background: var(--bg); border-radius: 3px; }
+.run-span { position: absolute; top: 2px; height: 8px; border-radius: 2px; }
+.run-span.span-llm { background: var(--agent); opacity: 0.85; }
+.run-span.span-tool { background: var(--advisory); top: 3px; height: 6px; }
+.run-span.open { animation: fg-blink 0.8s infinite alternate; }
+.run-span.bad { background: var(--critical); }
+.run-outcome { font-size: 11px; text-align: center; border-radius: 999px; padding: 0 6px; }
+.outcome-radio { color: var(--info); }
+.outcome-refused { color: var(--advisory); }
+.outcome-error { color: var(--critical); }
+.outcome-running { color: var(--muted); }
+.run-latency { color: var(--muted); text-align: right; }
+.run-detail { background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; font-size: 12.5px; }
+.run-detail h3 { margin: 0 0 4px; font-size: 13px; }
+.run-steps { margin: 8px 0 0; padding-left: 18px; font-family: var(--mono); font-size: 11.5px; }
+.run-steps li { margin: 2px 0; }
+.run-steps .step-tool { color: var(--advisory); }
+.run-steps .bad { color: var(--critical); }
+
+/* --- raw telemetry -------------------------------------------------------- */
+.tstrip-head { display: flex; gap: 10px; align-items: baseline; margin-bottom: 6px; }
+.tstrip-row {
+  display: grid;
+  grid-template-columns: 70px minmax(0, 1fr) 110px;
+  align-items: center;
+  gap: 10px;
+  color: var(--accent);
+}
+.tstrip-row.missing { opacity: 0.4; }
+.tstrip-label { color: var(--muted); font-size: 12px; }
+.tstrip-canvas { width: 100%; height: 34px; display: block; }
+.tstrip-value { font: 12px var(--mono); color: var(--ink); text-align: right; }
+
+/* --- right column: the radio keeps a usable height ----------------------- */
+.live-grid .right-column .panel-radio { flex: 0 0 auto; min-height: 340px; max-height: 52vh; }
+.live-grid .right-column .panel-radio .radio-list { flex: 1 1 auto; min-height: 120px; overflow-y: auto; }
+
+/* --- replay picker ------------------------------------------------------- */
+#replay-session { max-width: 320px; }
+
+/* --- onboard: the camera (live capture or a synced replay) and visual notes */
+.live-grid .right-column .panel-onboard { flex: 0 0 auto; }
+.panel-onboard h2 button { margin-left: auto; }
+.onboard-frame {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  background: #000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+.onboard-frame img, .onboard-frame video { width: 100%; height: 100%; object-fit: contain; display: block; }
+.onboard-frame .muted { padding: 12px; text-align: center; }
+.onboard-frame [hidden] { display: none; }
+.onboard-notes { max-height: 160px; overflow-y: auto; }
+.onboard-note { padding: 4px 0; border-top: 1px solid var(--line, #2a2f36); }
+.onboard-note-head { color: var(--muted); font-size: 12px; }
+.onboard-obs { font-size: 13px; }
+.onboard-obs .k { text-transform: uppercase; font-size: 11px; }
+.onboard-obs.conf-low { opacity: 0.6; }

@@ -1,82 +1,158 @@
 HEADLESS MODE - no human is watching this session. Rules:
-- Work autonomously to completion. Never stop to ask a question; make the conservative choice that best matches existing repo patterns and record it in docs/PITWALL.md under "Deviations".
-- Before finishing: run the FULL `pytest` suite and iterate until it is completely green (offline - no iRacing, no ANTHROPIC_API_KEY needed). Do not finish with failing or skipped-because-broken tests.
-- Also run any smoke script mentioned below and make it pass.
-- Update docs/PITWALL.md with what you built, the public interfaces the next stage will consume, and any deviations from this spec.
-- Do not refactor or break existing v1 functionality (analysis UI, coaching API, MCP server, existing tests).
+- Work autonomously to completion. Never stop to ask a question; make the conservative choice that best matches existing repo patterns and record it in docs/PITWALL.md as a deviation of this stage.
+- Read CLAUDE.md first and follow its commands and conventions (repo virtualenv, `RTV_` settings with a line in .env.example, lazy optional imports, offline tests).
+- Before finishing: run the FULL pytest suite, `ruff check .` and `scripts/smoke_offline.py`, and iterate until all three are green (offline - no iRacing, no KIMI_CODE_API_KEY, no network). Do not finish with failing tests or with tests skipped because they are broken. Never delete or rewrite a passing test to make new code pass.
+- Update docs/PITWALL.md: the "Current architecture" page at the top for every area this stage changes (including the interfaces the next stage consumes), and a short history entry for this stage (what was built, deviations) in the stage-history appendix. Do not append another long stage section at the end of the file.
+- Do not break v1 or earlier stages (post-race review, coaching endpoints, MCP server, the four agents, the journal). No fake data in the app: generated sessions live in evals/ and are used by tests and evals only.
 
-TASK:
+TASK: Stage 07 - session lifecycle and autonomous arm/disarm (plan task D3).
 
-Read first: whole repo state after prompts 1-6, especially docs/PITWALL.md.
+Run order and dependencies: stages run 07, 08, 10, 09. This stage depends on
+nothing pending. If the deterministic spotter (plan task B2) has merged, its
+template calls are covered below; if not, ignore those lines.
+
+Read first: CLAUDE.md, the "Current architecture" page of docs/PITWALL.md and its
+"Race journal" section, src/rtv/services.py (build_services, on_state,
+_begin_journal), src/rtv/store/journal.py, src/rtv/racestate/summary.py,
+src/rtv/ingest/live.py (_open_session), src/rtv/racestate/engine.py (reset,
+bind_catalog, flag phase) and src/rtv/pitwall/orchestrator.py (reset, suspend,
+resume, set_enabled, the call budget).
 
 GOAL
-Make the pitwall run itself. Today an operator starts the server, opens the UI and
-presses Start. After this stage the system arms itself when a session begins,
-disarms itself when the session ends, and never needs a human in the loop for a
-normal race weekend.
+Make the pitwall run a race weekend by itself. Today an operator starts the
+server, presses Start, and has to reset by hand between sessions. After this
+stage the system notices each session (practice, qualifying, race) begin and
+end, gives each one a clean engine, agent layer, radio, call budget and journal
+run, arms the agents for the green flag and stands them down at the end, with no
+human in the loop. Everything here is deterministic supervision: no new agents
+and no new LLM calls.
 
-This is the autonomy stage. Everything here is deterministic supervision - no new
-agents, no new LLM calls except the one already-specified debrief hand-off.
+ALREADY BUILT - REUSE, DO NOT REBUILD
+- The race journal: rtv.store.journal.SessionRecorder writes
+  data/sessions/<session_id>/runs/<run_id>.jsonl (race events, aired radio,
+  agent activity, periodic state snapshots, lifecycle start/end records), opened
+  by build_services when a replay starts or the live poller reports IN_SESSION
+  for a new session id. Read endpoints: GET /api/v1/sessions/{id}/pitwall-runs,
+  /pitwall-log and /pitwall-log/state. Do NOT add a second journal, a DuckDB
+  journal table or a /journal endpoint; extend this one.
+- The deterministic post-race summary: rtv.racestate.summary.race_summary and
+  GET /api/v1/sessions/{id}/summary?run=. It is the session-end summary; do not
+  write another.
+- PitwallOrchestrator.reset() (cooldowns, breakers, radio, director, a fresh
+  per-session call budget), suspend()/resume() (telemetry gap, separate from the
+  operator kill switch), set_enabled() (the operator kill switch) and
+  max_calls_per_session.
 
-1. SESSION LIFECYCLE (src/rtv/racestate/ or a new src/rtv/session/):
-  - A SessionLifecycle state machine over the EXISTING frame stream and the
-    SessionState / SessionFlags channels the engine already reads. States at
-    minimum: idle -> practice/qual/race detected -> green -> running -> checkered
-    -> ended. Do not invent a channel; if a transition is not backed by the
-    catalog, the state stays unknown and a capability flag records why (the
-    established grounding discipline, applied to lifecycle).
-  - Emit lifecycle transitions as ordinary RaceEvents on the existing bus
-    (session_start, session_green, session_checkered, session_end) so every
-    existing consumer - ring buffer, /ws/pitwall, orchestrator, UI ticker - gets
-    them for free. Follow the stage-5 rule: no consumer branches on their origin.
-  - Detect a NEW session (car/track/session-id change, or a session-time reset)
-    and call engine.reset() plus orchestrator reset, so a second race in one
-    server run does not inherit the first race's cooldowns, fuel model or radio.
+GAPS IN TODAY'S CODE (the reason for this stage; confirm each before fixing)
+- EventType.SESSION_STATE_CHANGE is declared but nothing emits it. The engine
+  decodes SessionState into state.session.state and stops there.
+- The live poller opens a new RTV session only when the subsession id changes.
+  Practice, qualifying and race of one event share a subsession, so they share
+  one session id, one journal run and one engine state: the race inherits
+  practice's fuel model, cooldowns, radio and spent call budget. Nothing reads
+  SessionNum.
+- On a new live session id, on_state opens a journal run and names the session
+  on the engine, but resets neither the engine's accumulators (bind_catalog only
+  runs when the schema hash changes) nor the agent layer.
+- POST /api/v1/replay/start calls engine.reset() but not pitwall.reset(), so a
+  second replay in one server run inherits the first one's cooldowns, radio and
+  spent budget.
 
-2. AUTONOMOUS ARM/DISARM:
-  - The agent layer arms on session_green and disarms on session_end, driving the
-    EXISTING kill switch rather than a parallel mechanism. Practice and qualifying
-    default to a reduced roster (env-configurable) - a strategist has nothing to
-    say in a practice session and should not bill for it.
-  - Respect the existing per-session LLM cost cap from stage 5; reset the counter
-    on a new session, and log the previous session's spend at disarm.
-  - RTV_PITWALL_AUTONOMOUS (default false) gates the whole behaviour. When false
-    everything behaves exactly as it does today - this must be provable by test.
+1. SESSION LIFECYCLE (src/rtv/racestate/lifecycle.py):
+  - A SessionLifecycle state machine fed by the engine on every frame from
+    channels the engine already reads plus SessionNum, and the session type from
+    the session-info YAML (Sessions[SessionNum].SessionType). States at minimum:
+    idle -> practice / qualify / race -> pre_green -> green -> checkered ->
+    cool_down -> ended. Green must use the engine's existing flag-phase logic,
+    which treats start_hidden after the formation lap as green (the real Spa
+    .ibt never shows a plain green bit after the start). Do not invent a channel:
+    a transition the catalog cannot back leaves the state "unknown", and a
+    `lifecycle` capability flag (with `missing` entries) says why.
+  - Emit the existing session_state_change for every SessionState transition,
+    and add session_start, session_green, session_checkered and session_end as
+    ordinary RaceEvents on engine.bus (payload: session_num, session_type, from,
+    to). The journal, /ws/pitwall, the orchestrator and both UIs get them with
+    no new wiring; no consumer branches on their origin. Add them to the event
+    catalog in docs/PITWALL.md. None of the four agents is woken by them.
 
-3. RACE JOURNAL (the durable record):
-  - Persist per session: every RaceEvent, every RadioMessage, the lifecycle
-    transitions, and the final RaceState snapshot. Reuse the existing DuckDB /
-    Parquet store patterns; do not add a new storage dependency.
-  - GET /api/v1/sessions/{id}/journal returns it. A journal must be replayable
-    into the existing UI without the sim present.
-  - This is what stage 09's debrief analyst reads. Design the interface for that
-    consumer now and document it.
+2. ONE CLEAN SEGMENT PER SESSION (always on, not gated by autonomy - it is a
+   correctness fix):
+  - A new segment starts on a SessionNum change, a new RTV session id, or the
+    session clock going backwards. On a new segment: reset the engine's
+    accumulators while keeping the catalog binding and session info (add a
+    small engine method rather than rebinding), call pitwall.reset(), end the
+    current journal run with reason "session_changed" and begin a new run whose
+    lifecycle record carries session_num and session_type.
+  - list_runs / pitwall-runs report session_num and session_type per run so the
+    review can label "Practice / Qualifying / Race" runs. default_run keeps its
+    rule (newest run the agents spoke in, else newest).
+  - The lap table covers the whole RTV session. The summary for a run must count
+    only that run's laps (filter by the run's session-time bounds, or by
+    session number if the lap rows carry it), so practice laps never appear in
+    the race summary.
+  - POST /api/v1/replay/start also calls pitwall.reset() when agents are mounted.
 
-4. HAND-OFF HOOK:
-  - On session_end, fire a single documented extension point
-    (e.g. services.on_session_end callbacks) carrying the session id and journal
-    handle. Ship it with a no-op default and ONE built-in subscriber that writes a
-    deterministic, LLM-free session summary (laps, best lap, stints, incidents,
-    fuel used, radio call count) to disk and to the API.
-  - The LLM debrief is stage 09 and must NOT be built here. This stage proves the
-    seam the same way stage 5 proved the director seam.
+3. AUTONOMOUS ARM / DISARM (gated by RTV_PITWALL_AUTONOMOUS, default false):
+  - Autonomy adds a "standby" state to the orchestrator next to "suspended":
+    dispatch is blocked with reason "standby" in the activity record, and status
+    reports it. Autonomy never turns on agents the operator switched off with
+    the kill switch or per-agent flags; the operator always wins.
+  - Arm on session_green when the session type is listed in
+    RTV_PITWALL_AUTONOMOUS_SESSIONS (default "race"). Practice and qualifying
+    get a reduced roster from RTV_PITWALL_ROSTER_PRACTICE and
+    RTV_PITWALL_ROSTER_QUALIFY (comma-separated agent names; default empty, so
+    no strategist bills for a practice session). Deterministic callers (the B2
+    spotter templates, if merged) cost nothing and are not held in standby.
+  - Disarm at session_end, or at session_checkered once the player has taken
+    the flag. On disarm, log the segment's model calls used against the budget
+    and write them into the journal run's end record.
+  - With RTV_PITWALL_AUTONOMOUS=false the agents are invoked exactly as today:
+    the same dispatch decisions on the synthetic race, with lifecycle events on
+    the bus as the only addition (and they wake nobody). Prove it with a test.
 
-5. NOTIFICATION (keep-me-updated, deterministic only):
-  - A pluggable notifier protocol with a no-op default and a file/console
-    implementation. On session_end it emits the deterministic summary.
-  - Do not add a network dependency to the default test path. Any webhook/email
-    implementation must be import-guarded and off by default.
+4. SESSION-END HOOK (what stage 09's debrief consumes):
+  - AppServices.on_session_end: a list of callbacks receiving one SessionEnded
+    record (session_id, run_id, journal path, session_num, session_type,
+    reason, calls_used). Fired once per segment when its journal run closes,
+    from a worker so it never blocks the frame path; a callback that raises is
+    logged and ignored.
+  - One built-in subscriber: compute race_summary for the run and store it next
+    to the run as <run_id>.summary.json. GET /sessions/{id}/summary?run= serves
+    the stored file when present and computes it otherwise (same shape).
+  - A notifier protocol with a no-op default and a file/console implementation
+    that emits the summary on session end. Any webhook or email notifier must be
+    import-guarded and off by default; nothing in the default test path touches
+    the network.
+  - Document the hook signature and the journal fields stage 09 reads.
 
-6. SMOKE + TESTS:
-  - scripts/smoke_pitwall_autonomy.py: drive the scripted scenario end to end with
-    RTV_PITWALL_AUTONOMOUS=true and assert the full arc - arm on green, radio
-    during the race, disarm at the flag, journal written, summary produced - with
-    no human input and no API key.
-  - A test proving two consecutive replays in ONE process produce two independent
-    journals with no state bleed between them.
-  - A test proving RTV_PITWALL_AUTONOMOUS=false leaves stage-1-to-6 behaviour
-    byte-identical.
+5. UI (desktop is the primary UI; the web pages are frozen to fixes only):
+  - The desktop live view shows the lifecycle state, session type and whether
+    the agents are armed, in standby (and why) or off. View-model logic goes in
+    src/rtv/desktop/model/ with tests; keep PySide6 imports inside rtv.desktop.
+  - The desktop review labels each run with its session type.
 
-DEFINITION OF DONE: pytest + evals green offline; both smoke scripts green; every
-new env var in .env.example; docs/PITWALL.md updated with the lifecycle event
-catalog, the journal schema and the session-end hook signature stage 09 consumes.
+6. TESTS (offline):
+  - A synthetic practice -> qualify -> race stream in one session (extend the
+    test-only generators in evals/, never src/): three segments, three journal
+    runs, and the race segment does not inherit the practice fuel model,
+    cooldowns, radio or spent budget.
+  - Two consecutive replays in one process produce two independent journal runs
+    with no state bleed (cooldowns, radio, budget, director).
+  - Autonomy on: standby before green, armed at green, disarmed at the end, the
+    practice roster honoured, the operator kill switch never overridden.
+  - Autonomy off: dispatch behaviour unchanged (see 3).
+  - The session-end hook fires once per segment, and a raising callback is
+    contained.
+  - On the real Spa fixture (tests/test_real_ibt.py style, skipped without it):
+    one race segment, session_green on lap 1, session_checkered at the flag, and
+    the summary counts only that segment's laps.
+
+DEFINITION OF DONE: pytest, ruff and smoke_offline green offline; every new
+setting in config.py and .env.example; docs/PITWALL.md documents the lifecycle
+states and events, the segment rule, standby versus the kill switch, the
+session_num/session_type journal fields and the on_session_end signature.
+
+AFTER THE HEADLESS RUN (for the operator, not part of this session): replay the
+Spa .ibt twice in one server run with RTV_PITWALL_AUTONOMOUS=true and agents on,
+check two clean journal runs, and compare the second with the latest baseline
+run using scripts/compare_runs.py.
