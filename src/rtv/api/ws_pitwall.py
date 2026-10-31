@@ -25,6 +25,7 @@ import orjson
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from rtv.logging import get_logger
+from rtv.pitwall.activity import public
 from rtv.services import AppServices
 
 router = APIRouter()
@@ -109,7 +110,7 @@ async def pitwall_ws(ws: WebSocket) -> None:
         while True:
             records = await activity_sub.next_events(timeout=1.0)
             for record in records:
-                await _send(ws, {"type": "activity", "activity": record})
+                await _send(ws, {"type": "activity", "activity": public(record)})
 
     senders = [receiver(), state_sender(), event_sender()]
     if radio_sub is not None:

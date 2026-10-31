@@ -120,6 +120,20 @@ class ActivityLog(EventBus):
         return items[:limit] if limit else items  # type: ignore[return-value]
 
 
+#: Data fields kept for the journal but left out of the live feed: a run's whole
+#: model input (``run_start``) and whole tool results (``tool_call``).
+JOURNAL_ONLY_FIELDS = ("input", "result_full")
+
+
+def public(record: dict[str, Any]) -> dict[str, Any]:
+    """``record`` without its journal-only fields, for browsers and the desktop."""
+    data = record.get("data")
+    if not isinstance(data, dict) or not any(k in data for k in JOURNAL_ONLY_FIELDS):
+        return record
+    slim = {k: v for k, v in data.items() if k not in JOURNAL_ONLY_FIELDS}
+    return {**record, "data": slim}
+
+
 def summarize(payload: Any, *, limit: int = 12) -> dict[str, Any]:
     """A tool result reduced to its shape: enough to show, never the payload.
 

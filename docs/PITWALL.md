@@ -96,6 +96,9 @@ session (live or replay) holding lifecycle, race events, aired radio, every acti
 record and state snapshots every `RTV_JOURNAL_STATE_INTERVAL_S`. The post-race review
 and the desktop review read only the journal and never re-run the agents
 (`/sessions/{id}/pitwall-runs`, `/pitwall-log`, `/pitwall-log/state`, `/summary`).
+Schema version 2 (F1): each `run_start` holds the run's whole model input (`data.input`)
+and each `tool_call` its whole result (`data.result_full`); `rtv.pitwall.agent_input.
+model_input(record)` rebuilds the first model call. Version-1 journals read unchanged.
 
 **Vision live worker** (`rtv.vision.live_worker`, details in `docs/VISION.md`). With
 `RTV_VISION_MODE=live`, events in `RTV_VISION_LIVE_TRIGGERS` become moments; the worker
@@ -2763,9 +2766,9 @@ bounded, drop-oldest, drops-counted subscriptions) carrying plain dicts:
 |---|---|---|
 | `dispatch` | `PitwallOrchestrator.dispatch` | `accepted`, `skipped` (agent -> `cooldown`/`disabled`), `blocked` (`disabled`/`suspended`/`budget_exhausted`/`stale`) |
 | `inbox_superseded` | `PitwallOrchestrator._offer` | `dropped`, `kept` event keys |
-| `run_start` | `AgentRuntime.invoke` | `trigger`, `severity`, `model`, `context_radio` (message ids + agents the run was shown), `context_events` |
+| `run_start` | `AgentRuntime.invoke` | `trigger`, `severity`, `model`, `context_radio` (message ids + agents the run was shown), `context_events`; journal only: `input` (F1) |
 | `llm_call_start` / `llm_call_end` | `AgentRuntime._complete` | `call`, `model`, `latency_ms`, `ok`, `error` (class name), `tool_calls`, `answered` |
-| `tool_call` | `AgentRuntime._converse` | `tool`, `args` (long strings cut), `ok`, `result` (shape only: type, keys, size), `latency_ms` |
+| `tool_call` | `AgentRuntime._converse` | `tool`, `args` (long strings cut), `ok`, `result` (shape only: type, keys, size), `latency_ms`; journal only: `result_full` (F1) |
 | `validate` | `AgentRuntime.invoke` | `ok`, `unsupported`, `word_count`, `over_word_limit`, `repaired` |
 | `run_end` | `AgentRuntime.invoke` | `outcome` (`radio`/`refused`/`error`), `message_id`, `priority`, `tools_used`, `turns`, `latency_ms` |
 | `radio_queued` / `radio_superseded` / `radio_aired` | `RadioFeed.publish` / `emit` | `message_id`, `seq`, `priority`, `subject`, `refused` |
@@ -3002,3 +3005,35 @@ review does.
 - The coaching checks (`rtv.coaching.agent.validation.split_corner` / `resolve_corner`)
   accept `T7 Campus`, `T7 — Campus` or `Turn 7 (Campus)` as T7 when Campus is T7's mapped
   name, and report any other name as made up; `evals.checks.cross_check` uses them.
+
+## F1 — each agent run's full input in the journal (2026-10-31)
+
+The journal is the eval source (REVIEW P2-3), so a run must be re-executable from it.
+
+- **`rtv.pitwall.agent_input`** (new, imports nothing from the runtime). `build_input`
+  makes the record; `model_input(record)` returns `system`, `messages`, `model`,
+  `max_tokens`, `tools` (names) and `output_contract` of the run's first model call;
+  `input_of(record)` is `None` for a version-1 run; `spec_drift(record, spec,
+  system_prompt)` lists what changed since (`prompt`, `tools`, `output_contract`,
+  `model`). The pure `system_blocks` and `instruction` are what the runtime itself uses,
+  and the runtime builds its first call *from the record*, so the rebuild is
+  byte-identical by construction (`tests/test_agent_input.py`, all four agents).
+- **Record** (`run_start.data.input`, `v: 1`): `agent`, `model`, `max_tokens`,
+  `max_tool_iterations`, `provider` (`KimiProvider.describe()`: name, thinking, effort),
+  `system_prompt` (role prompt + grounding rules) and `prompt_sha`, `state_slice`,
+  `event` (`RaceEvent.to_api()`), `radio` (the five calls shown: id, agent, priority,
+  spoken text), `prefetched` (`tool`, `args`, `result`), `tools` + `tools_sha`,
+  `output_contract` + `output_schema_sha`. `tool_call.data.result_full` is the whole tool
+  result, so later turns can be rebuilt too.
+- **Order**: `run_start` is now written after the prefetch (it needs the results); the
+  prefetch `tool_call` records are held and written right after it, so a run still
+  starts with `run_start`. A run that fails before its input exists still gets one.
+- **Schema**: `rtv.store.journal.JOURNAL_SCHEMA_VERSION = 2` on the lifecycle start
+  record; `schema_version_of`, `summarize_run()["schema_version"]` (1 when absent) and
+  `agent_inputs(path)`. `run_stats` adds `schema_version` and `runs_with_input`, and the
+  compare table two rows. Old journals read unchanged (tested on the run-3 excerpt,
+  including the desktop review and activity models).
+- **Live feed**: `input` and `result_full` are journal-only; `rtv.pitwall.activity.public`
+  strips them from `/ws/pitwall` and `/pitwall/activity`. `/pitwall-log` serves them.
+- Not recorded: the in-loop model outputs beyond what `tool_call.args` (cut at 120
+  chars) and the radio record hold; F3 replays model output from its own fixtures.

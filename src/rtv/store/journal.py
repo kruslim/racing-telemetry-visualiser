@@ -23,6 +23,20 @@ file (the activity log's own counter is kept as ``data.activity_seq``). The kind
 the recorder adds are ``lifecycle`` (run start/end), ``race_event``, ``radio`` and
 ``state``; everything else is an activity record passed through unchanged.
 
+Schema versions (``schema_version`` on the ``lifecycle`` start record; a journal
+without one is version 1):
+
+1. The original journal. ``run_start`` records name the trigger, model and the
+   radio ids the run was shown.
+2. ``run_start`` also holds ``data.input``, the run's whole model input (system
+   prompt, state slice, event, radio shown, prefetched tool results, model and call
+   settings; :mod:`rtv.pitwall.agent_input`), and ``tool_call`` records hold the
+   whole result as ``data.result_full``. ``agent_input.model_input`` rebuilds the
+   first model call of a run from its ``run_start`` record.
+
+Readers must accept both: every new field is additive, so a version-1 journal
+reads the same as before and simply has no inputs.
+
 JSON lines rather than a DuckDB table: it is append-only on the hot path, needs no
 second writer on the database the live poller is using, and a crash mid-race loses
 at most the last flush interval.
@@ -42,6 +56,9 @@ from typing import Any
 from rtv.logging import get_logger
 
 log = get_logger("store.journal")
+
+#: Written on every new run's lifecycle start record. See the module docstring.
+JOURNAL_SCHEMA_VERSION = 2
 
 #: Kinds the recorder writes itself; anything else is an activity record.
 RECORDER_KINDS = ("lifecycle", "race_event", "radio", "state")
@@ -122,7 +139,13 @@ class SessionRecorder:
             self._run = _Run(run_dir / f"{run_id}.jsonl", session_id, run_id, source)
             self._write_locked(
                 "lifecycle",
-                {"phase": "start", "source": source, "session_id": session_id, **meta},
+                {
+                    "phase": "start",
+                    "source": source,
+                    "session_id": session_id,
+                    "schema_version": JOURNAL_SCHEMA_VERSION,
+                    **meta,
+                },
             )
         log.info("Journal run %s/%s started", session_id, run_id)
         return run_id
@@ -297,9 +320,9 @@ def run_path(root: Path, session_id: str, run_id: str) -> Path:
     return session_dir(root, session_id) / f"{_check_id(run_id)}.jsonl"
 
 
-def iter_records(path: Path) -> Iterator[dict[str, Any]]:
+def iter_records(path: Path | str) -> Iterator[dict[str, Any]]:
     """Every record in a journal file; a torn last line (a crash) is skipped."""
-    with path.open(encoding="utf-8") as fh:
+    with Path(path).open(encoding="utf-8") as fh:
         for line in fh:
             line = line.strip()
             if not line:
@@ -339,13 +362,37 @@ def summarize_run(path: Path) -> dict[str, Any]:
         "started_wall_ms": start.get("wall_ms"),
         "ended_wall_ms": end.get("wall_ms") if end else None,
         "complete": end is not None,
+        "schema_version": schema_version_of(data),
         "session_time_start": t0,
         "session_time_end": t1,
         "counts": counts,
         "agents": sorted(agents),
         "has_agents": bool(counts.get("run_start") or counts.get("radio")),
-        "meta": {k: v for k, v in data.items() if k not in {"phase", "source", "session_id"}},
+        "meta": {
+            k: v
+            for k, v in data.items()
+            if k not in {"phase", "source", "session_id", "schema_version"}
+        },
     }
+
+
+def schema_version_of(start: dict[str, Any] | None) -> int:
+    """Schema version of a run from its lifecycle start data; 1 when unstated."""
+    value = (start or {}).get("schema_version")
+    return value if isinstance(value, int) and value >= 1 else 1
+
+
+def agent_inputs(path: Path | str) -> list[dict[str, Any]]:
+    """Every ``run_start`` record of a run that carries its model input, in order.
+
+    Empty for a version-1 journal. Feed one to
+    :func:`rtv.pitwall.agent_input.model_input` to rebuild that run's first call.
+    """
+    return [
+        rec
+        for rec in iter_records(path)
+        if rec.get("kind") == "run_start" and isinstance((rec.get("data") or {}).get("input"), dict)
+    ]
 
 
 def list_runs(root: Path, session_id: str) -> list[dict[str, Any]]:
