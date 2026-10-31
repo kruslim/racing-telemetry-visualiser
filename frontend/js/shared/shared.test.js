@@ -1,11 +1,12 @@
 /**
- * Tests for the shared live/review components' pure parts: the activity model
- * and the timeline geometry. Run by `node frontend/js/run-shared-tests.mjs`, and
+ * Tests for the shared live/review components' pure parts: the activity model,
+ * the timeline geometry and the onboard panel's view. Run by `node frontend/js/run-shared-tests.mjs`, and
  * by pytest when node is installed. No DOM, no dependencies.
  */
 
 import { apply, createModel, edgesFor, recentRuns, reduce } from './activity-model.js';
 import { clock, layoutLane, scaleX, ticks } from './timeline.js';
+import { onboardView, videoTimeFor } from '../live/onboard-panel.js';
 
 /** One real run as the backend emits it (see tests/test_pitwall_activity.py). */
 function runRecords() {
@@ -118,6 +119,45 @@ const TESTS = [
   ['clock formats session time', () => {
     eq(clock(125), '2:05');
     eq(clock(3725.4), '1:02:05');
+  }],
+  ['the onboard panel is empty with no source and says how to turn the VLM on', () => {
+    const view = onboardView({ mode: 'off', capture: { running: false }, source: null, vlm: { enabled: false } });
+    eq(view.mode, 'empty');
+    eq(view.vlmLine.includes('RTV_VISION_MODE=live'), true);
+    eq(view.notes.length, 0);
+  }],
+  ['a running capture streams and lists live notes newest first', () => {
+    const view = onboardView({
+      mode: 'live',
+      capture: { running: true, session_id: 's1', frames: 42 },
+      source: { kind: 'capture', video_id: 'v1' },
+      vlm: {
+        enabled: true, calls: 2, max_calls: 10, pending: 1, skipped: { merged: 1 },
+        recent: [
+          { note_id: 'a', lap: 3, trigger: 'offtrack', status: 'ok',
+            kept: [{ kind: 'kerb_use', text: 'Rode the exit kerb.', confidence: 'high' }] },
+          { note_id: 'b', lap: 4, trigger: 'lockup', status: 'trigger_not_seen', kept: [] },
+        ],
+      },
+    });
+    eq(view.mode, 'capture');
+    eq(view.sourceLine, 'capturing the sim window · 42 frames stamped');
+    eq(view.vlmLine, 'Live VLM on · 2 of 10 calls · 1 looking · 1 merged');
+    eq(view.notes[0].id, 'b');
+    eq(view.notes[0].head.includes('check the sync'), true);
+    eq(view.notes[0].empty, 'The frames did not show the flagged moment.');
+    eq(view.notes[1].empty, null);
+    eq(view.notes[1].lines[0].kind, 'kerb use');
+    eq(view.notes[1].lines[0].cls, 'conf-high');
+  }],
+  ['a replayed recording maps session time onto its own clock', () => {
+    const sync = { synced: true, rate: 1.001, offset: 90 };
+    eq(Math.abs(videoTimeFor(sync, 190.1) - 100) < 1e-9, true);
+    eq(videoTimeFor({ synced: false }, 10), null);
+    const view = onboardView({ capture: { running: false },
+      source: { kind: 'video', video_id: 'v', video: { video_id: 'v', label: 'spa', sync } }, vlm: {} });
+    eq(view.mode, 'video');
+    eq(view.sourceLine, 'recording: spa');
   }],
 ];
 

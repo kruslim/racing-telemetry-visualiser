@@ -3,8 +3,9 @@
 Onboard video, synced to the telemetry, plus short VLM-written "visual notes" on the
 moments the telemetry already flagged. This page is the backend contract for the UI
 redesign: everything a review page needs to show a synced video and the notes is here.
-RTV Desktop shows it in the review's onboard video panel (`docs/DESKTOP.md`, §5.9 row); the
-web review has no video panel yet.
+RTV Desktop shows the post-race side in the review's onboard video panel (`docs/DESKTOP.md`,
+§5.9 row). The live side (capture, the live VLM, the live view's Onboard panel) is under
+[Live](#live).
 
 The rule that shapes all of it: **telemetry picks the moment, the VLM describes it.** A
 visual note is words about what the camera saw (kerb use, the line, other cars, damage,
@@ -75,6 +76,15 @@ service) and `src/rtv/api/routes_vision.py`. Tests: `tests/test_vision.py`,
 | `RTV_VISION_FRAMES_PER_MOMENT` | 4 | Frames sent per moment. |
 | `RTV_VISION_FRAME_WIDTH` | 768 | Frames are scaled down to this width (px); never up. |
 | `RTV_VISION_FFMPEG` / `RTV_VISION_FFPROBE` | `ffmpeg` / `ffprobe` | Binaries, on PATH or full paths. |
+| `RTV_VISION_CAPTURE_INPUT` | `-f gdigrab -framerate 30 -draw_mouse 0 -i "title=iRacing.com Simulator"` | ffmpeg input args for live capture. Any ffmpeg input works (`-f dshow -i video="OBS Virtual Camera"`). |
+| `RTV_VISION_CAPTURE_RECORD` | `true` | Also record an MP4 and register it, synced, when the capture stops. |
+| `RTV_VISION_CAPTURE_PREVIEW_FPS` | 10 | Live frames per second kept for the view and the live VLM. |
+| `RTV_VISION_CAPTURE_RING_S` | 20 | Seconds of live frames kept in memory. |
+| `RTV_VISION_CAPTURE_LAG_S` | 0 | Capture latency taken off each frame's stamp. |
+| `RTV_VISION_CAPTURE_AUTO` | `false` | Capture while a live session is on. |
+| `RTV_VISION_LIVE_TRIGGERS` | `incident,offtrack,lockup` | Race events that send their frames to the VLM in live mode. |
+| `RTV_VISION_LIVE_MAX_CALLS` | 10 | VLM calls per live run (one capture or one replay); 0 turns the live VLM off. |
+| `RTV_VISION_LIVE_MIN_GAP_S` | 5 | Events closer than this to the last analysed one are merged into it. |
 
 ffmpeg is a system binary, not a Python package. On Windows: `winget install ffmpeg`.
 `GET /api/v1/vision/status` reports whether both binaries were found.
@@ -276,30 +286,100 @@ Field notes for the UI:
 
 ## Live
 
-The research plan's order is post-race first, live later and event-triggered only, so
-**live frame capture is not built**. The seam it will use is built and tested:
+Event-triggered only, as the research plan set out. Three parts: capture, the live VLM
+worker, and the seam that puts its notes on the engine's bus.
+
+### Capture
+
+`rtv.vision.capture`. One ffmpeg process on the iRacing PC reads `RTV_VISION_CAPTURE_INPUT`
+(default: the iRacing window through `gdigrab`, so OBS is not needed) and writes two
+outputs:
+
+- an H.264 MP4 (fragmented, so a crash still leaves a playable file) in the session's
+  `vision/videos/`. When the capture stops it is registered on the session **already
+  synced**, from anchors taken every 10 s of video (`source: "capture"`), so the review
+  shows it with no lap-start step;
+- an MJPEG stream at `RTV_VISION_CAPTURE_PREVIEW_FPS`, scaled to `RTV_VISION_FRAME_WIDTH`,
+  split into JPEGs and kept in a `FrameRing` of the last `RTV_VISION_CAPTURE_RING_S`
+  seconds.
+
+Each frame is stamped with the live session time: the last telemetry `SessionTime` (the
+poller calls `VisionService.observe_frame` on every frame) plus the wall time since it,
+minus `RTV_VISION_CAPTURE_LAG_S`. A frame with no live telemetry within 2 s (iRacing not
+in a session, or paused) is shown but never kept or analysed. A capture started with no
+live session records to `<data>/sessions/_captures/` and is not registered.
+`RTV_VISION_CAPTURE_AUTO=true` starts a capture when a live session begins and stops it
+when it ends. Capture is free: ffmpeg only, no VLM call.
+
+### The live VLM
+
+`rtv.vision.live_worker.LiveVisionWorker` subscribes to the engine's bus. With
+`RTV_VISION_MODE=live`, a key and `RTV_VISION_LIVE_MAX_CALLS > 0`, each event in
+`RTV_VISION_LIVE_TRIGGERS` (default `incident,offtrack,lockup`) becomes a moment from 2 s
+before to 1 s after it. The worker waits until the frames after it exist, sends
+`RTV_VISION_FRAMES_PER_MOMENT` of them through the same `VisionAnalyzer` and grounding as
+a post-race pass (number-free, kerb claims checked against `VertAccel` when the lap is in
+the store), writes the note to a live analysis (`<stamp>-nn-live-<video_id>`, with
+`live: true` and `source` in its start record) and publishes the kept observations.
+
+Frames come from the running capture of the session the engine is consuming or, failing
+that, the newest synced video registered on that session. The second case is a **replay
+of a recorded race**: live mode can be tested on a recording without iRacing.
+
+Spend is bounded: events closer than `RTV_VISION_LIVE_MIN_GAP_S` (session time) to the
+last analysed one are merged into it, and the run stops calling after
+`RTV_VISION_LIVE_MAX_CALLS`. A run is one capture or one replay of a session; each is
+counted from zero. Every skip is counted (`merged`, `over_cap`, `no_frames`); a moment
+with no frames makes no call and does not count against the cap.
+
+Measured on the Spa replay with a test-pattern video synced to it (2026-10-31): kimi-k3
+took 21.8 s on the first call and 5.2 s on the next, with 3 frames at 640 px, and
+correctly answered `trigger_not_seen` (a test pattern is not an onboard).
+
+### The seam
 
 - `EventType.VISUAL_OBSERVATION` (`visual_observation`). No detector emits it and the
   engine never reads it. Payload: `{source: "vision", kind, text, confidence, status,
   note_id, corner, trigger: {kind, session_time, journal_seq}}`, severity `info`.
 - `rtv.vision.live.publish_note(engine, session_id, note)` puts one event per kept
-  observation on the engine's bus, only when the engine is consuming that session. With
-  `RTV_VISION_MODE=live`, every analysis does this as notes arrive. From the bus the
-  recorder journals them, `/ws/pitwall` streams them, and the agents may react.
+  observation on the engine's bus, only when the engine is consuming that session. The
+  live worker does this for every note, and so does a post-race analysis run with
+  `RTV_VISION_MODE=live`. From the bus the recorder journals them, `/ws/pitwall` streams
+  them, and the agents may react.
 - The **spotter** wakes on `traffic`, `track_state` and `damage` notes (cooldown 60 s);
   the **coach** on `kerb_use`, `line` and `car_behaviour` notes under green (cooldown
   120 s). The strategist and vehicle engineer never do. A call triggered by a visual
   observation always airs at `info` priority, whatever the agent asked for, so it never
   pre-empts a fuel, flag or traffic call.
 
-Live capture, when built, would stamp each grabbed frame with the session time of the
-telemetry frame received at the same moment (an offset of a few frames, fine for
-descriptions), trigger on the same detector events, and call `VisionAnalyzer` as the
-post-race path does.
+### Live API
+
+| Method and path | Returns |
+|---|---|
+| `GET /vision/live` | `{mode, session_id, source: {kind: "capture"\|"video", video_id, video?} \| null, capture: {running, session_id, video_id, frames, unstamped, recording, error, latest, ring, ...}, vlm: {enabled, triggers, max_calls, min_gap_s, pending, analysis_id, calls, observations_kept, skipped, recent: [note brief]}}` |
+| `POST /vision/live/capture/start` | body `{session_id?}` (default: the live session); the capture status. 409 if one is running, 503 without ffmpeg |
+| `POST /vision/live/capture/stop` | the capture status plus `video` (the registered, synced recording) or `register_error` |
+| `GET /vision/live/frame` | the newest frame, `image/jpeg`; 204 when there is none |
+| `GET /vision/live/mjpeg` | `multipart/x-mixed-replace` MJPEG at the preview rate, for an `<img>` |
+
+`GET /vision/status` also reports `live_vlm`. A note brief in `vlm.recent` is
+`{note_id, session_time, lap, trigger, status, latency_ms, published, kept: [{kind, text,
+confidence, status}]}`; the full notes are under `/sessions/{sid}/vision/notes?analysis=`.
+
+### In the live view
+
+The web live view at `/` has an **Onboard** panel (`frontend/js/live/onboard-panel.js`)
+above the radio: the MJPEG stream while a capture runs, or the synced recording during a
+replay (played at the replay's speed and re-seeked when it drifts more than 0.4 s), a
+Start/Stop capture button, the live VLM's call count against the cap, and its notes,
+newest first. It polls `GET /vision/live` once a second.
 
 ## Not built yet
 
-- Live frame capture (OBS or ffmpeg on the iRacing PC).
+- A test of window capture on a real iRacing PC (the capture is tested here on an
+  ffmpeg test source only).
+- Kerb checks for a live moment whose lap is not in the store yet (the note is then
+  `uncheckable`, never `corroborated`).
 - Driving iRacing's replay through the SDK to capture any car and camera post-race.
 - Automatic sync from the video itself; sync is set from line crossings or an offset.
 - Token usage on notes (`usage` is null until the provider reports it).

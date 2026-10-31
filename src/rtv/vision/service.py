@@ -5,6 +5,11 @@ imports, so a slow VLM never blocks a request. A paid analysis needs
 ``RTV_VISION_MODE`` set to ``post`` or ``live`` and a Kimi key; everything else
 (registering and syncing a video, frames, a dry-run plan, reading notes) is free
 and works with the mode ``off``.
+
+Live: :meth:`VisionService.start_capture` runs a
+:class:`~rtv.vision.capture.LiveCapture` (free; ffmpeg only), and with
+``RTV_VISION_MODE=live`` the :class:`~rtv.vision.live_worker.LiveVisionWorker`
+sends the frames around flagged race events to the VLM (paid, capped).
 """
 
 from __future__ import annotations
@@ -23,11 +28,19 @@ from rtv.config import Settings
 from rtv.logging import get_logger
 from rtv.store.repository import Repository
 from rtv.vision import live
-from rtv.vision.analyzer import VisionAnalyzer
-from rtv.vision.models import SyncAnchor, SyncMap, VideoInfo, VisualNote
-from rtv.vision.moments import SOURCES, MomentPlan, plan_moments
+from rtv.vision.analyzer import FrameGrab, VisionAnalyzer
+from rtv.vision.capture import FrameRing, LiveCapture, SessionClock, capture_command
+from rtv.vision.live_worker import LiveSource, LiveVisionWorker, NoFrames
+from rtv.vision.models import Moment, SyncAnchor, SyncMap, VideoInfo, VisualNote
+from rtv.vision.moments import SOURCES, MomentPlan, _LapTimeline, plan_moments
 from rtv.vision.store import VisionStore, check_id
-from rtv.vision.video import VIDEO_EXTENSIONS, FfmpegFrames, FrameSource, probe
+from rtv.vision.video import (
+    VIDEO_EXTENSIONS,
+    FfmpegFrames,
+    FrameSource,
+    VideoToolError,
+    probe,
+)
 
 log = get_logger("vision.service")
 
@@ -38,6 +51,62 @@ class VisionDisabled(RuntimeError):
 
 class VisionUnavailable(RuntimeError):
     """No Kimi key (or the ai extra) for a paid analysis."""
+
+
+class CaptureSource(LiveSource):
+    """Frames from the running capture's ring."""
+
+    kind = "capture"
+
+    def __init__(self, capture: LiveCapture, video_id: str, tolerance_s: float) -> None:
+        self.capture = capture
+        self.video_id = video_id
+        self.tolerance_s = tolerance_s
+
+    async def ready(self, t_end: float, timeout_s: float) -> bool:
+        deadline = time.monotonic() + timeout_s
+        while True:
+            span = self.capture.ring.span()
+            if span is not None and span[1] >= t_end:
+                return True
+            if time.monotonic() >= deadline or not self.capture.running:
+                return False
+            await asyncio.sleep(0.1)
+
+    def grab(self) -> FrameGrab:
+        async def from_ring(st: float) -> tuple[bytes, float]:
+            frame = self.capture.ring.nearest(st, tolerance_s=self.tolerance_s)
+            if frame is None:
+                raise NoFrames(f"no live frame near session time {st:.2f}s")
+            return frame.jpeg, frame.video_time
+
+        return from_ring
+
+
+class VideoFileSource(LiveSource):
+    """Frames from a synced video of the session (a replay of a recorded race)."""
+
+    kind = "video"
+
+    def __init__(self, video: VideoInfo, frames: FrameSource, width: int) -> None:
+        self.video = video
+        self.video_id = video.video_id
+        self._frames = frames
+        self._width = width
+
+    async def ready(self, t_end: float, timeout_s: float) -> bool:
+        span = self.video.session_span()
+        return span is not None and span[1] >= t_end
+
+    def grab(self) -> FrameGrab:
+        async def from_file(st: float) -> tuple[bytes, float]:
+            vt = self.video.sync.to_video(st)
+            jpeg = await asyncio.to_thread(
+                self._frames.frame, Path(self.video.path), vt, width=self._width
+            )
+            return jpeg, vt
+
+        return from_file
 
 
 def _default_provider() -> Any:
@@ -57,6 +126,8 @@ class VisionService:
         frames: FrameSource | None = None,
         provider_factory: Callable[[], Any] | None = None,
         engine: Any | None = None,
+        clock: SessionClock | None = None,
+        popen: Callable[..., Any] | None = None,
     ) -> None:
         self.settings = settings
         self.repo = repo
@@ -70,6 +141,28 @@ class VisionService:
         self._jobs: dict[str, dict[str, Any]] = {}
         self._cancel: dict[str, threading.Event] = {}
         self._lock = threading.Lock()
+        #: Live session time, fed by the poller's frames (``services.on_frame``).
+        self.clock = clock or SessionClock()
+        self.ring = FrameRing(settings.vision_capture_ring_s)
+        self.capture: LiveCapture | None = None
+        self._capture_video_id: str | None = None
+        self._popen = popen
+        self.worker: LiveVisionWorker | None = None
+        if engine is not None:
+            self.worker = LiveVisionWorker(
+                engine=engine,
+                store=self.store,
+                analyzer_factory=self._live_analyzer,
+                source_for=self.live_source,
+                enabled=self.live_enabled,
+                triggers=frozenset(
+                    t.strip() for t in settings.vision_live_triggers.split(",") if t.strip()
+                ),
+                max_calls=settings.vision_live_max_calls,
+                min_gap_s=settings.vision_live_min_gap_s,
+                facts_for=self._facts_for,
+            )
+            self.worker.start()
 
     # ---- status --------------------------------------------------------
     def status(self) -> dict[str, Any]:
@@ -79,6 +172,7 @@ class VisionService:
             "mode": self.settings.vision_mode,
             "analysis_enabled": self.settings.vision_mode != "off",
             "live_events": self.settings.vision_mode == "live" and self.engine is not None,
+            "live_vlm": self.live_enabled(),
             "key_present": llm.is_configured(self.settings),
             "model": self.model,
             "tools": available(self.settings.vision_ffmpeg, self.settings.vision_ffprobe),
@@ -98,6 +192,177 @@ class VisionService:
     def max_moments(self) -> int:
         return max(1, self.settings.vision_max_frames // self.settings.vision_frames_per_moment)
 
+    # ---- live ----------------------------------------------------------
+    def live_enabled(self) -> bool:
+        """Whether flagged live events may call the VLM (mode, key and cap allow it)."""
+        return (
+            self.settings.vision_mode == "live"
+            and self.settings.vision_live_max_calls > 0
+            and llm.is_configured(self.settings)
+        )
+
+    def _live_analyzer(self) -> VisionAnalyzer:
+        return VisionAnalyzer(
+            self.provider_factory(),
+            self.frames,
+            self.store,
+            model=self.model,
+            frames_per_moment=self.settings.vision_frames_per_moment,
+            frame_width=self.settings.vision_frame_width,
+        )
+
+    def live_source(self, session_id: str) -> LiveSource | None:
+        """The running capture of ``session_id``, else its newest synced video."""
+        cap = self.capture
+        if cap is not None and cap.running and cap.session_id == session_id:
+            tol = 1.5 / self.settings.vision_capture_preview_fps + 0.2
+            return CaptureSource(cap, self._capture_video_id or "capture", tol)
+        try:
+            videos = [v for v in self.store.list_videos(session_id) if v.session_span()]
+        except ValueError:
+            return None
+        if not videos:
+            return None
+        newest = max(videos, key=lambda v: v.registered_wall_ms or 0)
+        return VideoFileSource(newest, self.frames, self.settings.vision_frame_width)
+
+    def _facts_for(self, session_id: str, moment: Moment) -> dict[str, Any]:
+        timeline = _LapTimeline(self.repo, session_id)
+        lap = moment.lap if moment.lap is not None else timeline.lap_at(moment.session_time)
+        kerb, dev = timeline.kerb_signal(lap, moment.t_start, moment.t_end)
+        return {
+            "triggers": sorted({t.kind.value for t in moment.triggers}),
+            "kerb_signal": kerb,
+            "vert_accel_peak_dev_ms2": round(dev, 2) if dev is not None else None,
+        }
+
+    def observe_frame(self, session_time: float, session_id: str | None = None) -> None:
+        """Called for every live telemetry frame; cheap."""
+        self.clock.observe(session_time, session_id)
+
+    def start_capture(self, session_id: str | None = None) -> dict[str, Any]:
+        """Start ffmpeg on ``RTV_VISION_CAPTURE_INPUT``. Free: no VLM call here.
+
+        With no live session the capture still runs (to check the window is
+        found), but frames cannot be stamped, so they are only shown, not kept,
+        and the recording goes to ``<data>/sessions/_captures``, unregistered.
+        """
+        if self.capture is not None and self.capture.running:
+            raise RuntimeError("A capture is already running; stop it first.")
+        sid = session_id or self.clock.session_id
+        if sid is not None:
+            check_id(sid)
+        video_id = uuid.uuid4().hex[:10]
+        record_path: Path | None = None
+        if self.settings.vision_capture_record:
+            stamp = time.strftime("%Y%m%dT%H%M%S")
+            folder = self.store.upload_dir(sid) if sid else self.store.root / "_captures"
+            record_path = folder / f"{video_id}_capture-{stamp}.mp4"
+        cmd = capture_command(
+            self.settings.vision_ffmpeg,
+            self.settings.vision_capture_input,
+            record_path=record_path,
+            preview_fps=self.settings.vision_capture_preview_fps,
+            preview_width=self.settings.vision_frame_width,
+        )
+        self.ring.clear()
+        kw: dict[str, Any] = {} if self._popen is None else {"popen": self._popen}
+        cap = LiveCapture(
+            cmd,
+            self.ring,
+            lambda: self.clock.now() if (sid is None or self.clock.session_id == sid) else None,
+            session_id=sid or "",
+            record_path=record_path,
+            preview_fps=self.settings.vision_capture_preview_fps,
+            lag_s=self.settings.vision_capture_lag_s,
+            **kw,
+        )
+        cap.start()
+        self.capture, self._capture_video_id = cap, video_id
+        return self.capture_status()
+
+    def stop_capture(self) -> dict[str, Any]:
+        """Stop ffmpeg and register the recording on its session, synced."""
+        cap = self.capture
+        if cap is None:
+            return self.capture_status()
+        cap.stop()
+        out = self.capture_status()
+        out["video"] = None
+        if self.worker is not None and cap.session_id:
+            self.worker.end_session(cap.session_id, "capture_stopped")
+        path, sync = cap.record_path, cap.sync_map()
+        if cap.session_id and path is not None and path.is_file() and sync is not None:
+            try:
+                video = self.register_video(
+                    cap.session_id, path, label="Live capture", uploaded=True, sync=sync,
+                    video_id=self._capture_video_id,
+                )  # fmt: skip
+                out["video"] = video.to_api()
+            except (KeyError, ValueError, FileNotFoundError, VideoToolError) as exc:
+                log.warning("Could not register the capture %s: %s", path, exc)
+                out["register_error"] = str(exc)[:300]
+        return out
+
+    def capture_status(self) -> dict[str, Any]:
+        cap = self.capture
+        latest = self.ring.latest()
+        base: dict[str, Any] = {
+            "input": self.settings.vision_capture_input,
+            "auto": self.settings.vision_capture_auto,
+            "preview_fps": self.settings.vision_capture_preview_fps,
+            "running": False,
+            "session_id": None,
+            "video_id": self._capture_video_id,
+            "latest": (
+                {"seq": latest.seq, "session_time": round(latest.session_time, 3),
+                 "video_time": round(latest.video_time, 3), "wall_ms": latest.wall_ms}
+                if latest else None
+            ),  # fmt: skip
+            "ring": {"frames": len(self.ring), "span": self.ring.span()},
+        }
+        if cap is not None:
+            base.update(cap.status())
+            base["session_id"] = cap.session_id or None
+        return base
+
+    def live_status(self) -> dict[str, Any]:
+        """Everything the live view's Onboard panel shows, in one call."""
+        sid = self.clock.session_id
+        try:
+            sid = self.engine.snapshot().session.session_id or sid if self.engine else sid
+        except Exception:  # pragma: no cover
+            pass
+        source = self.live_source(sid) if sid else None
+        src: dict[str, Any] | None = None
+        if source is not None:
+            src = {"kind": source.kind, "video_id": source.video_id}
+            if isinstance(source, VideoFileSource):
+                src["video"] = source.video.to_api()
+        return {
+            "mode": self.settings.vision_mode,
+            "session_id": sid,
+            "source": src,
+            "capture": self.capture_status(),
+            "vlm": self.worker.status(sid) if self.worker else {"enabled": False},
+        }
+
+    def latest_frame(self) -> bytes | None:
+        latest = self.ring.latest()
+        if latest is not None:
+            return latest.jpeg
+        cap = self.capture
+        return cap.last_jpeg if cap is not None else None
+
+    def close(self) -> None:
+        if self.capture is not None and self.capture.running:
+            try:
+                self.stop_capture()
+            except Exception:  # pragma: no cover - shutting down
+                log.exception("Could not stop the capture")
+        if self.worker is not None:
+            self.worker.stop()
+
     # ---- videos --------------------------------------------------------
     def _require_session(self, session_id: str) -> None:
         check_id(session_id)
@@ -112,6 +377,7 @@ class VisionService:
         label: str | None = None,
         uploaded: bool = False,
         sync: SyncMap | None = None,
+        video_id: str | None = None,
     ) -> VideoInfo:
         self._require_session(session_id)
         path = Path(path)
@@ -121,7 +387,7 @@ class VisionService:
             raise ValueError(f"Not a video file ({', '.join(VIDEO_EXTENSIONS)}): {path.name}")
         meta = probe(path, ffprobe=self.settings.vision_ffprobe)
         info = VideoInfo(
-            video_id=uuid.uuid4().hex[:10],
+            video_id=video_id or uuid.uuid4().hex[:10],
             session_id=session_id,
             path=str(path.resolve()),
             label=label or path.stem,

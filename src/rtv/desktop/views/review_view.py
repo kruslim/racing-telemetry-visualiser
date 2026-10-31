@@ -216,6 +216,8 @@ class ReviewView(QWidget):
         mapbox = QVBoxLayout()
         mapbox.addWidget(label("TRACK MAP · REF LAP", "label"))
         mapbox.addWidget(self.track, 1)
+        self.track_facts = label("", "muted", size=11, wrap=True)
+        mapbox.addWidget(self.track_facts)
         mapbox.addWidget(
             label("● off track / lock-up (advisory)   ● incident (critical)", "muted", size=11)
         )
@@ -468,6 +470,13 @@ class ReviewView(QWidget):
             err=lambda _s, _d: self.track.set_points([]),
             key="trackmap",
         )
+        self.api.get(
+            f"/sessions/{sid}/track",
+            {"lap": ref},
+            ok=self._on_track,
+            err=lambda _s, _d: self._on_track(None),
+            key="track",
+        )
         self.findings_panel.title.setText("Coaching findings · loading…")
         self.api.get(
             "/coaching/lap-findings",
@@ -523,6 +532,10 @@ class ReviewView(QWidget):
         if data and is_num(data.get("lap_length_m")):
             self.lap_length = data["lap_length_m"]
         self.findings_panel.set_findings(data)
+
+    def _on_track(self, data) -> None:
+        self.track.set_names(review.track_names(data))
+        self.track_facts.setText(review.track_facts(data))
 
     def _corner(self, corner: dict) -> None:
         self._filter_notes(corner.get("label") if corner else None)

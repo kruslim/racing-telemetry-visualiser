@@ -48,6 +48,7 @@ import { FlowGraph } from './shared/flow-graph.js';
 import { Timeline } from './shared/timeline.js';
 import { RunsPanel } from './live/runs-panel.js';
 import { TelemetryStrip } from './live/telemetry-strip.js';
+import { OnboardPanel } from './live/onboard-panel.js';
 
 const API = '/api/v1';
 /** The screen is redrawn at most this often, whatever the socket does. */
@@ -88,6 +89,7 @@ const towerPanel = new TowerPanel($('panel-tower'), { onToggle: () => renderNow(
 const radioPanel = new RadioPanel($('panel-radio'), { labels: agentLabel });
 const tickerPanel = new TickerPanel($('panel-ticker'));
 const runsPanel = new RunsPanel($('panel-runs'), { labels: agentLabel });
+const onboardPanel = new OnboardPanel($('panel-onboard'), { onNotice: (text) => notice(text) });
 const flow = new FlowGraph(document.querySelector('[data-role="flow"]'));
 const timeline = new Timeline(document.querySelector('[data-role="timeline"]'), {
   lanes: [
@@ -274,6 +276,8 @@ function render() {
     towerView(state, { expanded: towerPanel.expanded, trends, warnings })
   );
   renderFlow(state);
+  const replay = app.replay || {};
+  onboardPanel.follow(state.session_time, !!replay.running, replay.speed);
 }
 
 function renderActivity() {
@@ -749,6 +753,8 @@ seedHistory();
 seedActivity();
 poll();
 setInterval(poll, POLL_MS);
+onboardPanel.poll();
+setInterval(() => onboardPanel.poll(), 1000);
 connect();
 
 // Exposed for the console and for any later browser automation; nothing in the
@@ -757,7 +763,7 @@ window.RTV_PITWALL = {
   app,
   manager,
   speaker,
-  panels: { statusPanel, strategyPanel, towerPanel, radioPanel, tickerPanel, runsPanel },
+  panels: { statusPanel, strategyPanel, towerPanel, radioPanel, tickerPanel, runsPanel, onboardPanel },
   flow,
   timeline,
   telemetry,

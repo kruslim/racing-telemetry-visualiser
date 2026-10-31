@@ -34,6 +34,10 @@ corners are *called*. That is the one thing `rtv.tracks` adds.
 the corner map for the fastest clean lap (`?lap=` for another). `GET /api/v1/tracks`
 lists the venues and `GET /api/v1/tracks/{key}` returns one venue's geometry.
 
+In RTV Desktop's review, the findings table and top opportunities show
+`T1 La Source` where a name is mapped, the track map letters each named corner
+beside the line, and a line under the map gives the header facts.
+
 ## Verified on real telemetry
 
 - Spa (Audi R8 GT3 race, the CI fixture): all 13 named corners and Kemmel found

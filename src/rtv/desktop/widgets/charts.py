@@ -10,7 +10,7 @@ import math
 from collections import deque
 
 from PySide6.QtCore import QPointF, QRectF, Qt, Signal
-from PySide6.QtGui import QColor, QFont, QPainter, QPainterPath, QPen
+from PySide6.QtGui import QColor, QFont, QPainter, QPainterPath, QPainterPathStroker, QPen
 from PySide6.QtWidgets import QSizePolicy, QWidget
 
 from ..model.format import NA, is_num, kmh, num
@@ -419,6 +419,7 @@ class TrackMap(QWidget):
         super().__init__(parent)
         self.points: list[dict] = []
         self.pins: list[dict] = []
+        self.names: list[dict] = []
         self.highlight_pct: tuple[float, float] | None = None
         self.message = "no track map yet"
         self.setMinimumSize(300, 260)
@@ -436,6 +437,11 @@ class TrackMap(QWidget):
         self.highlight_pct = span_pct
         self.update()
 
+    def set_names(self, names: list[dict]) -> None:
+        """Corner names to letter beside the outline: ``[{pct, name}]``."""
+        self.names = names
+        self.update()
+
     def _project(self):
         lat0 = sum(p["lat"] for p in self.points) / len(self.points)
         k = math.cos(math.radians(lat0))
@@ -451,14 +457,49 @@ class TrackMap(QWidget):
             QPointF((x - minx) * s + ox, (y - miny) * s + oy) for x, y in zip(xs, ys, strict=True)
         ]
 
-    def _at(self, pts: list[QPointF], pct: float) -> QPointF:
+    def _index_at(self, pct: float) -> int:
         best, best_d = 0, math.inf
         for i, p in enumerate(self.points):
             d = abs(p.get("lap_dist_pct", 0) - pct)
             d = min(d, 1 - d)
             if d < best_d:
                 best, best_d = i, d
-        return pts[best]
+        return best
+
+    def _at(self, pts: list[QPointF], pct: float) -> QPointF:
+        return pts[self._index_at(pct)]
+
+    def _paint_names(self, p: QPainter, pts: list[QPointF], path: QPainterPath) -> None:
+        """Letter each named corner beside the line, off the line and off each other.
+
+        Outside the loop first, then inside, a little further out if needed; a name
+        with no free spot is left off rather than drawn over another.
+        """
+        p.setFont(_small_font(9))
+        fm = p.fontMetrics()
+        stroke = QPainterPathStroker()
+        stroke.setWidth(8)
+        line = stroke.createStroke(path)
+        cx = sum(pt.x() for pt in pts) / len(pts)
+        cy = sum(pt.y() for pt in pts) / len(pts)
+        taken: list[QRectF] = []
+        p.setPen(QColor(t.MUTED))
+        for item in self.names:
+            i = self._index_at(item["pct"])
+            pt = pts[i]
+            a, b = pts[i - 3], pts[(i + 3) % len(pts)]
+            nx, ny = -(b.y() - a.y()), b.x() - a.x()
+            norm = math.hypot(nx, ny) or 1.0
+            nx, ny = nx / norm, ny / norm
+            if nx * (pt.x() - cx) + ny * (pt.y() - cy) < 0:
+                nx, ny = -nx, -ny
+            for sign, gap in ((1, 10), (-1, 10), (1, 22), (-1, 22)):
+                rect = _label_rect(fm, pt, sign * nx, sign * ny, gap, item["name"])
+                if (self.rect().contains(rect.toRect()) and not line.intersects(rect)
+                        and not any(rect.intersects(r) for r in taken)):
+                    taken.append(rect)
+                    p.drawText(rect, Qt.AlignmentFlag.AlignLeft, item["name"])
+                    break
 
     def paintEvent(self, _event) -> None:  # noqa: N802
         p = QPainter(self)
@@ -494,12 +535,22 @@ class TrackMap(QWidget):
         p.setPen(Qt.PenStyle.NoPen)
         p.setBrush(QColor("#ffffff"))
         p.drawRect(QRectF(start.x() - 7, start.y() - 2, 14, 4))
+        if self.names:
+            self._paint_names(p, pts, path)
         for pin in self.pins:
             pt = self._at(pts, pin["pct"])
             sev = pin.get("severity") or "info"
             p.setPen(_pen(t.BG, 2))
             p.setBrush(QColor(t.severity_color(sev)))
             p.drawEllipse(pt, 6, 6)
+
+
+def _label_rect(fm, pt: QPointF, nx: float, ny: float, gap: float, text: str) -> QRectF:
+    """Where a label sits ``gap`` px off ``pt`` along the unit normal (nx, ny)."""
+    w, h = fm.horizontalAdvance(text), fm.height()
+    x = pt.x() + nx * gap - (w if nx < -0.3 else w / 2 if abs(nx) <= 0.3 else 0)
+    y = pt.y() + ny * gap - (0 if ny > 0.3 else h if ny < -0.3 else h / 2)
+    return QRectF(x, y, w, h)
 
 
 class Hatch:

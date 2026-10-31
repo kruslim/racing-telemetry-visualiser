@@ -124,6 +124,8 @@ class AppServices:
 
     def close(self) -> None:
         try:
+            if self.vision is not None:
+                self.vision.close()
             if self.replay is not None:
                 self.replay.stop()
             if self.recorder is not None:
@@ -186,6 +188,8 @@ def build_services(settings: Settings) -> AppServices:
             else:
                 hub.publish_state(ConnectionState.DISCONNECTED, None)
                 recorder.end(reason="replay_finished")
+                if vision.worker is not None and session_id:
+                    vision.worker.end_session(session_id, "replay_finished")
 
         race = engine  # bound for the closure; engine.state is replaced on reset
         activity = ActivityLog(clock=lambda: (race.state.session_time, race.state.tick))
@@ -213,8 +217,13 @@ def build_services(settings: Settings) -> AppServices:
         if pitwall is not None:
             pitwall.feed.subscribe_callback(recorder.on_radio)
 
+    vision = VisionService(settings, repo, coaching, engine=engine)
+    live_sid: list[str | None] = [None]
+
     def on_frame(frame: Frame, catalog) -> None:
         hub.publish_frame(frame, catalog)
+        # The live capture stamps its frames with this clock (docs/VISION.md, Live).
+        vision.observe_frame(frame.session_time, live_sid[0])
         if engine is not None:
             # The engine is built resilient=True, so it counts and swallows its
             # own per-frame faults. This is the outer net for anything that could
@@ -228,6 +237,8 @@ def build_services(settings: Settings) -> AppServices:
 
     def on_state(state: ConnectionState, session_id: str | None) -> None:
         hub.publish_state(state, session_id)
+        live_sid[0] = session_id if state is ConnectionState.IN_SESSION else None
+        _auto_capture(vision, state, session_id)
         if engine is None:
             return
         # iRacing came or went. The engine has no clock of its own, so a
@@ -295,8 +306,27 @@ def build_services(settings: Settings) -> AppServices:
         tts=tts,
         activity=activity,
         recorder=recorder,
-        vision=VisionService(settings, repo, coaching, engine=engine),
+        vision=vision,
     )
+
+
+def _auto_capture(vision: VisionService, state: ConnectionState, session_id: str | None) -> None:
+    """``RTV_VISION_CAPTURE_AUTO``: capture while a live session is on, stop when it ends."""
+    if not vision.settings.vision_capture_auto:
+        return
+    try:
+        cap = vision.capture
+        running = cap is not None and cap.running
+        if state is ConnectionState.IN_SESSION and session_id:
+            if running and cap.session_id != session_id:
+                vision.stop_capture()
+                running = False
+            if not running:
+                vision.start_capture(session_id)
+        elif running:
+            vision.stop_capture()
+    except Exception:  # pragma: no cover - never break the live feed
+        log.exception("Automatic capture could not follow %s", state)
 
 
 def _begin_journal(
