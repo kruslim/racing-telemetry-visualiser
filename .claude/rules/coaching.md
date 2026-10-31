@@ -12,6 +12,8 @@ paths:
 - Every figure the coach asserts (time gain, corner, min speed, brake point) is checked
   against the findings by `coaching/agent/validation.py`. The in-loop `validate` node and
   `evals/checks.py` both use it, so change tolerances or rules there, in one place.
+- Figures in the orchestrator's prose (metres, km/h, gear, seconds, g, brake direction) are
+  checked by `coaching/agent/prose.py`, with its tolerances in `validation.py`.
 - The coach refuses with a grounded `CoachRefusal` when the asked-about channel wasn't
   captured; don't make it guess.
 - `anthropic`, `langgraph`, `langchain-*` and `mcp` stay optional: import them lazily

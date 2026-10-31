@@ -57,7 +57,12 @@ python evals/run.py                                                        # orc
 single plan, then adversarially verifies it — all with tool-forced structured outputs and a cached findings
 block (prompt caching). The eval harness (`evals/checks.py`) cross-checks the coach's figures
 against the findings, so hallucinations are caught **deterministically** — factuality is a numeric
-comparison, not an LLM-judge vibe. An optional LLM judge scores clarity/actionability/grounding.
+comparison, not an LLM-judge vibe. That covers the structured gains and the prose too
+(`rtv.coaching.agent.prose`): every metre, km/h, gear, second and g figure in the diagnosis, cues,
+headline and focus must match the corner it is about, and a brake-direction claim ("brake
+earlier", "32 m late", "from 6540 m to 6508 m") must agree with the brake-point finding. A cue
+with no corner label is only checked against a corner when it sits in that corner's advice.
+An optional LLM judge scores clarity/actionability/grounding.
 
 ## Layer 3b — the graph agent (`src/rtv/coaching/agent/`)
 

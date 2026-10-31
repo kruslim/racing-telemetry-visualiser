@@ -149,3 +149,56 @@ def test_replay_runs_the_real_race_through_the_live_path(client):
     assert by_key.get("stint_lap_milestone")  # the strategist's wake-up fires
     laps = {e["payload"]["lap"]: e["payload"]["lap_time"] for e in by_key["lap_completed"]}
     assert laps[2] == pytest.approx(OFFICIAL[2], abs=0.05)
+
+
+@pytest.mark.parametrize(("main_lap", "ref_lap"), [(12, 6), (8, 6), (5, 3), (10, 6), (3, 6)])
+def test_prose_check_accepts_the_findings_own_words(client, main_lap, ref_lap):
+    """No false alarms on real data: a plan written in the findings' own words is fully grounded."""
+    from evals.checks import cross_check
+
+    f = client.get(
+        "/api/v1/coaching/lap-findings",
+        params={"session_id": client.session_id, "main_lap": main_lap, "ref_lap": ref_lap},
+    ).json()
+    priorities = [
+        {"corner": p["label"], "why": p["why"], "gain_s": p["gain"]} for p in f["chief"]["top3"]
+    ]
+    advices = [
+        {
+            "corner": c["label"],
+            "diagnosis": ". ".join(d["text"] for d in c["diags"]),
+            "cues": [f"{d['text']} at {d['distance']:.0f} m" for d in c["diags"]],
+            "est_gain_s": c["net_dt"],
+        }
+        for c in f["corners"]
+        if c["label"] in {p["corner"] for p in priorities}
+    ]
+    result = {
+        "clean": False,
+        "plan": {"headline": f"{f['chief']['lost']:.2f} s available.", "one_lap_focus": "",
+                 "priorities": priorities},
+        "advices": advices,
+    }
+    score = cross_check(result, f)
+    assert score["issues"] == []
+    assert score["prose_claims"] > len(priorities)
+
+
+def test_prose_check_catches_the_kimi_t7_brake_advice(client):
+    """The orchestrator's real lap-12 plan moved the T7 brake point the wrong way."""
+    from evals.checks import cross_check
+
+    f = client.get(
+        "/api/v1/coaching/lap-findings",
+        params={"session_id": client.session_id, "main_lap": IN_LAP, "ref_lap": 6},
+    ).json()
+    t7 = next(c for c in f["corners"] if c["label"] == "T7")
+    plan = {
+        "headline": "",
+        "one_lap_focus": "T7: move your brake point from 6540 m to ~6570 m.",
+        "priorities": [{"corner": "T7", "why": "", "gain_s": t7["net_dt"]}],
+    }
+    result = {"clean": False, "plan": plan, "advices": []}
+    score = cross_check(result, f)
+    assert score["claim_factuality"] < 1.0
+    assert any("brake later at T7" in i and "6508 m" in i for i in score["prose_issues"])
