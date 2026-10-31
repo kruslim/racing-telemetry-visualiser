@@ -8,14 +8,14 @@ changing the backend.
 Everything below was checked against `main` on 2026-10-31 (PRs #1-#9 merged). The
 example payloads are real responses from the app, captured by importing a real
 iRacing race (Audi R8 LMS EVO II GT3, Spa-Francorchamps, 19 laps, ~42 min) and
-replaying it with the AI agents off. The only exception is the agents-on section
-(5.6). No agents-on run of a real session has been recorded yet, because that run
-uses paid Kimi quota. Those records come from the offline test harness, so their
-shapes are exact but their words are placeholders.
+replaying it twice: once with the AI agents off, and once with all four agents on
+(kimi-k3 at 2× replay speed: 30 agent runs, 75 model calls and 30 radio calls over
+the race). Every agent example in section 5.6 comes from that run.
 
 The full, untrimmed responses (all the JSON behind the examples below) are in
-`spa-example-payloads.zip` next to this file (`docs/ui-redesign/`). `agents_scripted.json`
-in it is the offline harness run, not Spa.
+`spa-example-payloads.zip` next to this file (`docs/ui-redesign/`). Its `agents-on/`
+folder holds the agents-on run: the whole race journal (`.jsonl`), plus `/pitwall/status`,
+`/pitwall/radio` (all 30 calls) and `/pitwall/activity` as served at the end of the race.
 
 ---
 
@@ -388,35 +388,64 @@ GET /pitwall/radio, POST /pitwall/enabled, POST /pitwall/driver-message → 503
 GET /pitwall/activity → 200 {"count": 0, "last_seq": 0, "agents_mounted": false, "stats": {…}, "records": []}
 ```
 
-**Agents mounted.** The shapes are exact, from an offline scripted run. The text,
-the `data` values and the latencies are illustrative (a real model call takes 1-5 s).
+**Agents mounted** (real, at the end of the agents-on Spa run, trimmed):
 
 `GET /pitwall/status`
 ```json
 {"available": true, "enabled": true, "running": true, "healthy": true, "suspended": false, "suspend_reason": null,
- "calls_used": 2, "calls_remaining": 398, "max_calls_per_session": 400, "budget_exhausted": false,
- "radio": {"published": 1, "emitted": 1, "superseded": 0, "pending": 0, "history": 1},
- "agents": [{"name": "strategist", "model": "kimi-k3", "enabled": true, "consecutive_failures": 0,
-   "disabled_reason": null, "degraded": false, "invocations": 1, "llm_calls": 2, "refusals": 0, "errors": 0,
-   "last_latency_ms": 2140, "avg_latency_ms": 2140,
+ "max_inflight": 2, "dispatched": 34, "skipped_busy": 4,
+ "calls_used": 75, "calls_remaining": 325, "max_calls_per_session": 400, "budget_exhausted": false,
+ "radio": {"published": 30, "emitted": 30, "superseded": 0, "pending": 0, "history": 30},
+ "agents": [
+  {"name": "strategist", "model": "kimi-k3", "enabled": true, "output_contract": "PitCall", "consecutive_failures": 0,
+   "disabled_reason": null, "degraded": false, "invocations": 9, "llm_calls": 19, "refusals": 0, "errors": 0,
+   "last_latency_ms": 10203.59, "avg_latency_ms": 11903.79,
    "tools": ["get_race_state_slice", "get_fuel_projection", "get_tyre_trend", "get_standings_around_player", "get_stint_history", "simulate_pit_outcome"],
-   "triggers": [{"event_type": "pit_window_open", "label": "pit window opens", "cooldown_s": 0.0}, "…"]}, "…"]}
+   "triggers": [{"event_type": "pit_window_open", "label": "pit window opens", "cooldown_s": 0.0}, "…"]},
+  {"name": "vehicle_engineer", "invocations": 5, "llm_calls": 17, "refusals": 1, "avg_latency_ms": 10919.66, "…": "…"},
+  {"name": "spotter", "invocations": 6, "llm_calls": 13, "refusals": 1, "avg_latency_ms": 9259.63, "…": "…"},
+  {"name": "coach", "invocations": 10, "llm_calls": 26, "refusals": 0, "avg_latency_ms": 10946.05, "…": "…"}]}
 ```
 `disabled_reason` set means a circuit breaker tripped (show it as degraded).
 `budget_exhausted: true` means no more calls this session (show it loudly).
 
-**RadioMessage** (`radio` frame, `GET /pitwall/radio` → `{"count", "messages": [...], "pending": [...]}`):
+**RadioMessage** (`radio` frame, `GET /pitwall/radio` → `{"count", "messages": [...], "pending": [...]}`).
+These are four real calls, one per agent, with long strings cut:
 ```json
-{"message_id": "7f5f41b53d64c9e7", "agent": "strategist", "priority": "advisory",
- "spoken_text": "Box this lap, window closes after lap 13.",
- "detail_text": "Longer reasoning for the screen; every figure is cited.",
- "data": {"recommendation": "box_now", "target_lap": 12, "fuel_to_add_l": 21.0, "rejoin_position": 6,
-          "confidence": "high", "rationale": "…", "risks": []},
- "event_ref": {"event_type": "pit_window_closing", "key": "pit_window_closing", "tick": 278998, "session_time": 1662.68, "lap": 12},
- "session_time": 1662.68, "timestamp": null, "subject": "pit_stop", "seq": 1,
- "grounded": true, "refused": false, "ungrounded": [], "tools_used": ["get_fuel_projection"],
+{"message_id": "fd8c4e03a6c93cb1", "agent": "strategist", "priority": "advisory",
+ "spoken_text": "Box this lap, fuel only, 13.2 litres. We're 3 laps short on fuel, stop is mandatory. Rejoin position unknown - no standings data.",
+ "detail_text": "Fuel margin is -11.365L (-3.082 laps) against 16 laps to finish; current level 47.646L vs 59.011L needed. Pit window is open (laps 2-14), so a stop is mandatory. …",
+ "data": {"recommendation": "box_now", "target_lap": 2, "fuel_to_add_l": 13.21, "rejoin_position": null,
+          "confidence": "medium", "rationale": "We are 11.365L (-3.082 laps) short of the finish …", "risks": ["…"]},
+ "event_ref": {"event_type": "fuel_margin_low", "key": "fuel_margin_low", "tick": 193018, "session_time": 229.68, "lap": 2},
+ "session_time": 229.68, "subject": "pit_stop", "seq": 2,
+ "grounded": true, "refused": false, "ungrounded": [], "tools_used": ["get_fuel_projection", "simulate_pit_outcome"],
  "model": "kimi-k3", "speak": true, "audio_url": null}
+
+{"agent": "spotter", "priority": "critical", "subject": "traffic:hazard",
+ "spoken_text": "Yellow, yellow. No gaps, location unknown. Expect slow traffic ahead, be ready to lift.",
+ "detail_text": "Flag changed green to yellow at session time 500.8s, lap 3; active flags yellow_waving, servicible, start_hidden. Standings tool reports gap_basis null … Hazard location unknown.",
+ "data": {"threat": "hazard", "side": "unknown", "car_idx": null, "action": "none", "confidence": "low"},
+ "event_ref": {"event_type": "flag_change", "key": "flag_change:yellow", "session_time": 500.82, "lap": 3},
+ "grounded": true, "refused": false, "tools_used": ["get_standings_around_player", "get_recent_detector_events"]}
+
+{"agent": "coach", "priority": "advisory",
+ "spoken_text": "Brake earlier into the hairpin — you went in 14 metres late and locked up, that's what put you off.",
+ "data": {"theme": "braking", "corner": "T8", "cue": "Brake 14 metres earlier into the hairpin and release the brake cleanly — you locked up and scrubbed 7 km/h at entry.",
+          "from_telemetry": true, "confidence": "high", "rationale": "…"}}
+
+{"agent": "vehicle_engineer", "priority": "info", "refused": true, "grounded": false,
+ "spoken_text": "Standby - I can't back that call with data yet.",
+ "detail_text": "Withheld: the agent cited figures that are not traceable to the race state or to a tool result (4.6610630306531675). Original text: Engine's stalled - oil pressure is zero because the motor isn't running. …",
+ "data": {"finding": "car_health", "corner": null, "affected": ["oil_pressure", "engine"], "trend": "unknown",
+          "driver_action": "Restart the engine now - oil pressure will only return once it is running.", "setup_note": null, "confidence": "high"},
+ "event_ref": {"event_type": "car_health_warning", "session_time": 22.68, "lap": 0}}
 ```
+Over the whole race there were 30 calls: coach 10, strategist 9, spotter 6 and
+vehicle engineer 5. By priority, 13 were critical, 12 advisory and 5 info, and 2 of
+the info calls were refusals. Calls run long: `spoken_text` is up to about 30 words
+and `detail_text` is often 80-150 words. The refusal above was caused by a validator
+bug that has since been fixed, but it shows exactly what a refusal looks like.
 - strategist `recommendation` is one of `box_now, box_next_lap, pit_under_yellow, extend, stay_out, hold`.
 - `priority`: `critical | advisory | info`. Critical pre-empts the audio queue.
 - `refused: true` is a *grounded refusal*: the agent declined rather than invent a
@@ -425,34 +454,44 @@ the `data` values and the latencies are illustrative (a real model call takes 1-
 - `agent: "driver"`, `speak: false` is the driver's own message.
 - `data` depends on the agent:
   - strategist `PitCall`: `recommendation, target_lap, fuel_to_add_l, rejoin_position, confidence, rationale, risks[]`
-  - vehicle engineer `EngineerCall`: `finding, corner, affected[]…`
+  - vehicle engineer `EngineerCall`: `finding, corner, affected[], trend, driver_action, setup_note, confidence, rationale`
   - spotter `SpotterCall`: `threat, side (ahead/behind/unknown), car_idx, action (hold_line/let_by/lift/defend/none), confidence`
   - coach `CoachCall`: `theme, corner, cue, from_telemetry, confidence, rationale`
 
 **ActivityRecord** (`activity` frame, `GET /pitwall/activity?since=&limit=`, and
 every journal line). Envelope:
 `{seq, wall_ms, session_time, tick, kind, agent, run_id, event_key, data}`.
-One complete strategist run, in order:
+This is the real first strategist run, in order, with the `seq`, `wall_ms` and `tick`
+fields cut. Journal lines also carry `data.activity_seq`.
 ```json
-{"seq": 1, "kind": "dispatch", "agent": null, "event_key": "pit_window_closing", "data": {"event_type": "pit_window_closing", "severity": "advisory", "accepted": ["strategist"], "skipped": {}, "blocked": null}}
-{"seq": 2, "kind": "run_start", "agent": "strategist", "run_id": "strategist-1", "data": {"trigger": "pit_window_closing", "severity": "advisory", "model": "kimi-k3", "context_radio": [], "context_events": 19}}
-{"seq": 3, "kind": "llm_call_start", "agent": "strategist", "run_id": "strategist-1", "data": {"call": 1, "model": "kimi-k3", "tools_offered": 6, "messages": 1}}
-{"seq": 4, "kind": "llm_call_end", "agent": "strategist", "run_id": "strategist-1", "data": {"call": 1, "ok": true, "error": null, "latency_ms": 1840, "tool_calls": ["get_fuel_projection"], "answered": false}}
-{"seq": 5, "kind": "tool_call", "agent": "strategist", "run_id": "strategist-1", "data": {"tool": "get_fuel_projection", "args": {}, "ok": true, "result": {"type": "object", "keys": ["level_l", "per_lap_l", "margin_laps", "…"], "size": 14}, "latency_ms": 0.07}}
-{"seq": 6, "kind": "llm_call_start", "…": "call 2"}
-{"seq": 7, "kind": "llm_call_end", "data": {"call": 2, "ok": true, "latency_ms": 900, "tool_calls": [], "answered": true}}
-{"seq": 8, "kind": "validate", "agent": "strategist", "data": {"ok": true, "unsupported": [], "word_count": 8, "over_word_limit": false, "repaired": false}}
-{"seq": 9, "kind": "run_end", "agent": "strategist", "data": {"outcome": "radio", "message_id": "7f5f41b53d64c9e7", "priority": "advisory", "tools_used": ["get_fuel_projection"], "turns": 2, "latency_ms": 2760}}
-{"seq": 10, "kind": "radio_queued", "agent": "strategist", "data": {"message_id": "7f5f41b53d64c9e7", "seq": 1, "priority": "advisory", "subject": "pit_stop", "refused": false}}
-{"seq": 11, "kind": "radio_aired", "agent": "strategist", "data": {"message_id": "7f5f41b53d64c9e7", "seq": 1, "priority": "advisory", "subject": "pit_stop", "refused": false}}
+{"kind": "dispatch", "session_time": 229.68, "event_key": "fuel_margin_low", "data": {"event_type": "fuel_margin_low", "severity": "advisory", "accepted": ["strategist"], "skipped": {}, "blocked": null}}
+{"kind": "run_start", "agent": "strategist", "run_id": "strategist-1", "data": {"trigger": "fuel_margin_low", "severity": "advisory", "model": "kimi-k3", "context_radio": [{"message_id": "46b4373ed7ff0038", "agent": "vehicle_engineer"}], "context_events": 9}}
+{"kind": "llm_call_start", "agent": "strategist", "run_id": "strategist-1", "data": {"call": 1, "model": "kimi-k3", "tools_offered": 6, "messages": 1}}
+{"kind": "llm_call_end", "agent": "strategist", "run_id": "strategist-1", "data": {"call": 1, "ok": true, "error": null, "latency_ms": 10587.17, "tool_calls": ["get_fuel_projection", "simulate_pit_outcome"], "answered": false}}
+{"kind": "tool_call", "agent": "strategist", "run_id": "strategist-1", "data": {"tool": "get_fuel_projection", "args": {}, "ok": true, "result": {"type": "object", "keys": ["level_l", "capacity_l", "per_lap_l", "margin_l", "margin_laps", "…"], "size": 14}, "latency_ms": 0.19}}
+{"kind": "tool_call", "agent": "strategist", "run_id": "strategist-1", "data": {"tool": "simulate_pit_outcome", "args": {"stop_lap": 2}, "ok": true, "result": {"type": "object", "keys": ["grounded", "reason", "stop_lap", "rejoin_position", "…"], "size": 19}, "latency_ms": 0.35}}
+{"kind": "llm_call_start", "agent": "strategist", "run_id": "strategist-1", "data": {"call": 2, "model": "kimi-k3", "tools_offered": 6, "messages": 3}}
+{"kind": "llm_call_end", "agent": "strategist", "run_id": "strategist-1", "data": {"call": 2, "ok": true, "error": null, "latency_ms": 33443.67, "tool_calls": [], "answered": true}}
+{"kind": "validate", "agent": "strategist", "run_id": "strategist-1", "data": {"ok": true, "unsupported": [], "word_count": 23, "over_word_limit": false, "repaired": false}}
+{"kind": "run_end", "agent": "strategist", "run_id": "strategist-1", "data": {"outcome": "radio", "message_id": "fd8c4e03a6c93cb1", "priority": "advisory", "tools_used": ["get_fuel_projection", "simulate_pit_outcome"], "turns": 2, "latency_ms": 44033.41}}
+{"kind": "radio_queued", "agent": "strategist", "session_time": 317.75, "data": {"message_id": "fd8c4e03a6c93cb1", "seq": 2, "priority": "advisory", "subject": "pit_stop", "refused": false}}
+{"kind": "radio_aired", "agent": "strategist", "session_time": 317.75, "data": {"message_id": "fd8c4e03a6c93cb1", "seq": 2, "priority": "advisory", "subject": "pit_stop", "refused": false}}
 ```
 Other kinds: `inbox_superseded` (a newer event replaced a queued one) and
 `radio_superseded` (a newer call on the same subject replaced a queued one).
 `dispatch.skipped` maps agent → `cooldown` / `disabled`. `dispatch.blocked` is
 `disabled | suspended | budget_exhausted | stale`. `run_end.outcome` is
 `radio | refused | error`. `context_radio` lists the earlier radio messages (ids and
-agents) this run was shown, and is drawn as radio → agent edges. Real model latency
-is 1-5 s per call. The waterfall should make that legible.
+agents) this run was shown, and is drawn as radio → agent edges.
+
+**Timing is the design problem here.** Over the real run, model calls took 2.3-33 s
+(median 10 s), and whole runs took 12-58 s (median 25 s). The run above was triggered
+at session time 229.7 s and aired at 317.8 s, nearly 90 s of race later at 2× replay.
+So the waterfall, timeline and radio must make three times visible: when the event
+happened, how long the agent worked, and when the call aired. Several runs are
+usually in flight at once (`max_inflight` is 2, and 4 dispatches were skipped as
+busy). `dispatch.skipped` shows up a lot (cooldowns), and new events keep arriving while
+runs are still working.
 
 `GET /pitwall/health`: one operator answer, `{ok, pitwall, engine: {frames, events, faults, seconds_since_frame, …}, live: {running, state, session_id}, replay: {…}, agents: {mounted, enabled, healthy, degraded[]}}`.
 `ok: false` means something should be producing frames and isn't, or a breaker
@@ -583,7 +622,7 @@ Bad laps give errors like `404 {"detail": "'Session … has no lap 999'"}`.
 - **No fake data, ever.** No demo session, no simulated race, no lorem ipsum in the
   shipped UI. Your mockups should use the values in this brief. The shipped HTML
   must contain no hard-coded data values: those come from the API.
-- **Agents speak rarely.** In a 40-minute race expect tens of calls, not hundreds.
+- **Agents speak rarely.** The real 42-minute Spa run made 30 radio calls and 75 model calls.
   The radio list must look good with 0, 3 and 60 entries.
 - **The agents never talk to each other directly.** They only hear earlier radio as
   context. Don't draw agent-to-agent arrows.
@@ -597,8 +636,8 @@ Bad laps give errors like `404 {"detail": "'Session … has no lap 999'"}`.
 
 - 151 892 frames, 275 channels, 60 Hz, 19 laps of about 2:21, lap length 6 929 m.
 - The journal for one agents-off run holds 2 512 state snapshots, 72 race events and
-  2 lifecycle records (6.5 MB). An agents-on run adds roughly 10 activity records per
-  agent run.
+  2 lifecycle records (6.5 MB). The agents-on run adds 448 agent records (6.9 MB in
+  all): 72 dispatches, 30 runs, 75 model calls and 68 tool calls, roughly 15 per run.
 - Traces: 1 000 points per lap per channel. Delta: 500 points. Track map: ~1 400 points.
 - The live socket sends state at 10 Hz. Render at ≤ 10 Hz.
 
