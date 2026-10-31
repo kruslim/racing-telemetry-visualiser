@@ -55,7 +55,9 @@ python evals/run.py                                                        # orc
 
 `CoachOrchestrator` fans out one specialist per priority corner (in parallel), synthesises a
 single plan, then adversarially verifies it — all with tool-forced structured outputs and a cached findings
-block (prompt caching). The eval harness (`evals/checks.py`) cross-checks the coach's figures
+block (prompt caching). The model verifier is followed by the same deterministic prose check the
+eval uses (below): figures it can't ground are added to the verdict as unsupported claims and
+listed in `CoachResult.fact_issues`, so a wrong brake direction is marked before anyone reads it. The eval harness (`evals/checks.py`) cross-checks the coach's figures
 against the findings, so hallucinations are caught **deterministically** — factuality is a numeric
 comparison, not an LLM-judge vibe. That covers the structured gains and the prose too
 (`rtv.coaching.agent.prose`): every metre, km/h, gear, second and g figure in the diagnosis, cues,
