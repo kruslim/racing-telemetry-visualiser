@@ -738,7 +738,7 @@ class AgentRuntime:
         if report.unsupported:
             problems.append(
                 "These figures are not in the race state or in any tool result you were "
-                f"given: {', '.join(report.unsupported)}."
+                f"given: {'; '.join(report.unsupported_detail or report.unsupported)}."
             )
         if report.over_word_limit:
             problems.append(
