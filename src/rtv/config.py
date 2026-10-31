@@ -248,6 +248,33 @@ class Settings(BaseSettings):
         gt=0,
         description="Session seconds between race-state snapshots in the race journal.",
     )
+    pitwall_autonomous: bool = Field(
+        default=False,
+        description="Arm the agents at each session's green flag and stand them down at "
+        "the player's checkered flag or the session end (standby in between). Never "
+        "overrides the kill switch or a per-agent switch: the operator always wins.",
+    )
+    pitwall_autonomous_sessions: str = Field(
+        default="race",
+        description="Comma-separated session types (practice, qualify, race) that arm "
+        "the full roster under RTV_PITWALL_AUTONOMOUS.",
+    )
+    pitwall_roster_practice: str = Field(
+        default="",
+        description="Agents armed in practice when practice is not an autonomous "
+        "session type. Empty = none, so nothing bills for a practice session.",
+    )
+    pitwall_roster_qualify: str = Field(
+        default="",
+        description="Agents armed in qualifying when qualify is not an autonomous "
+        "session type. Empty = none.",
+    )
+    pitwall_session_end_notifier: str = Field(
+        default="none",
+        description="What happens with the summary when a session segment ends: "
+        "'none', or 'file' (log a one-line result and write "
+        "<run_id>.notice.txt next to the journal run).",
+    )
     pitwall_max_calls_per_session: int = Field(
         default=400,
         ge=0,
