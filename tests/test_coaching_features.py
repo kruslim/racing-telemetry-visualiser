@@ -144,6 +144,22 @@ def test_grip_skipped_without_lataccel(service):
     assert any("LatAccel" in n for n in f.notes)
 
 
+def test_a_pit_lap_is_named_in_the_notes(service, monkeypatch):
+    """Spa replay: an in-lap's pit-entry braking was coached as a late brake point."""
+    real = service._repo.get_laps
+
+    def flagged(session_id):
+        rows = [dict(r) for r in real(session_id)]
+        for row in rows:
+            row["is_in_lap"] = row["lap"] == 1
+        return rows
+
+    monkeypatch.setattr(service._repo, "get_laps", flagged)
+    f = service.lap_findings("coach-1", main_lap=1, ref_lap=2)
+    assert any("Lap 1 (main) is an in-lap" in n for n in f.notes)
+    assert not any("Lap 2" in n for n in f.notes)
+
+
 def test_identical_laps_are_clean(service):
     f = service.lap_findings("coach-1", main_lap=2, ref_lap=3)
     assert f.chief.losing_n == 0

@@ -107,6 +107,36 @@ def test_fuel_critical_fires_once_before_the_stop(engine):
     assert critical[0].payload["laps_remaining"] < 1.5
 
 
+@pytest.mark.parametrize(
+    ("phase", "laps_to_finish", "critical"),
+    [
+        (FlagPhase.WHITE, 1.0, False),
+        (FlagPhase.CHECKERED, 0.0, False),
+        (FlagPhase.GREEN, 2.0, True),
+    ],
+)
+def test_the_flags_settle_laps_to_finish_at_the_end_of_a_timed_race(
+    phase, laps_to_finish, critical
+):
+    """Spa replay: once the clock ran out iRacing started a new 203 s countdown,
+    which read as two more laps on the last lap and had the strategist calling a
+    stop the car didn't need. 5.9 L at 3.97 L a lap reaches the flag on the white."""
+    engine = run_scenario()
+    state = engine._state
+    state.session.laps_remaining = None
+    state.session.time_remaining = 203.5
+    state.player.last_lap_time = 141.0
+    state.fuel.level, state.fuel.per_lap = 5.9, 3.97
+    state.flags.phase = phase
+    engine._fuel_critical_announced = False
+
+    events = []
+    engine._recompute_fuel_plan(events)
+    assert state.fuel.laps_to_finish == pytest.approx(laps_to_finish)
+    fired = any(e.event_type is EventType.FUEL_CRITICAL for e in events)
+    assert fired is critical
+
+
 # --------------------------------------------------------------------------
 # standings / gaps
 # --------------------------------------------------------------------------

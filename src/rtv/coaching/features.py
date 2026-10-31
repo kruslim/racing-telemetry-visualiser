@@ -101,6 +101,19 @@ class CoachingService:
             raise KeyError(f"Session {session_id} has no lap {ref_lap}")
 
         notes: list[str] = []
+        # A pit lap's "losses" near pit entry or exit are the pit lane, not the
+        # driving; without this note every coaching layer coached them as errors.
+        for role, lap in (("main", main_lap), ("reference", ref_lap)):
+            if laps[lap].get("is_in_lap"):
+                notes.append(
+                    f"Lap {lap} ({role}) is an in-lap: it ends in the pit lane, so time "
+                    "lost approaching pit entry is the stop, not a driving error."
+                )
+            elif laps[lap].get("is_out_lap"):
+                notes.append(
+                    f"Lap {lap} ({role}) is an out-lap: it starts in the pit lane on cold "
+                    "tyres, so time lost before pit exit is the stop, not a driving error."
+                )
         cols = self._repo.valid_columns(session_id)
         chans = self._fetch_channels(session_id, main_lap, ref_lap, cols, notes)
 

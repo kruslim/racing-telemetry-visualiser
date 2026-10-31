@@ -40,6 +40,7 @@ def _state(
     laps_to_finish: float | None = 20.0,
     gap_basis: str | None = "lap_time_pct",
     phase: FlagPhase = FlagPhase.GREEN,
+    active: tuple[str, ...] = (),
 ) -> RaceState:
     """A hand-built race state with exactly known gaps, for exact assertions."""
     cars = [
@@ -63,6 +64,7 @@ def _state(
         ),
     )
     state.flags.phase = phase
+    state.flags.active = list(active)
     return state
 
 
@@ -105,9 +107,18 @@ def test_a_yellow_makes_the_same_stop_cheaper():
 
 
 def test_the_flag_state_supplies_under_yellow_when_it_is_not_given():
-    outcome = simulate_pit_outcome(_state(phase=FlagPhase.YELLOW), pit_lane_loss_s=25.0)
+    caution = _state(phase=FlagPhase.YELLOW, active=("yellow", "caution"))
+    outcome = simulate_pit_outcome(caution, pit_lane_loss_s=25.0)
     assert outcome.under_yellow is True
     assert outcome.effective_loss_s == pytest.approx(25.0 * YELLOW_PIT_DISCOUNT)
+
+
+def test_a_local_yellow_does_not_discount_the_stop():
+    """Spa replay: a 10 s waving local yellow was priced as a 11.25 s stop."""
+    local = _state(phase=FlagPhase.YELLOW, active=("yellow_waving", "start_hidden"))
+    outcome = simulate_pit_outcome(local, pit_lane_loss_s=25.0)
+    assert outcome.under_yellow is False
+    assert outcome.effective_loss_s == pytest.approx(25.0)
 
 
 def test_an_incomplete_gap_chain_stops_counting_and_says_so():

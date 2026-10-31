@@ -104,6 +104,15 @@ def test_the_structured_payload_is_checked_exactly_not_loosely():
     assert validate_output("", "", facts, payload={"rejoin_position": 8}).ok is True
 
 
+def test_a_figure_in_exponent_notation_is_read_whole():
+    """Seen on the Spa replay: an oil pressure of 4.66e-06 echoed from a tool result."""
+    facts = FactSet()
+    facts.add("car_health", {"oil_pressure": 4.6610630306531675e-06})
+    report = validate_output("", "Oil pressure at 4.6610630306531675e-06 bar.", facts)
+    assert report.ok is True
+    assert validate_output("", "Oil pressure at 4.66 bar.", facts).ok is False
+
+
 def test_a_long_spoken_call_is_not_radio():
     report = validate_output(" ".join(["word"] * 40), "", FactSet())
     assert report.over_word_limit is True
@@ -155,9 +164,11 @@ def test_a_matching_trigger_fires_and_a_foreign_event_does_not(state):
 def test_a_predicate_can_veto_a_matching_event_type(state):
     """A checkered flag is a flag change, but it is not a strategy decision."""
     runtime = AgentRuntime(STRATEGIST, provider=None)
-    yellow = _event("flag_change", **{"from": "green", "to": "yellow"})
+    yellow = _event("flag_change", **{"from": "green", "to": "yellow", "active": ["caution"]})
+    local = _event("flag_change", **{"from": "green", "to": "yellow", "active": ["yellow_waving"]})
     checkered = _event("flag_change", **{"from": "green", "to": "checkered"})
     assert runtime.match(yellow, state) is not None
+    assert runtime.match(local, state) is None
     assert runtime.match(checkered, state) is None
 
 

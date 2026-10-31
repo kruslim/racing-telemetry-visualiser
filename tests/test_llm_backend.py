@@ -246,3 +246,53 @@ async def test_structured_call_is_one_tool_free_forced_answer():
     sent = client.messages.calls[0]
     assert sent["messages"] == [{"role": "user", "content": "score this"}]
     assert sent["tool_choice"] == {"type": "tool", "name": RESPOND_TOOL}
+
+
+class _SequenceMessages(_FakeMessages):
+    """Hands out one response per call, in order."""
+
+    def __init__(self, responses):
+        super().__init__(None)
+        self._responses = list(responses)
+
+    async def create(self, **kwargs):
+        self.calls.append(kwargs)
+        return self._responses.pop(0)
+
+
+async def _structured(provider):
+    return await structured_call(
+        provider,
+        agent="orchestrator.CornerAdvice",
+        model="kimi-k3",
+        system=[{"type": "text", "text": "role"}],
+        prompt="advise",
+        output_model=Answer,
+        max_tokens=100,
+    )
+
+
+@pytest.mark.asyncio
+async def test_structured_call_asks_once_more_after_an_invalid_payload():
+    """Seen live on kimi-k3: an empty respond call dropped a whole specialist."""
+    client = _FakeClient(None)
+    client.messages = _SequenceMessages(
+        [
+            _Response([_Block("tool_use", id="t1", name=RESPOND_TOOL, input={})]),
+            _Response(
+                [_Block("tool_use", id="t2", name=RESPOND_TOOL, input={"call": "hold", "laps": 1})]
+            ),
+        ]
+    )
+    out = await _structured(KimiProvider(client=client))
+    assert out == Answer(call="hold", laps=1)
+    assert len(client.messages.calls) == 2
+
+
+@pytest.mark.asyncio
+async def test_structured_call_gives_up_after_the_retry():
+    bad = _Response([_Block("tool_use", id="t1", name=RESPOND_TOOL, input={})])
+    client = _FakeClient(None)
+    client.messages = _SequenceMessages([bad, bad, bad])
+    assert await _structured(KimiProvider(client=client)) is None
+    assert len(client.messages.calls) == 2
