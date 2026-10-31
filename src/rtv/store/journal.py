@@ -320,9 +320,9 @@ def run_path(root: Path, session_id: str, run_id: str) -> Path:
     return session_dir(root, session_id) / f"{_check_id(run_id)}.jsonl"
 
 
-def iter_records(path: Path) -> Iterator[dict[str, Any]]:
+def iter_records(path: Path | str) -> Iterator[dict[str, Any]]:
     """Every record in a journal file; a torn last line (a crash) is skipped."""
-    with path.open(encoding="utf-8") as fh:
+    with Path(path).open(encoding="utf-8") as fh:
         for line in fh:
             line = line.strip()
             if not line:
@@ -382,7 +382,7 @@ def schema_version_of(start: dict[str, Any] | None) -> int:
     return value if isinstance(value, int) and value >= 1 else 1
 
 
-def agent_inputs(path: Path) -> list[dict[str, Any]]:
+def agent_inputs(path: Path | str) -> list[dict[str, Any]]:
     """Every ``run_start`` record of a run that carries its model input, in order.
 
     Empty for a version-1 journal. Feed one to
