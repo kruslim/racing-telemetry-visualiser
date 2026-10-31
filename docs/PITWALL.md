@@ -20,6 +20,7 @@ frames (live poller 60 Hz | ReplayDriver)
   -> RaceStateEngine.on_frame           racestate/engine.py   no LLM, ever
        detectors -> RaceEvent -> engine.bus (EventBus)
   -> PitwallOrchestrator.dispatch       pitwall/orchestrator.py
+       DeterministicCaller.call -> RadioFeed   template calls, no model (pitwall/callers.py)
        trigger match, cooldown, inbox, inflight cap, budget
   -> AgentRuntime.invoke                pitwall/framework.py
        prefetch tools, model + scoped tools, validator, repair or refusal
@@ -42,8 +43,9 @@ window. The engine latches them into `RaceEvent {event_type, tick, session_time,
 severity, payload, state_version}`, with no wall-clock field, so a replay gives the same
 event log twice. Types cover flags, laps and bests, lock-ups / wheelspin / off-tracks /
 incidents, pit entry and exit, stints, pit window and fuel margin, rivals, blue flags,
-recurring issues, tyre bands, car health, traffic, weather and `visual_observation`
-(published by the vision seam only; the engine never reads it).
+recurring issues, tyre bands, car health, traffic, `car_alongside` (iRacing's
+`CarLeftRight` proximity sensor, live only: an `.ibt` does not record it), weather and
+`visual_observation` (published by the vision seam only; the engine never reads it).
 Every event that happened somewhere on the lap (lock-up, wheelspin, off-track, incident,
 recurring issue) carries `payload.place = {label, name, lap_dist_pct, provisional}` in the
 post-race review's corner labels (`T1 La Source`), from the session corner map in
@@ -62,9 +64,32 @@ inbox (a queued critical event is never displaced by a lesser one) and a cooldow
 `suspend()` / `resume()` follow the connection, and the race director seam
 (`rtv.director`, `NoopDirector` today) injects scripted events onto the same bus.
 
+**Deterministic callers** (`pitwall/callers.py`, appendix B2). A call whose words are
+fully determined by its event is a template, not a model run. `dispatch` runs every
+`DeterministicCaller` first and publishes what it returns straight onto the feed, so it
+is on the channel in the same tick (well under 100 ms; a model call is 12-17 s). The
+spotter's per-event calls are all templates: `car_alongside` ("Car left.", "Three wide,
+cars both sides.", "Clear."), `traffic_close` ("P5 behind, 0.6, closing."), `blue_flag`
+("Blue flag, P1 lapping you, 1.2 behind."), a yellow or red `flag_change` and an
+`incident`. Each figure is copied from the event payload, so the call is grounded by
+construction (the tests run every template through the validator with the payload as
+the only fact source). A template message is an ordinary `RadioMessage` with
+`agent="spotter"`, `source="template"`, `model="template"`, stamped for the air-time
+check: `computed_at_session_time` is the event's time, `max_age_s` is 3 s
+(`RTV_PITWALL_SPOTTER_MAX_AGE_S`), a traffic or blue-flag call carries
+`subject_car_idx` and expires 8 s after its event, a side call expires after 1.5 s and is
+never aired late, and flag and incident calls have a 10 s per-subject cooldown. All side
+states share the subject `traffic:alongside`, so "Clear." supersedes a queued "Car
+left.". The kill switch, `suspend()`, a stale state and the spotter's own enable flag
+silence template calls too; the model-call budget does not, since they cost nothing.
+`dispatch` traces each one as a `template_call` activity record and lists the caller in
+the dispatch record's `templated`; `status()` has `template_calls` and `callers`.
+Template calls need the agent layer to be mounted (today that means a Kimi key is set).
+
 **Agents** (`pitwall/agents/`). Four declarative `AgentSpec`s: strategist (fuel, stops,
-rivals), vehicle engineer (tyres, car health, recurring issues), spotter (traffic, blue
-flags, hazards) and coach (repeated mistakes, pace). A spec is a role prompt, an output
+rivals), vehicle engineer (tyres, car health, recurring issues), spotter (a lap-line
+traffic summary when a car is within 5 s, at most every 300 s, and camera notes; its
+instant calls are the templates above) and coach (repeated mistakes, pace). A spec is a role prompt, an output
 model, scoped tools, triggers, a state slice, a radio subject, an optional policy and a
 prefetch list; adding an agent is one module plus one `AGENT_REGISTRY` entry. Agents never
 call each other; each run is shown the recent radio. Model per agent: the spec names a
@@ -133,6 +158,12 @@ services.engine / .replay / .pitwall / .activity / .recorder   # None when disab
 engine.on_frame(frame, catalog); engine.snapshot() -> RaceState; engine.health()
 engine.bus.subscribe(...) / .subscribe_callback(fn) / .history(limit)
 orch.handle_event(event, state)       # route + run inline (tests, evals)
+PitwallOrchestrator(..., callers=None)  # None = build_callers(); [] = no template calls
+rtv.pitwall.callers: TemplateCall(spoken_text, detail_text, priority=, subject=, data=,
+    expires_after_s=, subject_car_idx=, valid_until_lap=, max_age_s=, cooldown_s=)
+    template_message(agent, event, call, max_age_s=None, state=None) -> RadioMessage
+    DeterministicCaller(agent, {event_type: template}, max_age_s=).call(event, state)
+    build_callers(settings=None, only=None); SPOTTER_TEMPLATES; spotter_max_age(settings)
 orch.feed.subscribe(...) / .subscribe_callback(fn) / .pump(session_time)
 orch.status(); orch.healthy(); orch.suspend(reason) / .resume(); orch.director
 build_agents(models=None, enabled=None, only=None, settings=None) -> list[AgentSpec]
@@ -319,6 +350,7 @@ except for flag changes which render as `flag_change:<phase>`.
 | `tyre_out_of_band` | advisory | a tyre measure leaves its band (see stage 3) | `measure`, `corner`, `value`, `threshold` |
 | `car_health_warning` | critical / advisory | an engine warning bit, a tow, or oil/water over the limit | `measure`, `warnings[]`, `value`, `threshold` |
 | `traffic_close` | advisory | a car is inside the gap threshold *and* closing | `car_idx`, `gap`, `side`, `closing_rate_s_per_s` |
+| `car_alongside` | advisory (`clear`: info) | `CarLeftRight` changes; key `car_alongside:<side>`; the first clear of a session and the sensor turning off are silent (B2) | `side` (`car_left`, `car_right`, `car_left_right`, `two_cars_left`, `two_cars_right`, `clear`), `from`, `raw` |
 | `weather_change` | — | **never** — director-only, see stage 5 | `measure`, `from`, `to`, … |
 | `regulation_change` | — | **never** — director-only, see stage 5 | `regulation`, `applies_from_lap`, … |
 | `visual_observation` | info | **never** — published by `rtv.vision.live`, see `docs/VISION.md` | `source: "vision"`, `kind`, `text`, `confidence`, `trigger` |
@@ -3037,3 +3069,41 @@ The journal is the eval source (REVIEW P2-3), so a run must be re-executable fro
   strips them from `/ws/pitwall` and `/pitwall/activity`. `/pitwall-log` serves them.
 - Not recorded: the in-loop model outputs beyond what `tool_call.args` (cut at 120
   chars) and the radio record hold; F3 replays model output from its own fixtures.
+
+---
+
+## B2 — deterministic spotter (2026-10-31)
+
+Plan task B2 of the project review (REVIEW.md P1-3). The spotter's per-event calls are
+templates (`rtv.pitwall.callers`, described under "Deterministic callers" above); the
+LLM spotter's per-event triggers (`traffic_close`, `blue_flag`, yellow/red `flag_change`,
+`incident`) are gone. It keeps a `lap_completed` trigger for a traffic summary, gated on
+a measured field within `SUMMARY_GAP_S` (5 s) and a 300 s cooldown, plus the
+`visual_observation` trigger (off the radio unless `RTV_VISION_LIVE_RADIO`). Its
+`max_age_s` is now `None` (a summary is never tagged late) and `spotter_validity` makes
+a summary expire 60 s after its snapshot. `RTV_PITWALL_SPOTTER_MAX_AGE_S` now sets the
+template calls' limit (default 3 s); when set it also applies to the summaries.
+
+Engine: new `EventType.CAR_ALONGSIDE`, `channels.CAR_LEFT_RIGHT`, `REQUIRED["car_alongside"]`,
+`Capabilities.car_alongside`, pure `detectors.detect_car_alongside(previous, raw)` and
+`alongside_state(raw)`, checked every frame. The Spa `.ibt` has no `CarLeftRight`, so it
+reports the capability off and lists the channel in `capabilities.missing`.
+
+`RadioMessage.source` is new: `"model"` (default), `"template"`, `"driver"` (push-to-talk)
+or `"pitwall"` (a notice); the journal's `radio` record carries it. Template messages
+also put `source` and the event key in `data`.
+
+Evals: `SPOTTER_THREATS["lap_completed"]` and a `spotter-traffic-summary` case; the
+per-event spotter cases stay, grading the agent contract. `evals/synthetic_race.py`
+gained `ScenarioSpec.alongside` (test-only; the channel is absent unless it is set, so the
+ground-truth scenario is unchanged) and `_headers(spec)`.
+
+Changed tests, by design: in `test_pitwall_roles.py` a traffic call and a local yellow
+now wake no agent and produce a template call, and a caution wakes the strategist plus a
+spotter template; `test_default_max_ages_and_the_settings_override` checks the spotter's
+summary age is `None` and the 3 s template default. New: `tests/test_pitwall_callers.py`.
+
+Not done: template calls need a mounted agent layer, which `services.build_pitwall`
+only builds with a Kimi key. Running the radio and the callers without any key is a
+possible follow-up. Desktop: template calls are ordinary radio messages, so the live view
+shows them like any other; no view field changed, so the golden file is unchanged.

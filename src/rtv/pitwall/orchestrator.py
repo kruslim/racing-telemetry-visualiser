@@ -42,6 +42,7 @@ from rtv.director.engine import DirectorEngine, NoopDirector
 from rtv.logging import get_logger
 from rtv.pitwall import validity
 from rtv.pitwall.activity import ActivityLog, safe_trace
+from rtv.pitwall.callers import DeterministicCaller, build_callers
 from rtv.pitwall.framework import (
     AgentRuntime,
     AgentSpec,
@@ -94,6 +95,7 @@ class PitwallOrchestrator:
         retry_backoff_s: float | None = None,
         activity: ActivityLog | None = None,
         vision_radio: bool = False,
+        callers: Sequence[DeterministicCaller] | None = None,
     ) -> None:
         self.engine = engine
         self.feed = feed or RadioFeed()
@@ -172,6 +174,12 @@ class PitwallOrchestrator:
         #: unproven on real footage, so it is review material (the timeline and
         #: the journal) until RTV_VISION_LIVE_RADIO says otherwise.
         self.vision_radio = vision_radio
+        #: Template calls (:mod:`rtv.pitwall.callers`): no model call, published
+        #: from ``dispatch`` itself. ``None`` = the defaults (the spotter's).
+        self.callers: list[DeterministicCaller] = (
+            build_callers() if callers is None else list(callers)
+        )
+        self.template_calls = 0
 
     def attach_activity(self, activity: ActivityLog | None) -> None:
         """Trace routing, every agent run and the radio into ``activity``."""
@@ -339,6 +347,7 @@ class PitwallOrchestrator:
             session_time=state.session_time,
             subject="driver",
             speak=False,
+            source="driver",
         )
         self.feed.emit(message)
         log.info("Driver: %s", message.spoken_text)
@@ -360,15 +369,18 @@ class PitwallOrchestrator:
             # the review show it; it just never reaches the radio.
             self._trace_dispatch(event, [], {}, "vision_review_only")
             return []
-        if self.budget_exhausted:
-            self._announce_budget_exhausted()
-            self._trace_dispatch(event, [], {}, "budget_exhausted")
-            return []
         state = state if state is not None else self.engine.snapshot()
         if state.stale:
             # The numbers are the last known ones, not current ones. An agent
             # reasoning over them would be grounded in a race that has stopped.
             self._trace_dispatch(event, [], {}, "stale")
+            return []
+        # Template calls first: no model, no budget, on the channel before any
+        # agent has even been considered.
+        templated = self._call_templates(event, state)
+        if self.budget_exhausted:
+            self._announce_budget_exhausted()
+            self._trace_dispatch(event, [], {}, "budget_exhausted", templated)
             return []
         accepted: list[str] = []
         skipped: dict[str, str] = {}
@@ -387,8 +399,38 @@ class PitwallOrchestrator:
             queue = self._inbox.get(name)
             if queue is not None:
                 self._offer(name, queue, event)
-        self._trace_dispatch(event, accepted, skipped, None)
+        self._trace_dispatch(event, accepted, skipped, None, templated)
         return accepted
+
+    def _call_templates(self, event: RaceEvent, state: RaceState) -> list[str]:
+        """Run the deterministic callers for ``event`` and publish what they say.
+
+        The agent's enable flag covers its template calls too: an operator who
+        turned the spotter off wants it quiet, not just cheaper.
+        """
+        out: list[str] = []
+        for caller in self.callers:
+            if not caller.handles(event) or not self._agent_enabled.get(caller.agent, True):
+                continue
+            message = caller.call(event, state)
+            if message is None:
+                continue
+            self.template_calls += 1
+            safe_trace(
+                self.activity,
+                "template_call",
+                agent=caller.agent,
+                event_key=event.key,
+                session_time=event.session_time,
+                tick=event.tick,
+                message_id=message.message_id,
+                priority=message.priority.value,
+                subject=message.subject,
+                spoken_text=message.spoken_text,
+            )
+            self.publish(message)
+            out.append(caller.agent)
+        return out
 
     def _trace_dispatch(
         self,
@@ -396,7 +438,9 @@ class PitwallOrchestrator:
         accepted: list[str],
         skipped: dict[str, str],
         blocked: str | None,
+        templated: list[str] | None = None,
     ) -> None:
+        extra = {"templated": templated} if templated else {}
         safe_trace(
             self.activity,
             "dispatch",
@@ -408,6 +452,7 @@ class PitwallOrchestrator:
             accepted=accepted,
             skipped=skipped,
             blocked=blocked,
+            **extra,
         )
 
     def _offer(self, name: str, queue: asyncio.Queue, event: RaceEvent) -> None:
@@ -498,6 +543,7 @@ class PitwallOrchestrator:
             ),
             session_time=state.session_time,
             subject=subject,
+            source="pitwall",
         )
         return self.publish(message)
 
@@ -721,6 +767,8 @@ class PitwallOrchestrator:
             self._layer_calls.clear()
         self._budget_announced = False
         self.director.reset()
+        for caller in self.callers:
+            caller.reset()
         self.feed.clear()
 
     def healthy(self) -> bool:
@@ -738,6 +786,8 @@ class PitwallOrchestrator:
             "dispatched": self.dispatched,
             "skipped_busy": self.skipped_busy,
             "injected": self.injected,
+            "template_calls": self.template_calls,
+            "callers": [caller.describe() for caller in self.callers],
             "failure_limit": self._failure_limit,
             "restarts": dict(self.restarts),
             # The session cost guard, in billable model calls.

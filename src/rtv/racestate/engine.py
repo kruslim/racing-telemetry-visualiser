@@ -194,6 +194,8 @@ class RaceStateEngine:
             # where events happened, in the review's corner labels once a clean lap exists
             self._places = LiveCornerMap(self._track_ref, buckets=self.config.corner_buckets)
             self._traffic_sample: tuple[float, dict[int, float], str] | None = None
+            #: Last decoded ``CarLeftRight`` state (``None`` = off or unknown).
+            self._alongside: str | None = None
             self._health_latched: str | None = None
             self._tyre_latched: str | None = None
 
@@ -270,6 +272,7 @@ class RaceStateEngine:
             self._state.stale_reason = None
             self._window.clear()
             self._traffic_sample = None
+            self._alongside = None
         log.info("Race state live again; detector window cleared across the gap.")
 
     @property
@@ -393,6 +396,7 @@ class RaceStateEngine:
             pit=has_all(ch.REQUIRED["pit"]),
             incidents=has_all(ch.REQUIRED["incidents"]),
             offtrack=has_all(ch.REQUIRED["offtrack"]),
+            car_alongside=has_all(ch.REQUIRED["car_alongside"]),
             tyres=bool(self._tyre_temp_ch or self._tyre_press_ch),
             car_health=any(n in catalog for n in ch.CAR_HEALTH_ANY),
             conditions=any(n in catalog for n in ch.CONDITIONS_ANY),
@@ -904,6 +908,8 @@ class RaceStateEngine:
             self._check_traffic(events)
         if caps.car_health:
             self._check_car_health(events)
+        if caps.car_alongside:
+            self._check_alongside(frame, events)
         self._aggregate_recurrence(events, first_new)
 
     def _aggregate_recurrence(self, events: list[RaceEvent], first_new: int) -> None:
@@ -965,6 +971,19 @@ class RaceStateEngine:
             Severity.ADVISORY,
             cooldown=10.0,
         )
+
+    def _check_alongside(self, frame: Frame, events: list[RaceEvent]) -> None:
+        """Every change of the sim's own left/right proximity sensor, every frame.
+
+        Not decimated like the standings: a car alongside is a sub-second fact,
+        and this is one integer compare per tick.
+        """
+        raw = det.as_int(frame.values, ch.CAR_LEFT_RIGHT)
+        self._alongside, payload = det.detect_car_alongside(self._alongside, raw)
+        if payload is None:
+            return
+        severity = Severity.INFO if payload["side"] == "clear" else Severity.ADVISORY
+        events.append(self._event(EventType.CAR_ALONGSIDE, severity, payload))
 
     def _check_car_health(self, events: list[RaceEvent]) -> None:
         """Latched by *measure*: a water-temp warning after an oil one still fires."""
