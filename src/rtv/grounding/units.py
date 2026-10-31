@@ -229,6 +229,13 @@ _WORD_VALUES: dict[str, int] = {
     "eighteen": 18,
     "nineteen": 19,
     "twenty": 20,
+    "thirty": 30,
+    "forty": 40,
+    "fifty": 50,
+    "sixty": 60,
+    "seventy": 70,
+    "eighty": 80,
+    "ninety": 90,
 }
 _ORDINAL_WORDS: dict[str, int] = {
     "first": 1,
@@ -254,6 +261,7 @@ _ORDINAL_WORDS: dict[str, int] = {
 }
 _WORD = "|".join(sorted(_WORD_VALUES, key=len, reverse=True))
 _DIGIT_WORD = "zero|one|two|three|four|five|six|seven|eight|nine"
+_TENS_WORD = "twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety"
 _ORD_WORD = "|".join(sorted(_ORDINAL_WORDS, key=len, reverse=True))
 _HALF = r"(?P<half>\s+and\s+a\s+half)?"
 
@@ -272,8 +280,8 @@ _TOKEN_RE = re.compile(
     # digits, optionally signed / decimal / exponent, and "2 and a half"
     r"|(?<![\w.])(?P<digits>[-+]?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?)(?P<ordsfx>(?:st|nd|rd|th)\b)?"
     + _HALF
-    # spelled out: "six", "twenty one", "two point four", "two and a half"
-    + r"|\b(?P<word>(?:twenty[\s-](?:"
+    # spelled out: "six", "seventy-two", "two point four", "two and a half"
+    + r"|\b(?P<word>(?:(?:" + _TENS_WORD + r")[\s-](?:"
     + _DIGIT_WORD
     + r")\b|"
     + _WORD
