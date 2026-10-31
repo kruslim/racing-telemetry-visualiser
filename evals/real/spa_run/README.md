@@ -41,3 +41,7 @@ corner map) and `validity` (the B1 air-time rule re-stamped and checked at the r
 time). Findings in the first baseline: the coach said "T8" and "T4" while the corner map
 was still provisional; `engineer_check` flags "T4 Speaker's Corner" against the event's
 bucket `C09` (the check compares the raw strings, a false positive for a later fix).
+
+After A1 (typed grounding) merged, the baseline was rebuilt on its validator: two coach calls
+that passed live now fail it, on spelled-out counts ("two laps", "three laps running wide" for
+a recurring issue with `occurrences: 3`). `same_as_recorded` is false on exactly those two.
