@@ -387,6 +387,21 @@ const CASES = [
     },
   },
   {
+    name: 'without a field the tower still knows the player position from their own car',
+    run() {
+      const bound = { session: true, player: true, missing: ['CarIdxLapDistPct'] };
+      const view = towerView(
+        emptyState({ capabilities: bound, player: { position: 5, last_lap_time: 139.2 } })
+      );
+      assertEqual(view.available, false);
+      assertEqual(view.noField, true, 'a bound session with no CarIdx channels has no field');
+      assertEqual(towerView(emptyState()).noField, false, 'nothing bound yet is not "no field"');
+      assertEqual(view.player.position, 5);
+      assertEqual(view.player.lastLap, 139.2);
+      assertEqual(towerView(emptyState()).player.position, null, 'no position, no row');
+    },
+  },
+  {
     name: 'a lap time of zero has not been set, so it shows as unknown',
     run() {
       const cars = field(8, 3).map((car) => ({ ...car, last_lap_time: 0 }));

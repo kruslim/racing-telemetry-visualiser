@@ -314,7 +314,9 @@ function renderFlow(state) {
     const status = !mounted ? 'off' : a.status;
     const sub = !mounted
       ? 'not running'
-      : a.status === 'idle'
+      : agent === 'spotter' && a.status === 'idle' && !a.runs && (state.capabilities || {}).session && !state.capabilities.standings
+        ? 'no field data (live only)'
+        : a.status === 'idle'
         ? a.skipped
           ? `idle · ${a.skipped}`
           : `${a.runs} runs${a.refused ? ` · ${a.refused} refused` : ''}`

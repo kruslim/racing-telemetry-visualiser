@@ -35,8 +35,11 @@ export class TowerPanel {
       this.toggle.disabled = view.total === 0;
     }
 
-    if (!view.available) {
-      setText(this.note, `${NA} — this session has no per-car standings channels`);
+    this.root.classList.toggle('no-field', !!view.noField);
+    if (view.noField) {
+      setText(this.note, 'other cars are only in live telemetry; .ibt files record your car alone');
+    } else if (!view.available) {
+      setText(this.note, 'waiting for telemetry');
     } else if (!view.gapsKnown) {
       setText(this.note, 'gaps unavailable: no lap time or track length to convert from');
     } else {
@@ -44,12 +47,33 @@ export class TowerPanel {
     }
 
     clear(this.body);
+    if (view.noField) {
+      this.body.append(this._noField(view.player || {}));
+      return;
+    }
     for (const row of view.rows) {
       this.body.append(this._row(row));
     }
     if (!view.rows.length) {
       this.body.append(el('div', 'tower-empty muted', 'no cars in the running order'));
     }
+  }
+
+  /** No CarIdx channels: say so plainly, and still show where we are. */
+  _noField(player) {
+    const node = el('div', 'tower-empty no-field');
+    node.append(el('div', 'tower-empty-title', 'No field data in this recording'));
+    if (player.position !== null && player.position !== undefined) {
+      node.append(
+        this._row({
+          isPlayer: true,
+          position: player.position,
+          label: 'you',
+          lastLap: player.lastLap ?? null,
+        })
+      );
+    }
+    return node;
   }
 
   _row(row) {
