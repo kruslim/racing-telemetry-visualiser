@@ -6,6 +6,8 @@ trace the live view draws without a key or the network.
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 import pytest
 from evals.synthetic_race import ScenarioSpec, replay_scenario
 
@@ -48,11 +50,12 @@ def _answer(text="Stay out, no stop needed.") -> PitCall:
     )
 
 
-def _orch(engine, handler, activity) -> PitwallOrchestrator:
+def _orch(engine, handler, activity, spec=None) -> PitwallOrchestrator:
     return PitwallOrchestrator(
         engine,
         ScriptedProvider(handler),
-        [STRATEGIST],
+        # Without prefetch by default, so a model-driven tool call is what is traced.
+        [spec or replace(STRATEGIST, prefetch=())],
         feed=RadioFeed(),
         clock=None,
         activity=activity,
@@ -109,6 +112,24 @@ async def test_one_run_traces_dispatch_model_tool_validate_and_radio(engine):
     # Ordered, unique sequence numbers: the review rebuilds state from them.
     seqs = [r["seq"] for r in records]
     assert seqs == sorted(seqs) and len(set(seqs)) == len(seqs)
+
+
+async def test_prefetched_tools_are_traced_before_the_first_model_call(engine):
+    log = ActivityLog(wall_clock=None)
+    orch = _orch(engine, lambda **_: _answer(), log, spec=STRATEGIST)
+    messages = await orch.handle_event(_event())
+    assert len(messages) == 1
+
+    kinds = _kinds(log)
+    first_call = kinds.index("llm_call_start")
+    prefetched = [r["data"] for r in log.history()[:first_call] if r["kind"] == "tool_call"]
+    assert [t["tool"] for t in prefetched] == ["get_fuel_projection", "simulate_pit_outcome"]
+    assert all(t["prefetched"] and t["ok"] for t in prefetched)
+    call_end = next(r for r in log.history() if r["kind"] == "llm_call_end")["data"]
+    # The scripted provider reports no usage: recorded as unknown, not zero.
+    assert "input_tokens" in call_end and call_end["input_tokens"] is None
+    end = next(r for r in log.history() if r["kind"] == "run_end")["data"]
+    assert end["turns"] == 1  # answered from the prefetched results
 
 
 async def test_radio_history_in_context_is_recorded_as_the_agent_to_agent_edge(engine):

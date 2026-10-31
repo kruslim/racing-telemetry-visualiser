@@ -262,6 +262,7 @@ def _build_model(model_name: str):
         api_key=llm.api_key(),
         base_url=llm.base_url(),
         thinking={"type": "disabled"},
+        callbacks=[llm.langchain_usage_callback("coach_chat")],
     )
 
 
@@ -356,3 +357,16 @@ def coaching_chat(
         could_not_determine=answer.could_not_determine,
         annotations=annotations,
     )
+
+
+@router.get(
+    "/llm/usage",
+    summary="Kimi token usage since the server started, per LLM layer",
+)
+def llm_usage() -> dict:
+    """Totals per layer (each pitwall agent, orchestrator, judge, coach chat).
+
+    Counts only: no prompt text, no key. Resets when the server restarts; a
+    recorded run's own totals are in its journal and its summary.
+    """
+    return {**llm.USAGE.summary(), "backend": llm.describe()}

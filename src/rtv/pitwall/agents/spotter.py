@@ -163,6 +163,11 @@ SPOTTER = AgentSpec(
     cooldown_s=15.0,
     state_slice=spotter_slice,
     subject=spotter_subject,
+    # Both of its tools, which every run on the Spa replay called first.
+    prefetch=(
+        ("get_standings_around_player", {}),
+        ("get_recent_detector_events", {"limit": 10}),
+    ),
     max_tool_iterations=2,
 )
 

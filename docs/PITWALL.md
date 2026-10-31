@@ -454,6 +454,7 @@ adds a second agent with three lines of `dataclasses.replace` and asserts it rou
 ```
 trigger fires
   -> assemble context: role prompt (cached) + state slice + event + recent radio
+  -> run the spec's prefetch tools locally; results go in the first message
   -> model calls its scoped tools; every tool result is added to the FactSet
   -> tools are withdrawn on the last pass, so the model must answer
   -> structured output validated against the FactSet
@@ -465,6 +466,28 @@ trigger fires
 Prompt caching follows the Layer-3b coach: the stable role prompt is the first
 system block and carries `cache_control`; the volatile state slice comes after it,
 uncached. Reversing them would cache nothing, since caching is a prefix match.
+
+**Prefetch.** `AgentSpec.prefetch` is a tuple of `(tool, args)` (args may be a
+callable of `(state, event)`) that the runtime runs before the first model turn.
+The results go in the first message as tool results and into the FactSet, and each
+is traced as a `tool_call` with `prefetched: true`. On the Spa replay every run
+opened with the same one to three local tool calls, and a model turn averaged
+about 11 s, so a run took two to four turns (15 to 58 s). With the answers already
+in hand, the common case is one turn. The prefetch sets are: strategist
+`get_fuel_projection` and `simulate_pit_outcome` at the planned stop lap; engineer
+`get_car_health`, `get_tyre_trend` and the last 10 detector events; spotter
+standings plus the last 10 detector events; coach the last 10 detector events plus
+`get_corner_detail` at the trigger's lap distance. Every tool remains callable.
+
+**Token usage.** `KimiProvider` reads `usage` off every response
+(`rtv.llm.usage_of`) and returns it on `ProviderResponse.usage`. Each call is also
+recorded in the process-wide `rtv.llm.USAGE` ledger under its layer (the agent
+name, `orchestrator.<Schema>`, `eval_judge`, `coach_chat` through a LangChain
+callback, vision), and logged as one INFO line. `llm_call_end` journal records
+carry `input_tokens`, `output_tokens` and `cache_read_input_tokens`. Agent `stats()`
+total the tokens, the race summary adds `model_input_tokens` and
+`model_output_tokens` (null for older journals), and `GET /api/v1/llm/usage` serves
+the ledger since server start. Counts only: no prompt text, no key.
 
 ---
 

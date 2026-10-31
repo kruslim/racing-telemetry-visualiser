@@ -79,6 +79,8 @@ def race_summary(
     refused = ungrounded = 0
     runs: dict[str, dict[str, Any]] = {}
     llm_calls = tool_calls = llm_errors = 0
+    tokens_in = tokens_out = 0
+    tokens_seen = False
     latency: list[float] = []
     fuel_used = fuel_added = 0.0
     fuel_seen = False
@@ -108,6 +110,10 @@ def race_summary(
             llm_errors += not data.get("ok", True)
             if isinstance(data.get("latency_ms"), int | float):
                 latency.append(float(data["latency_ms"]))
+            if isinstance(data.get("input_tokens"), int):
+                tokens_seen = True
+                tokens_in += data["input_tokens"]
+                tokens_out += data.get("output_tokens") or 0
         elif kind == "tool_call":
             tool_calls += 1
         elif kind == "state":
@@ -153,6 +159,9 @@ def race_summary(
             "model_errors": llm_errors,
             "model_latency_ms": round(statistics.mean(latency)) if latency else None,
             "tool_calls": tool_calls,
+            # Null for journals recorded before token logging, not zero.
+            "model_input_tokens": tokens_in if tokens_seen else None,
+            "model_output_tokens": tokens_out if tokens_seen else None,
             "notes": notes,
         }
     )
