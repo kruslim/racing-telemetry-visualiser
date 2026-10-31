@@ -14,7 +14,7 @@ uses paid Kimi quota. Those records come from the offline test harness, so their
 shapes are exact but their words are placeholders.
 
 The full, untrimmed responses (all the JSON behind the examples below) are in
-`spa-example-payloads.zip` next to this file in the project files. `agents_scripted.json`
+`spa-example-payloads.zip` next to this file (`docs/ui-redesign/`). `agents_scripted.json`
 in it is the offline harness run, not Spa.
 
 ---
