@@ -72,6 +72,7 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 rtv = ["desktop/rtv.png"]
+"rtv.tracks" = ["data/*.json"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

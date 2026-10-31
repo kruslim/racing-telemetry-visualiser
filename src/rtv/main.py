@@ -20,6 +20,7 @@ from rtv.api import (
     routes_racestate,
     routes_sessions,
     routes_telemetry,
+    routes_tracks,
     routes_vision,
     ws,
     ws_pitwall,
@@ -86,6 +87,7 @@ def create_app() -> FastAPI:
     app.include_router(routes_telemetry.router, prefix=API_PREFIX)
     app.include_router(routes_coaching.router, prefix=API_PREFIX)
     app.include_router(routes_ingest.router, prefix=API_PREFIX)
+    app.include_router(routes_tracks.router, prefix=API_PREFIX)
     app.include_router(routes_vision.router, prefix=API_PREFIX)
     app.include_router(ws.router)  # /ws/live (no prefix)
 
