@@ -1,0 +1,16 @@
+{
+ "source": "project-review/a2-coach-eval/summary.json (weekly eval a2-coach-eval, main 0f32c04)",
+ "note": "The CornerAdvice.corner strings Kimi returned in the orchestrator's respond call, copied from the eval's corner issues.",
+ "leaks": [
+  {
+   "case": "spa-lap3-vs-lap6",
+   "field": "corner",
+   "value": "T3<|close|><|cues|>[\"Brake a touch later and carry more entry speed — you have margin, the reference apexed at 92.4 km/h.\", \"Hold a tighter line through the apex to keep the minimum speed up rather than washing wide.\", \"Get back to full throttle decisively at apex to maximise the run down the hill.\"]<|close|><|diagnosis<|string|>Bruxelles cost 0.179 s with no single system flagging — a pure line/commitment loss. Your minimum speed of 91.8 km/h was only 0.6 km/h below the reference\\'s 92.4 km/h, so the deficit is spread across the whole corner rather than one braking or throttle error. The hairpin rewards a clean, committed arc; small hesitations on entry and a slightly shallow apex accumulate into the loss.<|close|><|est_gain_s<|number|>0.17933329643884122<|close|><|/call><|close|><|/open|><|close|><|close|>response<|sep|><|close|>message<|sep|><|open|>tools<|sep|><|open|>call tool=\"rtv_final_answer\" index=\"1\"<|sep|><|open|>argument key=\"corner\" type=\"string\"<|sep|>T3"
+  },
+  {
+   "case": "spa-lap16-vs-lap17",
+   "field": "corner",
+   "value": "T2<|/open|>\\n<|oopen|>argument key=\"diagnosis\" type=\"string\"<|sep|>Les Combes is your biggest loss on the lap (+0.321 s), and it\\'s almost entirely a braking-phase problem. You\\'re hitting the brakes 42 m earlier than the reference lap, which costs 0.252 s on its own — you\\'re coasting/braking through the approach instead of carrying speed deep into the corner. That early, conservative brake point then leaves you 4 km/h under at the apex (108.8 vs 112.6 km/h), worth another 0.069 s. No lock-up flagged, so this is caution, not a grip issue.<|/open|>\\n<|oopen|>argument key=\"cues\" type=\"array\"<|sep|>[\"Move your brake marker 30-40 m later toward the corner — commit to braking at the reference point, not your current conservative one.\", \"Brake harder and shorter rather than early and soft, then trail off cleanly to the apex.\", \"Target ~113 km/h minimum speed; if you\\'re below 109 km/h at the apex, you braked too early again.\"]<|/open|>\\n<|oopen|>argument key=\"est_gain_s\" type=\"number\"<|sep|>0.321<|/open|>\\n<|/call><|/close|><|close|>response<|sep|><|close|>message<|sep|><|sep|><|open|>tools<|sep|><|open|>call tool=\"rtv_final_answer\" index=\"1\"<|sep|><|open|>argument key=\"corner\" type=\"string\"<|sep|>T2"
+  }
+ ]
+}

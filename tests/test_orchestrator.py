@@ -7,6 +7,7 @@ synthesis, then a verification — and that each call ships the cached findings 
 from __future__ import annotations
 
 import asyncio
+import re
 
 from rtv.coaching.orchestrator import (
     Claim,
@@ -31,19 +32,22 @@ class FakeProvider:
              "tools": list(tools)}
         )
         if output_model is CornerAdvice:
+            # A specialist answers about the corner it was asked about: the orchestrator
+            # rejects advice labelled with any other corner.
+            asked = re.search(r"Focus only on corner (T\d+)", messages[0]["content"])
             out = CornerAdvice(
-                corner="T4", diagnosis="late on the brakes",
+                corner=asked.group(1), diagnosis="late on the brakes",
                 cues=["brake 5 m later"], est_gain_s=0.3,
             )
         elif output_model is SessionPlan:
             out = SessionPlan(
-                headline="Brake later in T4",
-                priorities=[Priority(corner="T4", why="late braking", gain_s=0.3)],
-                one_lap_focus="T4 brake point",
+                headline="Brake later in T1",
+                priorities=[Priority(corner="T1", why="late braking", gain_s=0.3)],
+                one_lap_focus="T1 brake point",
             )
         elif output_model is VerdictReport:
             out = VerdictReport(claims=[
-                Claim(text="brake 5 m later in T4", corner="T4",
+                Claim(text="brake 5 m later in T1", corner="T1",
                       supported=True, reason="matches brake finding"),
             ])
         else:  # pragma: no cover - defensive

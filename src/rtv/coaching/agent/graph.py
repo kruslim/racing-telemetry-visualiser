@@ -51,6 +51,7 @@ from rtv.coaching.agent.registry import GET_LAP_FINDINGS_TOOL, LIST_CHANNELS_TOO
 from rtv.coaching.agent.state import CoachState
 from rtv.coaching.agent.tool_schema import inline_schema_defs
 from rtv.coaching.agent.validation import check_figures
+from rtv.llm import find_markup
 
 SUBMIT_COACHING_TOOL = "submit_coaching"
 REFUSE_TOOL = "refuse"
@@ -230,12 +231,20 @@ def build_graph(model: Any, executor: CoachToolExecutor):
 
         errors: list[str] = []
         payload: CoachingAnswerPayload | None = None
-        try:
-            payload = CoachingAnswerPayload.model_validate(submit["args"])
-        except ValidationError as exc:
-            errors = [
-                f"  {'.'.join(str(p) for p in err['loc'])}: {err['msg']}" for err in exc.errors()
-            ]
+        markup = find_markup(submit.get("args"))
+        if markup is not None:
+            # Kimi's raw tool-call tokens inside an argument: the call was garbled, so none
+            # of its fields is content. Rejected like any invalid answer (feedback, retry,
+            # then the grounded refusal), never shown.
+            errors = [f"  {markup}: raw tool-call markup in the arguments; call it again cleanly"]
+        else:
+            try:
+                payload = CoachingAnswerPayload.model_validate(submit["args"])
+            except ValidationError as exc:
+                errors = [
+                    f"  {'.'.join(str(p) for p in err['loc'])}: {err['msg']}"
+                    for err in exc.errors()
+                ]
 
         if payload is not None:
             # The highest-value validator: every cited figure must match a finding that was
@@ -278,8 +287,11 @@ def build_graph(model: Any, executor: CoachToolExecutor):
         (state) or straight from the provider — never from the model."""
         call = next((c for c in _tool_calls(state.messages[-1]) if c["name"] == REFUSE_TOOL), None)
         try:
-            payload = RefusalPayload.model_validate(call["args"] if call else {})
-        except ValidationError:
+            args = call["args"] if call else {}
+            if find_markup(args) is not None:  # garbled call: keep none of its text
+                raise ValueError("raw tool-call markup in the refusal arguments")
+            payload = RefusalPayload.model_validate(args)
+        except (ValidationError, ValueError):
             payload = RefusalPayload(reason="insufficient_data", channels_required=[])
 
         if state.channels_available is not None:

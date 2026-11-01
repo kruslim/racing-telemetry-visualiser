@@ -3150,6 +3150,23 @@ Layer-3a orchestrator and the eval judge now use. Both previously called
 `CoachOrchestrator(provider, model=...)` replaces `CoachOrchestrator(client=...)`.
 Agent default model ids are `kimi-k3`.
 
+**Kimi tool-call markup is a malformed turn (R2).** Kimi sometimes fails to parse its
+own tool call and returns the raw template tokens (`<|close|>`, `<|sep|>`,
+`<|oopen|>argument key=...`) inside an argument; on the A2 coach eval a whole second
+respond call sat in the orchestrator's `corner` field in 2 of 5 cases, and the schema
+accepted it. `rtv.llm.find_markup` detects them; `KimiProvider` then discards the whole
+turn and returns `ProviderResponse(malformed=...)` with no output and no tool calls.
+`structured_call` asks once more (and takes a `check=` callable for contracts beyond the
+schema), the pitwall `AgentRuntime` retries a malformed turn once per run (counted in
+`stats()["malformed"]` and the journal's `llm_call_end.malformed`), and the graph coach
+bounces it through its validation feedback, then its grounded refusal. The orchestrator
+also requires each specialist's `corner` to be the corner it was asked about (the prompt
+read `corner None` before: top3 entries carry `label`) and every plan priority to be a
+label in the findings; with no valid plan it returns `plan=None` with a message. The
+Spa journals (`spa-kimi-run-combined`, `spa-kimi-run-B2`) hold no markup, but they do
+not record a discarded payload, so their 3 and 2 calls without a structured answer
+cannot be attributed; the new `malformed` field records that from now on.
+
 **Coaching in one place.** `LapFindings` gained `kpis` (`main`/`ref`
 `DriverKPIs`: trail-brake %, average throttle %, throttle smoothness, steering
 corrections, coasting %), `agent_stats` (count and attributed seconds per roster
