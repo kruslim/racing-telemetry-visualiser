@@ -305,6 +305,7 @@ def build_services(settings: Settings) -> AppServices:
                 traffic_gap_s=settings.pitwall_traffic_gap_s,
             ),
         )
+        engine.pit_lane_loss_s = settings.pitwall_pit_lane_loss_s
         # A replay goes through the same fan-out as live capture: the engine
         # (and so the agents) plus the /ws/live hub.
         # The replay API refuses to start while the live poller runs, so when a

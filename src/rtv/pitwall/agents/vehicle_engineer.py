@@ -25,6 +25,7 @@ from rtv.pitwall.framework import AgentOutput, AgentSpec, RadioMessage, RadioPri
 from rtv.pitwall.questions import question_trigger
 from rtv.pitwall.validity import box_call_rules
 from rtv.racestate.models import EventType, RaceEvent, RaceState
+from rtv.racestate.plan import plan_view
 
 AGENT_NAME = "vehicle_engineer"
 
@@ -64,6 +65,11 @@ How to read what you are given:
   Say which it is.
 - On pit entry you are doing a stint review: what the set that just came off tells
   us about the next one.
+
+The state's 'plan' is the strategist's race plan as far as it concerns you: the
+tyre posture (push / neutral / conserve) and the pace target the stint is run at.
+Read your finding against it ("conserve" needs the fronts kept off the kerbs);
+you cannot change it. A null element means the plan has none yet.
 
 Rules that matter more than being helpful:
 - get_setup_snapshot is frequently unavailable. If it is, you may still describe
@@ -187,6 +193,8 @@ def vehicle_engineer_slice(state: RaceState) -> dict:
         "car_health": state.car_health.model_dump(mode="json"),
         "conditions": state.conditions.model_dump(mode="json"),
         "track": state.track.model_dump(mode="json"),
+        # Read-only: the tyre posture and pace target, not the stop.
+        "plan": plan_view(state, "posture"),
         "capabilities": state.capabilities.model_dump(mode="json"),
     }
 
@@ -231,6 +239,8 @@ VEHICLE_ENGINEER = AgentSpec(
         T.GET_CAR_HEALTH,
         T.GET_SETUP_SNAPSHOT,
         T.GET_RACE_STATE_SLICE,
+        T.GET_RACE_PLAN,
+        T.GET_LAP_TIME_DEGRADATION,
     ),
     triggers=VEHICLE_ENGINEER_TRIGGERS,
     # The numbers are all computed upstream; this is pattern-reading, not

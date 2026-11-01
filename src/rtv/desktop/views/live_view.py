@@ -2,7 +2,7 @@
 
 Layout (the "Live pitwall" artboard): flag band, status strip, replay bar, then
 three columns: pitwall at work (flow graph, timeline, agent runs, raw telemetry);
-strategy and the timing tower; the radio. The ticker runs along the bottom.
+strategy, the race plan and the timing tower; the radio. The ticker runs along the bottom.
 Painting is throttled to 10 Hz; socket frames only update the stored state.
 """
 
@@ -39,6 +39,7 @@ from ..widgets.live import (
     TowerPanel,
 )
 from ..widgets.live_onboard import LiveOnboardPanel
+from ..widgets.plan import PlanPanel
 from ..widgets.radio import RadioFeed
 from .hub import Hub, bind_voice
 
@@ -122,9 +123,11 @@ class LiveView(QWidget):
         b.setContentsMargins(0, 12, 0, 12)
         b.setSpacing(12)
         self.strategy = StrategyPanel()
+        self.plan = PlanPanel()
         self.tower = TowerPanel()
         self.tower.on_toggle = self._mark
         b.addWidget(self.strategy)
+        b.addWidget(self.plan)
         b.addWidget(self.tower, 1)
         splitter.addWidget(_scroll(col_b))
 
@@ -349,6 +352,7 @@ class LiveView(QWidget):
             vm.strategy_view(state), hub.fuel_history.points(), frozen=socket_down
         )
         self.strategy.set_recommendation(vm.recommendation_view(latest_strategist(hub.messages)))
+        self.plan.set_view(state)
         self.tower.set_view(
             vm.tower_view(
                 state, expanded=self.tower.expanded, trends=hub.gaps, warnings=hub.warnings

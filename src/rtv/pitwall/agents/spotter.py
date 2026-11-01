@@ -202,7 +202,12 @@ SPOTTER = AgentSpec(
     name=AGENT_NAME,
     role_prompt=SPOTTER_PROMPT,
     output_model=SpotterCall,
-    tools=(T.GET_STANDINGS_AROUND_PLAYER, T.GET_RECENT_DETECTOR_EVENTS),
+    tools=(
+        T.GET_STANDINGS_AROUND_PLAYER,
+        T.GET_RECENT_DETECTOR_EVENTS,
+        # When a car closes on the lap-line summary's horizon, from gaps and pace.
+        T.GET_TRAFFIC_PROJECTION,
+    ),
     triggers=SPOTTER_TRIGGERS,
     tier="fast",
     # Short answers: a small budget and two tool rounds, not four.

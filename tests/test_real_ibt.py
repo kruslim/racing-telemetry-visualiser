@@ -336,3 +336,39 @@ def test_prose_check_catches_the_kimi_t7_brake_advice(client):
     score = cross_check(result, f)
     assert score["claim_factuality"] < 1.0
     assert any("brake later at T7" in i and "6508 m" in i for i in score["prose_issues"])
+
+
+def test_stage08_projection_and_plan_on_the_real_race(client):
+    """Stage 08: degradation fits the real laps; traffic is ungrounded (no CarIdx in an .ibt)."""
+    from rtv.racestate import projection as pj
+    from rtv.racestate.models import EventType, RaceState
+
+    _replayed(client)
+    state = RaceState.model_validate(client.get("/api/v1/racestate").json())
+    stint1 = state.model_copy(deep=True)
+    stint1.player.stint = 1
+    deg = pj.lap_time_degradation(stint1)
+    assert deg.grounded and deg.stint == 1
+    # Laps 3-4 ran under yellow, 12 is the in-lap; lap 1 (the start) is an outlier.
+    assert deg.samples == len(deg.laps_used) >= 6
+    assert not {3, 4, 12} & set(deg.laps_used) and 1 in deg.outlier_laps
+    assert abs(deg.loss_per_lap_s) < 0.5 and 139.0 < deg.current_lap_time_s < 143.0
+
+    traffic = pj.traffic_projection(state)
+    assert not traffic.grounded and "gap basis" in traffic.reason
+
+    # The plan: a baseline from lap 2, the stop moved to lap 12 (the lap the driver
+    # pitted on), consumed at the stop, then no further stop.
+    revised = [
+        e for e in client.app.state.services.engine.bus.history()
+        if e.event_type is EventType.PLAN_REVISED
+    ]
+    assert revised and revised[0].payload["old_version"] is None
+    planned = [
+        e.payload["changes"]["next_stop_lap"]["to"]
+        for e in revised
+        if "next_stop_lap" in e.payload["changes"]
+    ]
+    assert 12 in planned
+    assert state.plan is not None and state.plan.stops_done == 1
+    assert state.plan.stop_count is not None and state.plan.stop_count.value == 0
