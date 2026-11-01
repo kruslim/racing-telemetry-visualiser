@@ -60,6 +60,9 @@ def facts_of(case: dict[str, Any]) -> FactSet:
     facts = FactSet()
     facts.add("race_state", data["state_slice"])
     facts.add("event", data["event"].get("payload") or {})
+    from rtv.pitwall.agent_input import previous_facts
+
+    facts.add("previous", previous_facts(data.get("previous") or []))
     for heard in data.get("radio") or []:
         if heard.get("agent") != data.get("agent"):
             facts.hear(heard["agent"], heard.get("spoken_text") or "")

@@ -38,7 +38,13 @@ from rtv.pitwall.framework import (
     RadioPriority,
 )
 from rtv.pitwall.orchestrator import PitwallOrchestrator
-from rtv.pitwall.provider import RESPOND_TOOL, KimiProvider, ProviderResponse, ScriptedProvider
+from rtv.pitwall.provider import (
+    RESPOND_TOOL,
+    KimiProvider,
+    ProviderResponse,
+    ScriptedProvider,
+    tool_use_turn,
+)
 from rtv.pitwall.radio import RadioFeed
 from rtv.pitwall.validator import FactSet, validate_output
 from rtv.racestate import RaceStateEngine
@@ -218,15 +224,19 @@ def test_kimi_reports_why_a_respond_payload_failed():
 # --------------------------------------------------------------------------
 # 5. driver questions: one call, an answer's age, the spotter's word limit
 # --------------------------------------------------------------------------
-def test_a_question_run_is_one_forced_call_from_the_prefetched_results():
+def test_a_question_run_gets_one_tool_round_then_a_forced_answer():
+    """R1's replay: with no tools at all, kimi-k3's forced answer ran to max_tokens on two
+    of four questions, so a question keeps the "any tool" first call and one round."""
     question = _event(EventType.DRIVER_QUESTION, owner="strategist", text="Stop plan?")
-    assert STRATEGIST.tool_iterations(question) == 0
+    assert STRATEGIST.tool_iterations(question) == 1
     assert STRATEGIST.tool_iterations(_event()) == STRATEGIST.max_tool_iterations
 
     seen: list[dict] = []
 
     def handler(**kw):
         seen.append(kw)
+        if len(seen) == 1:
+            return tool_use_turn([("get_fuel_projection", {})])
         return _call()
 
     trace: list[tuple[str, dict]] = []
@@ -234,15 +244,52 @@ def test_a_question_run_is_one_forced_call_from_the_prefetched_results():
         STRATEGIST, ScriptedProvider(handler), tracer=lambda k, **d: trace.append((k, d))
     )
     assert asyncio.run(runtime.invoke(question, _end_of_scenario_state())) is not None
-    [only] = seen
-    assert only["tools"] == []
-    prompt = only["messages"][0]["content"]
-    assert "TOOL RESULTS" in prompt and "there are no more tools" in prompt
+    assert len(seen) == 2
+    assert seen[0]["tools"] and seen[1]["tools"] == []  # the second call must answer
     [start] = [d for k, d in trace if k == "run_start"]
-    record = start["input"]
-    assert record["max_tool_iterations"] == 0
+    assert start["input"]["max_tool_iterations"] == 1
+    assert agent_input.model_input(start["input"])["messages"] == seen[0]["messages"][:1]
+
+
+def test_a_record_with_no_tool_rounds_rebuilds_with_no_tools():
+    record = agent_input.build_input(
+        STRATEGIST, system_prompt="p", state_slice={},
+        event={"key": "k", "severity": "info", "session_time": 1.0, "payload": {}},
+        prefetched=[("get_fuel_projection", {}, {"laps": 3})], max_tool_iterations=0,
+    )
     rebuilt = agent_input.model_input(record)
-    assert rebuilt["tools"] == [] and rebuilt["messages"] == only["messages"][:1]
+    assert rebuilt["tools"] == []
+    assert "there are no more tools" in rebuilt["messages"][0]["content"]
+
+
+def test_an_answer_cut_off_at_max_tokens_is_retried_once():
+    seen: list[dict] = []
+
+    def handler(**kw):
+        seen.append(kw)
+        if len(seen) == 1:
+            return ProviderResponse(stop_reason="max_tokens")
+        return _call()
+
+    runtime = AgentRuntime(STRATEGIST, ScriptedProvider(handler))
+    assert asyncio.run(runtime.invoke(_event(), _end_of_scenario_state())) is not None
+    assert len(seen) == 2 and seen[1]["max_tokens"] > seen[0]["max_tokens"]
+    assert "token limit" in seen[1]["messages"][-1]["content"]
+
+
+def test_how_late_its_own_call_aired_is_a_fact_its_words_are_not():
+    """R1's replay, coach-2: "my lap-2 call aired 41 s late" was refused (no such fact)."""
+    previous = [{
+        "message_id": "m1", "subject": "coach:T8", "lap": 2, "session_time": 300.0,
+        "spoken_text": "Target a 139 lap.", "status": "late", "late_by_s": 40.7,
+        "expired_reason": None,
+    }]
+    facts = FactSet(typed=True)
+    facts.add("previous", agent_input.previous_facts(previous))
+    assert validate_output("My lap-2 call aired 41 s late.", "", facts).ok
+    assert not validate_output("Target a 139 lap time.", "", facts).ok
+    shown = agent_input.previous_line(previous[0])
+    assert "aired late by 41 s" in shown
 
 
 def test_an_agents_answer_gets_the_answer_age_limit():

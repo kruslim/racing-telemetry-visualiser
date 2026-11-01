@@ -275,6 +275,21 @@ def previous_line(call: Mapping[str, Any]) -> str:
     return f'You said {when}: "{call["spoken_text"]}" ({note})'
 
 
+def previous_facts(previous: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    """The figures :func:`previous_line` shows about the agent's own earlier calls.
+
+    The lap it said it on and how late it aired are radio facts the agent may repeat
+    ("my lap-4 call aired 41 s late"); the words it said are not, so they are left out.
+    """
+    out: list[dict[str, Any]] = []
+    for call in list(previous)[-PREVIOUS_SUBJECTS:] if PREVIOUS_SUBJECTS else []:
+        row = {"lap": call.get("lap")}
+        if call.get("status") == LATE and call.get("late_by_s") is not None:
+            row["late_by_s"] = round(float(call["late_by_s"]))
+        out.append(row)
+    return out
+
+
 def previous_call(message: Any, *, queued: bool = False) -> dict[str, Any]:
     """The ``previous`` entry for one of the agent's own ``RadioMessage`` s.
 

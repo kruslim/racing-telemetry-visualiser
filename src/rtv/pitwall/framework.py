@@ -421,7 +421,7 @@ class AgentSpec:
 # --------------------------------------------------------------------------
 REFUSAL_SPOKEN = "Standby - I can't back that call with data yet."
 #: Tool round trips a driver-question run may make (:meth:`AgentSpec.tool_iterations`).
-QUESTION_TOOL_ITERATIONS = 0
+QUESTION_TOOL_ITERATIONS = 1
 #: An agent's answer to the driver airs tagged late after this many seconds. The
 #: driver asked and is waiting: an answer is still wanted later than a call is, but
 #: one model call (~10-15 s on kimi-k3) must fit inside it.
@@ -605,6 +605,9 @@ class AgentRuntime:
         facts = FactSet()
         facts.add("race_state", slice_)
         facts.add("event", event.payload)
+        # Its own earlier calls are shown with when they aired and how late ("aired late
+        # by 41 s"): radio facts the agent may repeat. Their words are not facts.
+        facts.add("previous", agent_input.previous_facts(previous_calls))
         for heard in list(radio_history)[-agent_input.RADIO_SHOWN :]:
             if heard.agent != spec.name:
                 facts.hear(heard.agent, heard.spoken_text)
@@ -806,6 +809,16 @@ class AgentRuntime:
                 # empty or truncated payload, about one call in twelve). One forced
                 # retry with the reason costs a call; giving up costs the whole run.
                 return await self._retry_respond(system, messages, response.invalid_output)
+            if (
+                response.output is None
+                and not response.tool_calls
+                and getattr(response, "stop_reason", None) == "max_tokens"
+            ):
+                # Cut off before the answer closed (R1's replay: two question runs).
+                return await self._retry_respond(
+                    system, messages,
+                    "it ran past the token limit; keep detail_text to a few sentences",
+                )
             if not response.tool_calls:
                 if not offer_tools or not getattr(response, "text", ""):
                     return response.output
