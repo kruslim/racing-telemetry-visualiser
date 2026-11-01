@@ -65,6 +65,7 @@ __all__ = [
     "proposal_facts",
     "refresh_plan",
     "sanity_check",
+    "stint_horizon",
 ]
 
 #: The plan's elements, in display order, with the unit each is reported in.
@@ -905,3 +906,59 @@ def plan_view(state: RaceState, scope: str = "full") -> dict[str, Any]:
     if missing:
         out["missing"] = missing
     return out
+
+
+def stint_horizon(state: RaceState) -> dict[str, Any]:
+    """How many laps the set on the car still has to run, and to what.
+
+    The end of the stint is the plan's next stop when it has one, else the flag when the
+    plan says there is no stop to make. With no plan (no fuel model yet, or not a race)
+    the stint end is unknown and nothing is guessed. The count is
+    whole laps after the one being run: the stop lap minus the current lap, or the laps
+    the sim says remain minus this one. The stop lap itself is not shown, so an agent
+    with the posture-only plan view can judge whether a set lasts without quoting the
+    strategist's stop. ``available`` is ``False`` with a reason when nothing grounds it.
+    """
+    lap = state.player.lap
+    if lap is None:
+        return {"available": False, "unavailable": "No lap counter in this session."}
+    plan = state.plan
+    if plan is None:
+        return {"available": False, "unavailable": "No race plan, so the stint end is unknown."}
+    stops = _value(plan, "stop_count")
+    stop_lap = _lap_of(_value(plan, "next_stop_lap"))
+    if stop_lap is not None and stops != 0:
+        return {
+            "available": True,
+            "basis": "planned_stop",
+            "laps_to_stint_end": max(0, stop_lap - lap),
+        }
+    if stops is None:
+        return {
+            "available": False,
+            "unavailable": "The plan has no stop count yet, so the stint end is unknown.",
+        }
+    if stops > 0:
+        return {
+            "available": False,
+            "unavailable": "A stop is planned but its lap is not set yet.",
+        }
+    laps = _laps_to_flag(state, lap)
+    if laps is None:
+        return {"available": False, "unavailable": "Race distance unknown."}
+    return {"available": True, "basis": "flag", "laps_to_stint_end": laps}
+
+
+def _laps_to_flag(state: RaceState, lap: int) -> int | None:
+    """Whole laps after the current one until the flag, from the most direct source."""
+    to_finish = state.fuel.laps_to_finish
+    if to_finish is not None:
+        return max(0, round(to_finish - sm.lap_left(state)))
+    remaining = state.session.laps_remaining
+    if remaining is not None:
+        # The sim's counter includes the lap being run.
+        return max(0, remaining - 1)
+    total = state.session.laps_total
+    if total:
+        return max(0, total - lap)
+    return None

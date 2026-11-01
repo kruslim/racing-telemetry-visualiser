@@ -26,7 +26,7 @@ from rtv.pitwall.framework import AgentOutput, AgentSpec, RadioMessage, RadioPri
 from rtv.pitwall.questions import question_trigger
 from rtv.pitwall.validity import box_call_rules
 from rtv.racestate.models import EventType, RaceEvent, RaceState
-from rtv.racestate.plan import plan_view
+from rtv.racestate.plan import plan_view, stint_horizon
 
 AGENT_NAME = "vehicle_engineer"
 
@@ -59,8 +59,15 @@ How to read what you are given:
   no clean lap has been mapped yet: say "the same corner", never a turn number.
   A recurring_issue's 'corner' field is that counting bucket; say its place.
 - tyre_out_of_band tells you which measure went out and against which threshold.
-  A trend is degrees or kPa *per lap* across the current stint - multiply it out
-  before you say what it means by the end of the stint, and say you did.
+  A trend is degrees or kPa *per lap*, a straight-line fit across the current
+  stint. Quote it as a rate; never multiply it out to the end of the stint. Tyres
+  build fast from cold and then level off, so an early trend multiplied out is a
+  figure the car will not reach, and one you were not given. For how the set is
+  moving now quote vs_previous_lap; for the build so far, since_stint_start.
+- 'stint' says how long this set still runs: laps_to_stint_end whole laps, to the
+  planned stop or to the flag ('basis' says which). Use it to judge whether the
+  set lasts (and whether the car can run to the planned stop), not to project a
+  temperature or pressure.
 - car_health_warning carries the sim's own warning bits when it has them. Those
   are the car speaking; a temperature over a configured threshold is us judging.
   Say which it is.
@@ -199,7 +206,8 @@ def vehicle_engineer_slice(state: RaceState) -> dict:
     """The car, and only the car.
 
     No standings and no fuel plan: the engineer has no business quoting a gap or a
-    pit window, and every section left out is a number it cannot say.
+    pit window, and every section left out is a number it cannot say. ``stint`` is
+    the one stop-derived figure it gets: how many laps the set still runs, as a count.
     """
     return {
         "version": state.version,
@@ -212,6 +220,8 @@ def vehicle_engineer_slice(state: RaceState) -> dict:
         "track": state.track.model_dump(mode="json"),
         # Read-only: the tyre posture and pace target, not the stop.
         "plan": plan_view(state, "posture"),
+        # Task R5: the laps left on this set, as a count (the stop lap stays hidden).
+        "stint": stint_horizon(state),
         "capabilities": state.capabilities.model_dump(mode="json"),
     }
 
