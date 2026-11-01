@@ -50,7 +50,7 @@ def _print_findings(f: dict) -> None:
 
 
 def _print_result(result) -> None:
-    if result.clean:
+    if result.clean or result.plan is None:
         print(f"\n{result.message}")
         return
     plan = result.plan

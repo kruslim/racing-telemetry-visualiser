@@ -19,6 +19,7 @@ from typing import Any, Protocol
 
 from pydantic import BaseModel
 
+from rtv.llm import find_markup
 from rtv.logging import get_logger
 
 log = get_logger("pitwall.provider")
@@ -42,6 +43,10 @@ class ProviderResponse:
     assistant_content: Any = field(default_factory=list)
     #: Token counts reported by the backend (``rtv.llm.usage_of``), when it sent them.
     usage: dict[str, int] | None = None
+    #: Why the turn was thrown away as malformed (Kimi tool-call markup in an argument or
+    #: the text, see :func:`rtv.llm.find_markup`), else ``None``. A malformed turn has no
+    #: output and no tool calls; callers ask once more, then give up.
+    malformed: str | None = None
 
 
 class LLMProvider(Protocol):  # pragma: no cover - structural type
@@ -163,6 +168,7 @@ class KimiProvider:
 
         usage = record_usage(agent, model, response)
         parsed = None
+        malformed: str | None = None
 
         content = getattr(response, "content", []) or []
         calls: list[ToolCall] = []
@@ -171,6 +177,14 @@ class KimiProvider:
                 continue
             name = getattr(block, "name", "")
             payload = dict(getattr(block, "input", None) or {})
+            # Kimi sometimes fails to parse its own tool call and returns the raw
+            # template tokens inside an argument (the A2 coach eval had a whole
+            # second respond call inside ``corner``). That is a broken call, not
+            # content: drop it, whatever the schema would have accepted.
+            markup = find_markup(payload)
+            if markup is not None:
+                malformed = malformed or f"{name}: {markup}"
+                continue
             if name == RESPOND_TOOL:
                 try:
                     parsed = output_model.model_validate(payload)
@@ -191,6 +205,15 @@ class KimiProvider:
         text = "".join(
             block.text for block in content if getattr(block, "type", None) == "text"
         )
+        text_markup = find_markup(text)
+        if text_markup is not None:
+            malformed = malformed or text_markup
+            text = ""
+        if malformed is not None:
+            # One bad block spoils the turn: the other blocks were cut from the same
+            # garbled stream, and half a tool exchange cannot be continued.
+            log.warning("%s: discarded a malformed Kimi turn (%s)", agent, malformed)
+            return ProviderResponse(usage=usage, malformed=malformed)
         if parsed is not None:
             # A model that answered *and* called tools has answered. Servicing the
             # calls anyway would append an assistant turn carrying a tool_use with
@@ -291,6 +314,7 @@ async def structured_call(
     prompt: str,
     output_model: type[BaseModel],
     max_tokens: int,
+    check: Callable[[Any], str | None] | None = None,
 ) -> BaseModel | None:
     """One tool-free question, one structured answer (``None`` if it was invalid).
 
@@ -299,6 +323,11 @@ async def structured_call(
     Spa replay kimi-k3 sent an empty or token-garbled respond call for about one
     orchestrator specialist in three, and each one was dropped from the plan.
     These layers run after the session, so the retry costs no race time.
+
+    A malformed turn (Kimi tool-call markup, see :attr:`ProviderResponse.malformed`)
+    is asked for again the same way. ``check`` is the caller's own contract on top of
+    the schema (``CornerAdvice.corner`` must be the corner that was asked about): it
+    returns why an answer is unusable, and that answer is treated as invalid too.
     """
     for _attempt in range(2):
         response = await provider.complete(
@@ -310,6 +339,10 @@ async def structured_call(
             output_model=output_model,
             max_tokens=max_tokens,
         )
-        if response.output is not None:
+        if response.output is None:
+            continue
+        problem = check(response.output) if check is not None else None
+        if problem is None:
             return response.output
+        log.warning("%s: rejected a structured answer: %s", agent, problem)
     return None

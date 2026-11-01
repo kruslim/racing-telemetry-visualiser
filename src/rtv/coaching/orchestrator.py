@@ -29,6 +29,7 @@ import json
 from pydantic import BaseModel, Field
 
 from rtv.coaching.agent.prose import check_prose, result_prose
+from rtv.coaching.agent.validation import corner_map, split_corner
 from rtv.pitwall.provider import LLMProvider, structured_call
 
 COACH_SYSTEM = """\
@@ -119,6 +120,7 @@ class CoachOrchestrator:
 
         findings_block = json.dumps(findings, separators=(",", ":"))
         corners = {c["index"]: c for c in findings.get("corners", [])}
+        labels = set(corner_map(findings))
 
         # 1) fan out one specialist per priority corner — in parallel
         advices = await asyncio.gather(
@@ -128,7 +130,15 @@ class CoachOrchestrator:
         advices = [a for a in advices if a is not None]
 
         # 2) synthesise into one prioritised plan
-        plan = await self._synthesise(advices, findings_block)
+        plan = await self._synthesise(advices, findings_block, labels)
+
+        if plan is None:
+            # No usable plan after the retry (an invalid or garbled synthesis): say so
+            # rather than verify nothing or show the specialists' fragments as a plan.
+            return CoachResult(
+                clean=False, advices=advices, model=self._model,
+                message="The coach could not produce a valid session plan for this lap.",
+            )
 
         # 3) adversarially verify the plan against the findings
         verdict = await self._verify(plan, findings_block)
@@ -151,22 +161,48 @@ class CoachOrchestrator:
 
     # ---- individual agents ------------------------------------------------
     async def _specialist(self, priority: dict, corner: dict, findings_block: str) -> CornerAdvice:
+        # The chief's top3 entries carry ``label`` (``T7``); reading ``corner`` here asked
+        # every specialist about "corner None".
+        name = priority.get("label") or priority.get("corner")
         instruction = (
-            f"Focus only on corner {priority.get('corner')} "
+            f"Focus only on corner {name} "
             f"(index {priority.get('index')}). Its findings: "
             f"{json.dumps(corner, separators=(',', ':'))}\n"
             "Diagnose the main loss and give 1-3 concrete cues for the next lap."
         )
-        return await self._parse(instruction, CornerAdvice, findings_block, max_tokens=2000)
+        asked = split_corner(name)[0]
 
-    async def _synthesise(self, advices: list[CornerAdvice], findings_block: str) -> SessionPlan:
+        def check(advice: CornerAdvice) -> str | None:
+            # The specialist was asked about one corner; an answer about another one (or a
+            # corner field holding anything but a label) is not that corner's advice.
+            said = split_corner(advice.corner)[0]
+            if asked is not None and said != asked:
+                return f"corner {advice.corner[:40]!r} is not the corner asked about ({asked})"
+            return None
+
+        return await self._parse(
+            instruction, CornerAdvice, findings_block, max_tokens=2000, check=check
+        )
+
+    async def _synthesise(
+        self, advices: list[CornerAdvice], findings_block: str, labels: set[str] | None = None
+    ) -> SessionPlan:
         instruction = (
             "Per-corner specialist analyses:\n"
             f"{json.dumps([a.model_dump() for a in advices], separators=(',', ':'))}\n"
             "Combine them into one prioritised session plan. Keep the ordering by time "
             "available and pick a single focus for the next lap."
         )
-        return await self._parse(instruction, SessionPlan, findings_block, max_tokens=3000)
+
+        def check(plan: SessionPlan) -> str | None:
+            for p in plan.priorities:
+                if labels and split_corner(p.corner)[0] not in labels:
+                    return f"priority corner {p.corner[:40]!r} is not a corner in the findings"
+            return None
+
+        return await self._parse(
+            instruction, SessionPlan, findings_block, max_tokens=3000, check=check
+        )
 
     async def _verify(self, plan: SessionPlan, findings_block: str) -> VerdictReport:
         instruction = (
@@ -179,7 +215,9 @@ class CoachOrchestrator:
         return await self._parse(instruction, VerdictReport, findings_block, max_tokens=3000)
 
     # ---- shared call ------------------------------------------------------
-    async def _parse(self, instruction: str, schema: type, findings_block: str, *, max_tokens: int):
+    async def _parse(
+        self, instruction: str, schema: type, findings_block: str, *, max_tokens: int, check=None
+    ):
         return await structured_call(
             self._provider,
             agent=f"orchestrator.{schema.__name__}",
@@ -192,4 +230,5 @@ class CoachOrchestrator:
             prompt=instruction,
             output_model=schema,
             max_tokens=max_tokens,
+            check=check,
         )
