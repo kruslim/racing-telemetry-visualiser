@@ -50,6 +50,7 @@ KINDS = (
     "radio_queued",
     "radio_superseded",
     "radio_aired",
+    "plan_proposal_rejected",
 )
 
 #: A tracer is anything that takes a record's fields; ``ActivityLog.record`` is one.

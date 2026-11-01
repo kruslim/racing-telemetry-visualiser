@@ -232,6 +232,10 @@ class ToolContext:
     #: missing must return a stated "unavailable", never a guess. See
     #: :mod:`rtv.pitwall.tools`.
     extras: Mapping[str, Any] = field(default_factory=dict)
+    #: The agent the tool runs for. Tools whose answer is scoped per role (the race
+    #: plan: the strategist sees all of it, the others its tyre posture and pace
+    #: target) read it; nothing else does.
+    agent: str = ""
 
 
 @dataclass(frozen=True)
@@ -566,6 +570,7 @@ class AgentRuntime:
             events=list(events),
             config=self.tool_config,
             extras=self.tool_extras,
+            agent=spec.name,
         )
         tools_used: list[str] = []
         prefetched = self._prefetch(ctx, facts, tools_used, state, event)

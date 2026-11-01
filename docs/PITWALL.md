@@ -99,6 +99,62 @@ resets the agent layer too, so two replays in one server run share nothing. A li
 disconnect still closes the run without ending the segment (the race state keeps its
 fuel model across a gap); the reconnect opens a new run of the same segment.
 
+**Race plan and projections** (`projection.py`, `plan.py`, appendix stage 08). The engine
+keeps a lap log (`RaceState.laps`: one `LapRecord {lap, lap_time, stint, stint_lap, green,
+pit, session_time}` per completed lap, capped at 400) and, in a race segment only
+(`lifecycle.session_type == "race"`), a versioned `RaceState.plan: RacePlan`. The projection
+layer is pure functions over a `RaceState` with no model in it, each with a `grounded` flag,
+a `reason` when it is not, and a sample count:
+
+| function | what it gives | ungrounded when |
+|---|---|---|
+| `lap_time_degradation(state)` | `loss_per_lap_s` (least squares over the stint's green, non-pit laps within 3 % of the median), `loss_stderr_s`, current, fresh and projected (`horizon_laps`) lap time, `laps_used`, `outlier_laps`, `confidence` | fewer than 4 clean laps in the stint |
+| `fuel_save_options(state)` | per extra lap: `target_per_lap_l`, `save_per_lap_l`, `save_pct` (a fraction), `reach_lap`; `to_flag` when a stop is otherwise needed | no fuel channels or no learned consumption |
+| `traffic_projection(state)` | ahead and behind: `gap_s`, `closing_per_lap_s`, `catch_in_laps`, `catch_lap` | no `standings.gap_basis` (always on an `.ibt`, which has no other cars) |
+| `undercut_overcut(state, early_lap, late_lap)` | both `simulate_pit_outcome` branches, `tyre_gain_s` from the degradation fit, `extra_fuel_l`, `position_delta`, `net_s`, `favours` | no stop plan; the tyre gain alone is "not priced" without a fit |
+
+`RacePlan {version, segment, stop_count, next_stop_lap, fuel_to_add_l,
+fuel_per_lap_target_l, pace_target_s, tyre_posture, stops_done, missing, revisions}`. Each
+element is a `PlanElement {value, unit, provenance, rationale, version, set_by,
+set_at_lap}` with `provenance` one of `derived`, `agent_proposed`, `operator_set`; an
+element with nothing behind it is `None` and `missing[name]` says why (the UIs print n/a,
+never 0). `refresh_plan` runs at every lap boundary and pit exit: the derived values come
+from `stop_plan`, the fuel model and the degradation fit; a derived change inside
+`REFRESH_TOLERANCE` (1.0 L, 0.02 L/lap, 0.3 s) is not a revision, nothing is refreshed on
+pit road, and pit exit consumes the stop (`stops_done += 1`, the stop and tyre elements
+re-derived). A standing agent value survives a refresh while `sanity_check` still passes
+and is reverted to derived (with the reason) once it does not. Every version change is a
+`PlanRevision` in `plan.revisions` (capped at 40) and a `plan_revised` event (`old_version,
+new_version, provenance, agent, changes {name: {from, to}}, rationale, lap`); no agent
+trigger matches it and `get_recent_detector_events` leaves it out.
+
+**A revision is a proposal, not a write.** An agent calls `propose_plan_revision`, which
+goes to `engine.propose_plan_revision(proposal, agent=)` under the engine lock. The engine
+builds a typed FactSet (`plan.proposal_facts`: session, flags, player, fuel, tyres,
+standings, `stop_plan`, `fuel_projection`, `simulate_pit_outcome` for the proposed lap and
+every projection, but deliberately *not* the plan, so an earlier plan value cannot launder
+itself), then: every proposed number must match a deterministic figure of the same unit
+family near-exactly (`_backed`), and `sanity_check` must pass (stop before the run-dry
+lap, stop not in the past, no fewer stops than the fuel needs, the per-lap target reaches
+the flag and saves at most 15 %, pace within 3 % of the reference lap, posture one of
+push / neutral / conserve). A pass bumps the version with `provenance: agent_proposed`
+(and re-prices `fuel_to_add_l` when `next_stop_lap` moved); a failure appends an
+`accepted: false` revision with the reason, leaves the version and every element alone,
+and returns a tool result with the reason only, never the rejected numbers, so the agent
+cannot cite them. The tool also writes a `plan_proposal_rejected` activity record.
+
+**Plan in the agents.** The strategist's slice has `plan` (`plan_view(state, "full")`:
+values, version, stops done, provenance, missing; no rationales), the engineer's and the
+coach's have `plan_view(state, "posture")` (posture and pace target). Plan numbers are
+citable as typed facts at `race_state.plan.*` (slice) and `get_race_plan.*` (tool); units
+follow the field suffixes as everywhere else. The strategist policy targets the plan's
+`next_stop_lap`, and a `plan_stop` with no `target_lap` is stamped with it for the B1
+box-call rules. Plan calls are ordinary `strategist/pit_stop` calls, so the B3 `pit_stop`
+group arbitrates them against the engineer's `damage_stop` / `tyre_stop`. Tools added:
+`get_race_plan`, `get_lap_time_degradation`, `get_fuel_save_options`,
+`get_traffic_projection`, `get_undercut_overcut`, `propose_plan_revision` (strategist
+only; engineer and coach read the plan and degradation; the spotter reads traffic).
+
 **Event bus** (`bus.py`). Thread-safe producer with bounded drop-oldest subscriptions
 (sync `drain()` and asyncio `next_events()`), sync callbacks on the producer thread, and
 `history(limit)` for late joiners. `ActivityLog` (`pitwall/activity.py`) is the same bus
@@ -253,6 +309,26 @@ rule; `tests/test_real_evals.py` compares the committed `spa_run` set with its
 model, with tools answering from the recording, reports `spec_drift` per case and scores
 the new answer with the same code; `--judge-provider gemini` adds an advisory judge score.
 
+**Plan and projection evals** (stage 08). `evals/pitwall_checks.py` adds `projection_ok`
+(every role agent: an answer that claims a catch in N laps, a lap-time loss per lap or a
+fuel save per lap fails when that projection is ungrounded for the case state; a grounded
+figure is the validator's business) and `plan_ok` (strategist: every revision it got
+accepted in the case passes `plan.sanity_check` against the case state; a rejection is the
+system working and is not scored). `evals/run_pitwall.py` gives each case
+an `evals.pitwall_cases.PlanSandbox`, so a live strategist can propose without touching an
+engine. Degraded cases: `plan-degraded-no-degradation-fit` and `plan-degraded-no-gap-basis`
+(the strategist must not quote a degradation or catch figure that is not there), plus a
+swapped-fact case that swaps `race_state.plan.next_stop_lap` with `fuel_to_add_l`. The
+`spa_run` baseline carries both new keys (all true on the recorded answers).
+
+**Plan in RTV Desktop.** `rtv.desktop.model.plan` (Python only, no golden case: the
+frozen web pages have no counterpart) builds the live view's plan card, revision rows, the
+review's "race plan" timeline lane (accepted revisions and rejected proposals; the shared
+race-events lane drops `plan_revised` in the view only) and the audit's Plan column (what
+each run's `propose_plan_revision` calls did, from `result_full`).
+`rtv.desktop.widgets.plan.PlanPanel` sits in column B of the live view under the strategy
+panel.
+
 **Weekly live eval** (F4, `docs/WEEKLY_EVAL.md`). `scripts/weekly_eval.py` runs one 2x Spa
 replay with agents on, the real-journal cases and golden sets live, and the coach eval with
 the Gemini judge, then diffs everything with the previous week under
@@ -326,6 +402,15 @@ engine.pit_entry_pct -> float | None                  # learned from OnPitRoad e
 AgentRuntime(spec, provider, ...).invoke(event, state, events=...) -> RadioMessage | None
 FactSet, validate_output(...)         # pitwall/validator.py
 rtv.director: DirectorEngine, NoopDirector, ScenarioScript, injected_event, is_injected
+snapshot().laps: list[LapRecord]; snapshot().plan: RacePlan | None   # stage 08
+engine.propose_plan_revision(proposal, agent=) -> ProposalOutcome (.accepted, .to_tool, .payload)
+engine.pit_lane_loss_s                                # from RTV_PITWALL_PIT_LANE_LOSS_S
+rtv.racestate.plan: refresh_plan, propose_revision, sanity_check, plan_view(state, scope),
+    proposal_facts, stops_needed, is_race_segment, ELEMENTS, RacePlan, PlanRevision
+rtv.racestate.projection: lap_time_degradation, fuel_save_options, traffic_projection,
+    undercut_overcut, clean_stint_laps
+evals.pitwall_checks: projection_check(result, state), plan_check(state, revisions)
+evals.pitwall_cases: PlanSandbox(state), plan_degraded_cases()
 rtv.vision.live.publish_note(engine, session_id, note)
 ```
 
@@ -336,12 +421,12 @@ and `/vision/live`. FastAPI's `/docs` lists them all.
 
 ### Pending stages
 
-Prompts in `prompts/` (done ones in `prompts/done/`), revised by plan task D0. Stage 07
-(session lifecycle and autonomy) is done; the run order is 08, 10, 09.
+Prompts in `prompts/` (done ones in `prompts/done/`), revised by plan task D0. Stages 07
+(session lifecycle and autonomy) and 08 (race plan and projections) are done; the run
+order is 10, 09.
 
 | Stage | Prompt | Goal |
 |---|---|---|
-| 08 | `08-race-plan-projection.md` | A persistent `RacePlan` the agents revise, plus a deterministic projection layer |
 | 09 | `09-race-control-debrief.md` | Two new agents: race control during the race, a debrief after it |
 | 10 | `10-director-scheduler.md` | Implement the race director behind the stage-5 seam |
 
@@ -3497,6 +3582,46 @@ On the A1 Spa replay most refusals were arithmetic or units, not inventions. Cha
 - `evals/real/spa_run` baseline rebuilt: F3's two coach false positives pass again.
 - Kimi Spa replay deferred: the Kimi Code quota was blocked when A3 merged, so it merged on
   the offline checks; one combined Spa replay later measures A3 against `spa-kimi-run-A1/`.
+
+---
+
+## Stage 08 — race plan and projection layer (2026-11-01)
+
+Plan task D4; prompt `prompts/done/08-race-plan-projection.md`. Built: the projection
+layer (`racestate/projection.py`), the lap log and the versioned `RacePlan`
+(`racestate/models.py`, logic in `racestate/plan.py`), `engine.propose_plan_revision`,
+the `plan_revised` event, the six plan and projection tools, plan slices for the
+strategist, engineer and coach, `projection_ok` and `plan_ok`, two degraded cases and a
+plan swapped-fact case, the desktop plan panel, timeline lane and audit column. Tests:
+`tests/test_projection.py`, `tests/test_race_plan.py`, `tests/test_race_plan_e2e.py` (the
+synthetic race through the app with a scripted strategist: baseline plan at lap 2,
+survives the yellow, a rejected proposal changes nothing, the accepted one is the next
+version, the stop is consumed), `tests/test_desktop_plan.py`, four eval tests in
+`tests/test_pitwall_evals.py` and a real-Spa test in `tests/test_real_ibt.py` (plan v1 on
+lap 2 stopping on lap 13, revised to lap 12, the lap the driver pitted; no stops left
+after it; stint-1 degradation fits; traffic ungrounded). The `spa_run` baseline was
+rebuilt (new keys only; mean check score 0.958 to 0.964). The F1 round-trip is
+unchanged.
+
+Deviations:
+
+- The schema lives in `racestate/models.py` next to `RaceState` (it is part of the state
+  and its JSON); `racestate/plan.py` re-exports `RacePlan`, `PlanElement` and
+  `PlanRevision`.
+- The prompt's "fuel per stint" is two elements: `fuel_to_add_l` (the next stop's fill)
+  and `fuel_per_lap_target_l` (the consumption target), each typed by its suffix.
+- `get_undercut_overcut` is an extra tool over `projection.undercut_overcut`, which the
+  prompt lists as a projection but gives no tool; the spotter gets
+  `get_traffic_projection` because traffic is its subject.
+- D1 (previous-call context) merged while this was in progress; its previous-call
+  lines are left as they are, and the plan version reaches the agent through the plan
+  slice instead.
+- Rejected proposals are kept in `plan.revisions` (`accepted: false`) as well as the
+  activity log, so the review can show them from the state snapshots alone.
+- The plan exists only when `lifecycle.session_type == "race"`; practice and qualifying
+  have `plan: None` (an `.ibt` without session info has no type, so no plan).
+- The plan cases sit before the stage-3 degraded cases in `build_cases()` so the
+  existing test that names the last four cases is unchanged.
 
 ---
 

@@ -34,7 +34,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT))
 
-from evals.pitwall_cases import build_agent_cases, build_all_cases  # noqa: E402
+from evals.pitwall_cases import PlanSandbox, build_agent_cases, build_all_cases  # noqa: E402
 from evals.pitwall_checks import aggregate, check_for_agent, expected_calls  # noqa: E402
 from rtv.pitwall.agents import AGENT_REGISTRY  # noqa: E402
 from rtv.pitwall.framework import AgentRuntime, agent_model  # noqa: E402
@@ -115,6 +115,10 @@ async def _run_agent(agent: str, cases: list, args) -> list[dict]:
     rows: list[dict] = []
     print(f"\n########## {agent} ({spec.model}) ##########")
     for case in cases:
+        # Stage 08: the plan tool needs an engine; the sandbox applies proposals to a
+        # copy of the case's state with the same rules and keeps them for plan_ok.
+        sandbox = PlanSandbox(case.state)
+        runtime.tool_extras["engine"] = sandbox
         message = await runtime.invoke(case.event, case.state, events=case.events)
         if message is None:
             print(f"\n# {case.name}\n  ! the agent produced nothing")
@@ -125,6 +129,7 @@ async def _run_agent(agent: str, cases: list, args) -> list[dict]:
             case.state,
             case.event,
             **_kwargs_for(agent, case, args.pit_loss),
+            **({"revisions": sandbox.revisions} if agent == "strategist" else {}),
         )
         rows.append({**score, "agent": agent})
         print(f"\n# {case.name}  ({case.event.key}, lap {case.event.lap})")
