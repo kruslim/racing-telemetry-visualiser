@@ -220,6 +220,13 @@ rule; `tests/test_real_evals.py` compares the committed `spa_run` set with its
 model, with tools answering from the recording, reports `spec_drift` per case and scores
 the new answer with the same code; `--judge-provider gemini` adds an advisory judge score.
 
+**Weekly live eval** (F4, `docs/WEEKLY_EVAL.md`). `scripts/weekly_eval.py` runs one 2x Spa
+replay with agents on, the real-journal cases and golden sets live, and the coach eval with
+the Gemini judge, then diffs everything with the previous week under
+`/mnt/project-files/weekly-evals/` (`REPORT.md`, headlines first; `spec_drift`-style model
+and prompt hashes per agent). It stops cleanly on a Kimi 429; `--dry-run` calls no model. A
+Claude Code scheduled task runs it every Monday.
+
 **Session-end hook** (`rtv.session_end`). `AppServices.on_session_end` is a list of
 callbacks; each closed journal run fires them once, on a single worker thread (the frame
 path never waits), with a `SessionEnded(session_id, run_id, journal_path, source,
