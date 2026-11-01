@@ -18,6 +18,7 @@ An offline ``pytest`` run never reaches :func:`build_client`.
 from __future__ import annotations
 
 import os
+import re
 import threading
 from typing import Any
 
@@ -246,6 +247,38 @@ class UsageLedger:
     def reset(self) -> None:
         with self._lock:
             self._layers.clear()
+
+
+#: Kimi's chat-template control tokens, as they appear when the backend fails to parse
+#: a tool call and hands its raw markup back inside an argument: ``<|close|>``,
+#: ``<|sep|>``, ``<|oopen|>argument key=...``, ``<|diagnosis<|string|>``, ``<|/call>``.
+#: Seen in the orchestrator's ``corner`` field on the A2 coach eval (2 of 5 cases).
+KIMI_MARKUP_RE = re.compile(r"<\|/?[A-Za-z_][A-Za-z0-9_]*")
+
+
+def find_markup(value: Any, path: str = "") -> str | None:
+    """Where Kimi tool-call markup sits in ``value`` (a tool input or text), else ``None``.
+
+    Walks dicts and lists, so the answer names the field (``corner``, ``cues[1]``) plus
+    a short excerpt of the token. A payload that carries any is a malformed call: its
+    fields hold fragments of other fields, never content to show a driver.
+    """
+    if isinstance(value, str):
+        m = KIMI_MARKUP_RE.search(value)
+        if m is None:
+            return None
+        return f"{path or 'text'}: {value[m.start():m.start() + 40]!r}"
+    if isinstance(value, dict):
+        for key, item in value.items():
+            found = find_markup(item, f"{path}.{key}" if path else str(key))
+            if found:
+                return found
+    elif isinstance(value, list | tuple):
+        for i, item in enumerate(value):
+            found = find_markup(item, f"{path}[{i}]")
+            if found:
+                return found
+    return None
 
 
 #: The one ledger this process keeps.

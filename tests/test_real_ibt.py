@@ -374,6 +374,26 @@ def test_stage08_projection_and_plan_on_the_real_race(client):
     assert state.plan.stop_count is not None and state.plan.stop_count.value == 0
 
 
+def test_findings_place_the_venue_names_on_the_real_lap(client):
+    """Task A4: the names the prose check resolves against, from the real Spa trace."""
+    from rtv.coaching.agent.prose import check_prose
+
+    f = client.get(
+        "/api/v1/coaching/lap-findings",
+        params={"session_id": client.session_id, "main_lap": 8, "ref_lap": 6},
+    ).json()
+    assert f["venue"] == "spa"
+    places = {p["name"]: p for p in f["places"]}
+    t1 = f["corners"][0]
+    assert t1["name"] == "La Source" and places["La Source"]["corner"] == t1["label"]
+    assert places["Kemmel"]["kind"] == "straight" and places["Kemmel"]["corner"] is None
+    named = [c for c in f["corners"] if c["name"]]
+    right = [(f"advice[{c['label']}]", c["label"], f"{c['name']} again.") for c in named]
+    assert check_prose(right, f).issues == []
+    other = named[1]
+    wrong = [(f"advice[{t1['label']}]", t1["label"], f"{other['name']} again.")]
+    assert check_prose(wrong, f).kinds == ["name"]
+
 def test_stage09_race_control_on_the_real_race(client):
     """Stage 09 part A: an unlimited race with no driver flag, and blue flags as a blind spot."""
     from rtv.pitwall.agents.race_control import RACE_CONTROL
@@ -411,3 +431,41 @@ def test_stage09_race_control_on_the_real_race(client):
     # A clean, unlimited race: the race-control agent is never woken.
     runtime = AgentRuntime(RACE_CONTROL, provider=None)
     assert [e.key for e in history if runtime.match(e, state)] == []
+
+
+def test_the_no_key_debrief_of_the_real_race_references_only_recorded_laps(client, monkeypatch):
+    """Stage 09 part B on real telemetry: the agents-off replay, debriefed with no key."""
+    import rtv.llm
+    from rtv.debrief.service import DebriefService
+
+    run = _journal_run(client)
+    services = client.app.state.services
+    monkeypatch.setattr(rtv.llm, "is_configured", lambda _s=None: False)
+    service = DebriefService(services.settings, services.repo, services.coaching)
+    doc = service.generate(client.session_id, run["run_id"])
+    assert doc["analysis"]["available"] is False and doc["note"]
+    assert {s["status"] for s in doc["sections"]} == {"unavailable"}
+    recorded = set(doc["references"]["laps"])
+    assert IN_LAP in recorded and OUT_LAP in recorded
+    det = doc["deterministic"]
+    named = {r["lap"] for r in det["laps"]} | {r["lap"] for r in det["time_lost"]}
+    named |= {lap for r in det["recurring"] for lap in r["laps"]} | {
+        r["worst_lap"] for r in det["recurring"]
+    }
+    named.discard(None)
+    unfinished = {r["lap"] for r in det["laps"] if r["lap_time_s"] is None}
+    assert named - unfinished <= recorded
+    assert det["reference_lap"] in recorded
+    assert det["result"]["best_time"] == pytest.approx(140.618, abs=0.01)
+    # Spa's corners carry their names into the debrief, as in the review.
+    assert "La Source" in doc["references"]["corners"].values()
+    assert det["recurring"], "19 laps of Spa repeat some losses"
+    # One numbering on every lap: the session corner map the live events use, so a label
+    # in the debrief is the same corner on every lap (Layer-1 numbers each lap pair anew).
+    track = client.get("/api/v1/racestate").json()["track"]
+    session_map = {c["label"]: c["name"] for c in track["corners"]}
+    for row in det["recurring"]:
+        assert session_map.get(row["corner"]) == row["name"], row
+    for lap in det["time_lost"]:
+        for top in lap["top"]:
+            assert session_map.get(top["corner"]) == top["name"], top

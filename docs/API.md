@@ -20,7 +20,7 @@ short reference for the routes the UIs and the MCP server use. The vision routes
 | GET | `/sessions/{id}/trackmap?color=Speed` | Decimated GPS polyline |
 | GET | `/sessions/{id}/track?lap=` | Layout facts from the header + the venue's named corners located on the lap |
 | GET | `/tracks` · `/tracks/{key}` | Pre-loaded venues (named corners, straights, pit lane; OSM, ODbL) |
-| GET | `/coaching/lap-findings?session_id=…&main_lap=5&ref_lap=3` | Layer-1 corner findings, driver KPIs, analyst stats |
+| GET | `/coaching/lap-findings?session_id=…&main_lap=5&ref_lap=3` | Layer-1 corner findings, driver KPIs, analyst stats, the venue's named `places` on the lap |
 | GET | `/coaching/agents` | The deterministic analysts behind the findings (ids, names, codes) |
 | POST | `/coaching/chat` | LLM race engineer: `{session_id, main_lap, ref_lap, question}` → grounded answer + graph annotations (needs `KIMI_CODE_API_KEY`) |
 | POST | `/import` · GET `/import/{job_id}` | Async `.ibt` import from a server-side path + status |
@@ -33,6 +33,7 @@ short reference for the routes the UIs and the MCP server use. The vision routes
 | GET | `/pitwall/tts` · `/pitwall/audio/{message_id}` | Role voice table + synthesised radio audio |
 | POST | `/pitwall/driver-message` | Push-to-talk from the cockpit onto the channel |
 | GET | `/pitwall/health` | Engine, live poller, replay, agents and director in one payload |
+| GET · POST | `/sessions/{id}/debrief?run=` | The run's post-race debrief (404 when none); POST regenerates it from the journal (calls Kimi when a key is set; see PITWALL.md) |
 | GET | `/health` | Liveness |
 
 ### WebSocket `/ws/live`

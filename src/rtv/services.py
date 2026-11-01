@@ -10,6 +10,7 @@ from pathlib import Path
 
 from rtv.coaching.features import CoachingService
 from rtv.config import Settings
+from rtv.debrief.service import DebriefService
 from rtv.director import NoopDirector, ScenarioScript
 from rtv.domain.models import ConnectionState
 from rtv.ingest.frame import Frame
@@ -136,6 +137,9 @@ class AppServices:
     on_session_end: SessionEndHooks = field(default_factory=SessionEndHooks)
     #: Cuts journal runs at session segment boundaries (None without a recorder).
     segments: SegmentJournal | None = None
+    #: The post-race debrief of journal runs (stage 09 part B). Always present: a
+    #: journal recorded earlier can be debriefed with the pitwall off.
+    debrief: DebriefService | None = None
 
     def close(self) -> None:
         try:
@@ -279,6 +283,7 @@ def build_services(settings: Settings) -> AppServices:
     recorder: SessionRecorder | None = None
     tts = build_radio_tts(settings)
     hooks = SessionEndHooks()
+    notifier = None
     segments: SegmentJournal | None = None
     if settings.pitwall:
         engine = RaceStateEngine(
@@ -352,6 +357,10 @@ def build_services(settings: Settings) -> AppServices:
         notifier = build_notifier(settings.pitwall_session_end_notifier)
         if not isinstance(notifier, NullNotifier):
             hooks.append(notify_with(notifier))
+    debrief = DebriefService(settings, repo, coaching, notifier=notifier)
+    if settings.pitwall:
+        # After the summary: the debrief reads the stored <run_id>.summary.json.
+        hooks.append(debrief.on_session_end)
         if pitwall is not None:
             pitwall.feed.subscribe_callback(recorder.on_radio)
 
@@ -455,6 +464,7 @@ def build_services(settings: Settings) -> AppServices:
         recorder=recorder,
         vision=vision,
         on_session_end=hooks,
+        debrief=debrief,
         segments=segments,
     )
 

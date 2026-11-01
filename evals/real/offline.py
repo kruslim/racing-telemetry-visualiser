@@ -27,6 +27,7 @@ from typing import Any
 from evals.pitwall_checks import check_for_agent
 from evals.real.cases import BASELINE_FILE, load_case_set, set_dir
 from rtv.coaching.agent.validation import name_key, split_corner
+from rtv.grounding.corner_names import CornerNames
 from rtv.pitwall import validity
 from rtv.pitwall.agents import AGENT_REGISTRY
 from rtv.pitwall.framework import EventRef, RadioMessage
@@ -118,6 +119,15 @@ def corner_issues(output: dict[str, Any], state: RaceState) -> list[str]:
         label = f"T{int(match.group(1))}"
         if label not in corners:
             issues.append(f"prose names {match.group(0)!r}, not in the session's corner map")
+    if corners:
+        # Task A4: names are facts. What the driver hears is held to the call's corner; the
+        # detail text only to the labels it writes the names next to.
+        names = CornerNames.build({c.label: c.name for c in corners.values()})
+        about = [split_corner(cited)[0] if cited else None]
+        issues += [i.message for i in names.check(output.get("spoken_text") or "", about,
+                                                  "spoken_text")]
+        issues += [i.message for i in names.check(output.get("detail_text") or "", (),
+                                                  "detail_text")]
     return sorted(set(issues))
 
 
