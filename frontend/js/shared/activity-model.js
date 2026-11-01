@@ -15,6 +15,20 @@
  * `edgesFor` where they have one.
  */
 
+/**
+ * Every long decimal in a text rounded for reading: the validator's reason
+ * "4.6610630306531675 (no figure matches)" reads "4.66 (no figure matches)".
+ * Numbers with `digits` decimals or fewer, integers and lap times are untouched.
+ */
+export function roundFigures(text, digits = 2) {
+  if (typeof text !== 'string') return text == null ? '' : String(text);
+  return text.replace(/(?<![\w.:])(-?\d+)\.(\d+)(?![\d.])/g, (whole, int, frac) => {
+    if (frac.length <= digits) return whole;
+    const value = Number(`${int}.${frac}`);
+    return String(Number(value.toFixed(digits)));
+  });
+}
+
 export const AGENTS = ['strategist', 'vehicle_engineer', 'spotter', 'coach'];
 
 /** Graph node ids, in pipeline order. flow-graph.js lays these out. */
@@ -225,7 +239,9 @@ export function apply(model, record) {
       if (run) {
         run.validations.push({
           ok: !!data.ok,
-          unsupported: data.unsupported || [],
+          unsupported: (data.unsupported || []).map((u) => roundFigures(u)),
+          // Why each figure failed, long decimals rounded for reading (task A3).
+          reasons: (data.unsupported_detail || []).map((r) => roundFigures(r)),
           repaired: !!data.repaired,
           wordCount: data.word_count,
         });

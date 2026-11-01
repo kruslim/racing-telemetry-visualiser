@@ -333,6 +333,9 @@ uv pip install --python .venv\Scripts\python.exe -e ".[desktop]"
 
 It is a client of the same API, built from the UI redesign brief
 (`docs/ui-redesign/UI_REDESIGN_BRIEF.md`); `docs/DESKTOP.md` has the details.
+With the `[voice]` extra and `RTV_VOICE_ENABLED=true` the driver can hold a key or a
+wheel button and ask the pitwall by voice; speech-to-text runs locally (faster-whisper),
+so no audio leaves the PC (`docs/DESKTOP.md`, "Push-to-talk questions").
 
 ---
 

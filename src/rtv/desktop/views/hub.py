@@ -36,6 +36,7 @@ class Hub(QObject):
     catalog_changed = Signal(set)
     on_air_changed = Signal(dict)
     notice = Signal(str)
+    driver_unheard = Signal(str)  # a voice question the server could not take (no pitwall)
 
     def __init__(self, api: Api, parent: QObject | None = None, *, speak: bool = True):
         super().__init__(parent)
@@ -70,6 +71,18 @@ class Hub(QObject):
         self._radio_tick.setInterval(1000)
         self._radio_tick.timeout.connect(self.radio.tick)
         api.failed.connect(self._failed)
+        self.voice = None  # PushToTalk, when RTV_VOICE_ENABLED (attach_voice)
+        self.voice_keys = None  # its KeyWatcher
+
+    def attach_voice(self, voice, keys=None) -> None:
+        """Wire push-to-talk: transcripts become questions, and the mic mutes on air."""
+        self.voice, self.voice_keys = voice, keys
+        voice.transcribed.connect(
+            lambda text: self.ask(text, "voice", self.driver_unheard.emit)
+        )
+        self.on_air_changed.connect(
+            lambda snap: voice.set_radio_speaking(bool(snap.get("speaking")))
+        )
 
     # ---- lifecycle -----------------------------------------------------
     def start(self) -> None:
@@ -78,10 +91,16 @@ class Hub(QObject):
         self.telemetry.start()
         self._poll.start()
         self._radio_tick.start()
+        if self.voice_keys is not None:
+            self.voice_keys.start()
+        if self.voice is not None:
+            self.voice.warm()
 
     def stop(self) -> None:
         self._poll.stop()
         self._radio_tick.stop()
+        if self.voice_keys is not None:
+            self.voice_keys.stop()
         self.pitwall.stop()
         self.telemetry.stop()
         self.radio.clear()
@@ -268,11 +287,36 @@ class Hub(QObject):
             err=lambda _s, d: self.notice.emit(d),
         )
 
-    def send_driver(self, text: str, on_unheard=None) -> None:
+    def ask(self, text: str, source: str = "text", on_unheard=None) -> None:
+        """Ask the pitwall a question. ``source`` is ``"text"`` or ``"voice"`` (C2).
+
+        The transcript and its answer arrive on the radio socket; the answer's
+        ``in_reply_to`` ties it to the transcript.
+        """
+
         def err(status, detail):
             if status == 503 and on_unheard:
                 on_unheard(text)
             else:
                 self.notice.emit(detail)
 
-        self.api.post("/pitwall/driver-message", {"text": text, "source": "text"}, err=err)
+        self.api.post("/pitwall/driver-message", {"text": text, "source": source}, err=err)
+
+    def send_driver(self, text: str, on_unheard=None) -> None:
+        """Typed text from the radio box: :meth:`ask` with ``source="text"``."""
+        self.ask(text, "text", on_unheard)
+
+
+def bind_voice(hub: Hub, feed, unheard) -> None:
+    """Show a radio feed's push-to-talk row for the hub's voice, if it has one."""
+    voice = hub.voice
+    if voice is None:
+        return
+    feed.set_voice(voice.available, voice.key_label, voice.reason)
+    if voice.state not in ("idle", "off"):
+        feed.set_voice_state(voice.state, voice.detail)
+    voice.state_changed.connect(feed.set_voice_state)
+    feed.talk_pressed.connect(voice.press)
+    feed.talk_released.connect(voice.release)
+    hub.driver_unheard.connect(unheard)
+

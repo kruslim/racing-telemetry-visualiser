@@ -36,6 +36,7 @@ from rtv.pitwall.activity import Tracer, safe_trace, summarize
 from rtv.pitwall.agent_input import SPOKEN_WORD_LIMIT
 from rtv.pitwall.agent_input import as_text as _as_text
 from rtv.pitwall.validator import FactSet, GroundingReport, validate_output
+from rtv.racestate.derived import agent_payload
 from rtv.racestate.models import EventType, RaceEvent, RaceState
 
 log = get_logger("pitwall.framework")
@@ -100,7 +101,7 @@ class EventRef(BaseModel):
 
 
 #: What a call aired after its ``max_age_s`` starts with, on the radio and in TTS.
-LATE_PREFIX = "Late call: "
+LATE_PREFIX = agent_input.LATE_PREFIX
 
 
 class RadioMessage(BaseModel):
@@ -173,6 +174,9 @@ class RadioMessage(BaseModel):
     superseded: bool = False
     superseded_by: str | None = None
     superseded_reason: str | None = None
+    #: The ``message_id`` of the driver transcript this answers (a driver
+    #: question, :mod:`rtv.pitwall.questions`); ``None`` for every other call.
+    in_reply_to: str | None = None
 
     @computed_field  # type: ignore[prop-decorator]
     @property
@@ -501,19 +505,24 @@ class AgentRuntime:
         events: Sequence[RaceEvent] = (),
         radio_history: Sequence[RadioMessage] = (),
         superseded: Sequence[Mapping[str, Any]] = (),
+        previous_calls: Sequence[Mapping[str, Any]] = (),
     ) -> RadioMessage | None:
         """Run the agent once. Returns ``None`` only on an unrecoverable error.
 
         ``superseded`` is this agent's last call that another agent's call kept off
         the air (:meth:`RadioFeed.take_superseded`), shown as one line so it does
-        not repeat it.
+        not repeat it. ``previous_calls`` are this agent's own earlier calls
+        (:func:`rtv.pitwall.agent_input.previous_call` entries, oldest first), shown
+        so it revises them rather than restating them.
         """
         self.invocations += 1
         started = time.perf_counter()
         turns_before = self.turns
         run = self._begin_trace(event, events, radio_history)
         try:
-            message = await self._invoke(event, state, events, radio_history, superseded)
+            message = await self._invoke(
+                event, state, events, radio_history, superseded, previous_calls
+            )
         finally:
             # A run that failed before its input was built still gets a run_start.
             self._start_run(None)
@@ -543,10 +552,14 @@ class AgentRuntime:
         events: Sequence[RaceEvent],
         radio_history: Sequence[RadioMessage],
         superseded: Sequence[Mapping[str, Any]] = (),
+        previous_calls: Sequence[Mapping[str, Any]] = (),
     ) -> RadioMessage | None:
         spec = self.spec
         slice_ = spec.state_slice(state)
 
+        # The agent sees the event with its speeds in km/h and its streak counts
+        # derived (rtv.racestate.derived); the FactSet holds exactly that view.
+        event = event.model_copy(update={"payload": agent_payload(event.payload)})
         facts = FactSet()
         facts.add("race_state", slice_)
         facts.add("event", event.payload)
@@ -572,6 +585,7 @@ class AgentRuntime:
             prefetched=prefetched,
             superseded=superseded,
             provider=self._provider_info(),
+            previous=previous_calls,
         )
         self._start_run(record, state)
         first = agent_input.model_input(record)
@@ -964,6 +978,8 @@ class AgentRuntime:
             ok=report.ok and policy is None,
             policy=policy,
             unsupported=list(report.unsupported),
+            # Why each figure failed, for the audit (rendered there with rounded values).
+            unsupported_detail=list(report.unsupported_detail),
             word_count=report.word_count,
             over_word_limit=report.over_word_limit,
             repaired=repaired,

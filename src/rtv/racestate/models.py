@@ -83,6 +83,12 @@ class EventType(StrEnum):
     #: accepted strategist proposal. ``payload`` says what changed, why, and the old
     #: and new plan version. No agent is woken by it.
     PLAN_REVISED = "plan_revised"
+    #: Not a detector event: the driver asked the pitwall something (push-to-talk
+    #: or the desktop text box). ``payload.text`` is the question, ``payload.owner``
+    #: the agent the router chose, ``payload.intent`` a template lookup or ``None``,
+    #: ``payload.question_id`` the driver transcript's radio ``message_id``. See
+    #: :mod:`rtv.pitwall.questions`. On the bus so the journal records it.
+    DRIVER_QUESTION = "driver_question"
 
 
 class FlagPhase(StrEnum):
@@ -280,6 +286,13 @@ class TyreState(BaseModel):
     temp_trend: dict[str, float] = Field(default_factory=dict)
     pressure_trend: dict[str, float] = Field(default_factory=dict)
     stint_laps: int = 0
+    #: Per corner, the last completed lap's mean minus the stint's first lap mean
+    #: (``*_since_stint_start``) and minus the lap before it (``*_vs_previous_lap``).
+    #: Derived once here so an agent copies the change instead of computing it.
+    temp_change_since_stint_start: dict[str, float] = Field(default_factory=dict)
+    pressure_change_since_stint_start: dict[str, float] = Field(default_factory=dict)
+    temp_change_vs_previous_lap: dict[str, float] = Field(default_factory=dict)
+    pressure_change_vs_previous_lap: dict[str, float] = Field(default_factory=dict)
 
 
 class CarHealthState(BaseModel):

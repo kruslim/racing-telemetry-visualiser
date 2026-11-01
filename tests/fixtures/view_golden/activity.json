@@ -188,14 +188,16 @@
         "unsupported": [
          "4.66"
         ],
+        "reasons": [],
         "repaired": false,
         "word_count": 27
        },
        {
         "ok": false,
         "unsupported": [
-         "4.6610630306531675"
+         "4.66"
         ],
+        "reasons": [],
         "repaired": true,
         "word_count": 26
        }
@@ -324,6 +326,7 @@
        {
         "ok": true,
         "unsupported": [],
+        "reasons": [],
         "repaired": false,
         "word_count": 23
        }
@@ -436,6 +439,7 @@
        {
         "ok": true,
         "unsupported": [],
+        "reasons": [],
         "repaired": false,
         "word_count": 20
        }
@@ -562,6 +566,7 @@
        {
         "ok": true,
         "unsupported": [],
+        "reasons": [],
         "repaired": false,
         "word_count": 25
        }
@@ -699,6 +704,7 @@
        {
         "ok": true,
         "unsupported": [],
+        "reasons": [],
         "repaired": false,
         "word_count": 22
        }
@@ -822,6 +828,7 @@
        {
         "ok": true,
         "unsupported": [],
+        "reasons": [],
         "repaired": false,
         "word_count": 14
        }
@@ -961,6 +968,7 @@
        {
         "ok": true,
         "unsupported": [],
+        "reasons": [],
         "repaired": false,
         "word_count": 22
        }
@@ -1101,6 +1109,7 @@
         "unsupported": [
          "10"
         ],
+        "reasons": [],
         "repaired": false,
         "word_count": 14
        },
@@ -1109,6 +1118,7 @@
         "unsupported": [
          "10"
         ],
+        "reasons": [],
         "repaired": true,
         "word_count": 10
        }
@@ -1237,6 +1247,7 @@
        {
         "ok": true,
         "unsupported": [],
+        "reasons": [],
         "repaired": false,
         "word_count": 17
        }
@@ -1373,6 +1384,7 @@
        {
         "ok": true,
         "unsupported": [],
+        "reasons": [],
         "repaired": false,
         "word_count": 22
        }
@@ -1500,6 +1512,7 @@
        {
         "ok": true,
         "unsupported": [],
+        "reasons": [],
         "repaired": false,
         "word_count": 24
        }
@@ -1696,6 +1709,7 @@
        {
         "ok": true,
         "unsupported": [],
+        "reasons": [],
         "repaired": false,
         "word_count": 17
        }
@@ -1841,6 +1855,7 @@
        {
         "ok": true,
         "unsupported": [],
+        "reasons": [],
         "repaired": false,
         "word_count": 13
        }
@@ -2008,12 +2023,14 @@
        {
         "ok": false,
         "unsupported": [],
+        "reasons": [],
         "repaired": false,
         "word_count": 28
        },
        {
         "ok": true,
         "unsupported": [],
+        "reasons": [],
         "repaired": true,
         "word_count": 24
        }
@@ -2176,6 +2193,7 @@
        {
         "ok": true,
         "unsupported": [],
+        "reasons": [],
         "repaired": false,
         "word_count": 24
        }
@@ -2306,6 +2324,7 @@
        {
         "ok": true,
         "unsupported": [],
+        "reasons": [],
         "repaired": false,
         "word_count": 16
        }
@@ -2443,6 +2462,7 @@
        {
         "ok": true,
         "unsupported": [],
+        "reasons": [],
         "repaired": false,
         "word_count": 13
        }
@@ -2568,6 +2588,7 @@
        {
         "ok": true,
         "unsupported": [],
+        "reasons": [],
         "repaired": false,
         "word_count": 21
        }
@@ -2705,6 +2726,7 @@
        {
         "ok": true,
         "unsupported": [],
+        "reasons": [],
         "repaired": false,
         "word_count": 20
        }
@@ -2809,6 +2831,7 @@
        {
         "ok": true,
         "unsupported": [],
+        "reasons": [],
         "repaired": false,
         "word_count": 14
        }
@@ -2983,12 +3006,14 @@
         "unsupported": [
          "+16"
         ],
+        "reasons": [],
         "repaired": false,
         "word_count": 23
        },
        {
         "ok": true,
         "unsupported": [],
+        "reasons": [],
         "repaired": true,
         "word_count": 24
        }
@@ -3170,6 +3195,7 @@
        {
         "ok": true,
         "unsupported": [],
+        "reasons": [],
         "repaired": false,
         "word_count": 17
        }
@@ -3298,6 +3324,7 @@
        {
         "ok": true,
         "unsupported": [],
+        "reasons": [],
         "repaired": false,
         "word_count": 22
        }
@@ -3448,6 +3475,7 @@
        {
         "ok": true,
         "unsupported": [],
+        "reasons": [],
         "repaired": false,
         "word_count": 16
        }
@@ -3594,6 +3622,7 @@
        {
         "ok": true,
         "unsupported": [],
+        "reasons": [],
         "repaired": false,
         "word_count": 21
        }
@@ -3723,6 +3752,7 @@
        {
         "ok": true,
         "unsupported": [],
+        "reasons": [],
         "repaired": false,
         "word_count": 14
        }
@@ -3894,12 +3924,14 @@
          "71.8",
          "48"
         ],
+        "reasons": [],
         "repaired": false,
         "word_count": 26
        },
        {
         "ok": true,
         "unsupported": [],
+        "reasons": [],
         "repaired": true,
         "word_count": 23
        }
@@ -4033,6 +4065,7 @@
        {
         "ok": true,
         "unsupported": [],
+        "reasons": [],
         "repaired": false,
         "word_count": 14
        }
@@ -4172,6 +4205,7 @@
        {
         "ok": true,
         "unsupported": [],
+        "reasons": [],
         "repaired": false,
         "word_count": 10
        }
@@ -4309,6 +4343,7 @@
        {
         "ok": true,
         "unsupported": [],
+        "reasons": [],
         "repaired": false,
         "word_count": 19
        }
@@ -4559,14 +4594,16 @@
         "unsupported": [
          "4.66"
         ],
+        "reasons": [],
         "repaired": false,
         "word_count": 27
        },
        {
         "ok": false,
         "unsupported": [
-         "4.6610630306531675"
+         "4.66"
         ],
+        "reasons": [],
         "repaired": true,
         "word_count": 26
        }
@@ -4695,6 +4732,7 @@
        {
         "ok": true,
         "unsupported": [],
+        "reasons": [],
         "repaired": false,
         "word_count": 23
        }
@@ -4807,6 +4845,7 @@
        {
         "ok": true,
         "unsupported": [],
+        "reasons": [],
         "repaired": false,
         "word_count": 20
        }
@@ -4933,6 +4972,7 @@
        {
         "ok": true,
         "unsupported": [],
+        "reasons": [],
         "repaired": false,
         "word_count": 25
        }
@@ -5070,6 +5110,7 @@
        {
         "ok": true,
         "unsupported": [],
+        "reasons": [],
         "repaired": false,
         "word_count": 22
        }
@@ -5193,6 +5234,7 @@
        {
         "ok": true,
         "unsupported": [],
+        "reasons": [],
         "repaired": false,
         "word_count": 14
        }
@@ -5332,6 +5374,7 @@
        {
         "ok": true,
         "unsupported": [],
+        "reasons": [],
         "repaired": false,
         "word_count": 22
        }
@@ -5472,6 +5515,7 @@
         "unsupported": [
          "10"
         ],
+        "reasons": [],
         "repaired": false,
         "word_count": 14
        },
@@ -5480,6 +5524,7 @@
         "unsupported": [
          "10"
         ],
+        "reasons": [],
         "repaired": true,
         "word_count": 10
        }
@@ -5731,14 +5776,16 @@
         "unsupported": [
          "4.66"
         ],
+        "reasons": [],
         "repaired": false,
         "word_count": 27
        },
        {
         "ok": false,
         "unsupported": [
-         "4.6610630306531675"
+         "4.66"
         ],
+        "reasons": [],
         "repaired": true,
         "word_count": 26
        }
@@ -5867,6 +5914,7 @@
        {
         "ok": true,
         "unsupported": [],
+        "reasons": [],
         "repaired": false,
         "word_count": 23
        }
@@ -5979,6 +6027,7 @@
        {
         "ok": true,
         "unsupported": [],
+        "reasons": [],
         "repaired": false,
         "word_count": 20
        }
@@ -6105,6 +6154,7 @@
        {
         "ok": true,
         "unsupported": [],
+        "reasons": [],
         "repaired": false,
         "word_count": 25
        }
@@ -6242,6 +6292,7 @@
        {
         "ok": true,
         "unsupported": [],
+        "reasons": [],
         "repaired": false,
         "word_count": 22
        }
@@ -6365,6 +6416,7 @@
        {
         "ok": true,
         "unsupported": [],
+        "reasons": [],
         "repaired": false,
         "word_count": 14
        }
@@ -6504,6 +6556,7 @@
        {
         "ok": true,
         "unsupported": [],
+        "reasons": [],
         "repaired": false,
         "word_count": 22
        }
@@ -6644,6 +6697,7 @@
         "unsupported": [
          "10"
         ],
+        "reasons": [],
         "repaired": false,
         "word_count": 14
        },
@@ -6652,6 +6706,7 @@
         "unsupported": [
          "10"
         ],
+        "reasons": [],
         "repaired": true,
         "word_count": 10
        }
@@ -6903,14 +6958,16 @@
         "unsupported": [
          "4.66"
         ],
+        "reasons": [],
         "repaired": false,
         "word_count": 27
        },
        {
         "ok": false,
         "unsupported": [
-         "4.6610630306531675"
+         "4.66"
         ],
+        "reasons": [],
         "repaired": true,
         "word_count": 26
        }
@@ -7039,6 +7096,7 @@
        {
         "ok": true,
         "unsupported": [],
+        "reasons": [],
         "repaired": false,
         "word_count": 23
        }
@@ -7151,6 +7209,7 @@
        {
         "ok": true,
         "unsupported": [],
+        "reasons": [],
         "repaired": false,
         "word_count": 20
        }
@@ -7277,6 +7336,7 @@
        {
         "ok": true,
         "unsupported": [],
+        "reasons": [],
         "repaired": false,
         "word_count": 25
        }
@@ -7414,6 +7474,7 @@
        {
         "ok": true,
         "unsupported": [],
+        "reasons": [],
         "repaired": false,
         "word_count": 22
        }
@@ -7537,6 +7598,7 @@
        {
         "ok": true,
         "unsupported": [],
+        "reasons": [],
         "repaired": false,
         "word_count": 14
        }
@@ -7676,6 +7738,7 @@
        {
         "ok": true,
         "unsupported": [],
+        "reasons": [],
         "repaired": false,
         "word_count": 22
        }
@@ -7816,6 +7879,7 @@
         "unsupported": [
          "10"
         ],
+        "reasons": [],
         "repaired": false,
         "word_count": 14
        },
@@ -7824,6 +7888,7 @@
         "unsupported": [
          "10"
         ],
+        "reasons": [],
         "repaired": true,
         "word_count": 10
        }
@@ -8018,6 +8083,7 @@
       {
        "ok": true,
        "unsupported": [],
+       "reasons": [],
        "repaired": false,
        "word_count": 19
       }
@@ -8157,6 +8223,7 @@
       {
        "ok": true,
        "unsupported": [],
+       "reasons": [],
        "repaired": false,
        "word_count": 10
       }
@@ -8284,6 +8351,7 @@
       {
        "ok": true,
        "unsupported": [],
+       "reasons": [],
        "repaired": false,
        "word_count": 14
       }
@@ -8455,12 +8523,14 @@
         "71.8",
         "48"
        ],
+       "reasons": [],
        "repaired": false,
        "word_count": 26
       },
       {
        "ok": true,
        "unsupported": [],
+       "reasons": [],
        "repaired": true,
        "word_count": 23
       }
@@ -8595,6 +8665,7 @@
       {
        "ok": true,
        "unsupported": [],
+       "reasons": [],
        "repaired": false,
        "word_count": 14
       }
@@ -9067,6 +9138,215 @@
     null
    ],
    "expect": []
+  },
+  {
+   "name": "roundFigures of a raw float",
+   "module": "activity",
+   "fn": "roundFigures",
+   "args": [
+    "withheld 4.66, 4.6610630306531675"
+   ],
+   "expect": "withheld 4.66, 4.66"
+  },
+  {
+   "name": "roundFigures of a reason",
+   "module": "activity",
+   "fn": "roundFigures",
+   "args": [
+    "27.74091339111328 km/h (no speed figure in the data matches)"
+   ],
+   "expect": "27.74 km/h (no speed figure in the data matches)"
+  },
+  {
+   "name": "roundFigures of a lap time stays",
+   "module": "activity",
+   "fn": "roundFigures",
+   "args": [
+    "1:32.418 and 0.9674"
+   ],
+   "expect": "1:32.418 and 0.97"
+  },
+  {
+   "name": "roundFigures of short decimals stay",
+   "module": "activity",
+   "fn": "roundFigures",
+   "args": [
+    "2.5 laps, 0.97 and 12"
+   ],
+   "expect": "2.5 laps, 0.97 and 12"
+  },
+  {
+   "name": "roundFigures of a tiny negative",
+   "module": "activity",
+   "fn": "roundFigures",
+   "args": [
+    "-0.0001 s"
+   ],
+   "expect": "0 s"
+  },
+  {
+   "name": "roundFigures of nothing",
+   "module": "activity",
+   "fn": "roundFigures",
+   "args": [
+    null
+   ],
+   "expect": ""
+  },
+  {
+   "name": "reduce a refused run with reasons",
+   "module": "activity",
+   "fn": "reduce",
+   "args": [
+    {
+     "$input": "refusal"
+    }
+   ],
+   "expect": {
+    "last_seq": 4,
+    "agents": {
+     "strategist": {
+      "name": "strategist",
+      "status": "idle",
+      "run_id": null,
+      "since": null,
+      "detail": "",
+      "runs": 0,
+      "calls": 0,
+      "tools": 0,
+      "refused": 0,
+      "errors": 0,
+      "last_outcome": null,
+      "last_latency_ms": null,
+      "skipped": null
+     },
+     "vehicle_engineer": {
+      "name": "vehicle_engineer",
+      "status": "idle",
+      "run_id": null,
+      "since": null,
+      "detail": "",
+      "runs": 0,
+      "calls": 0,
+      "tools": 0,
+      "refused": 0,
+      "errors": 0,
+      "last_outcome": null,
+      "last_latency_ms": null,
+      "skipped": null
+     },
+     "spotter": {
+      "name": "spotter",
+      "status": "idle",
+      "run_id": null,
+      "since": null,
+      "detail": "",
+      "runs": 0,
+      "calls": 0,
+      "tools": 0,
+      "refused": 0,
+      "errors": 0,
+      "last_outcome": null,
+      "last_latency_ms": null,
+      "skipped": null
+     },
+     "coach": {
+      "name": "coach",
+      "status": "idle",
+      "run_id": null,
+      "since": 367.7,
+      "detail": "",
+      "runs": 1,
+      "calls": 0,
+      "tools": 0,
+      "refused": 1,
+      "errors": 0,
+      "last_outcome": "refused",
+      "last_latency_ms": null,
+      "skipped": null
+     }
+    },
+    "runs": [
+     {
+      "run_id": "coach-1",
+      "agent": "coach",
+      "event_key": "offtrack",
+      "session_time": 367.7,
+      "tick": 201300,
+      "start_wall": 1000,
+      "end_wall": 1300,
+      "trigger": null,
+      "model": "kimi-k3",
+      "context_radio": [],
+      "spans": [],
+      "validations": [
+       {
+        "ok": false,
+        "unsupported": [
+         "4.66",
+         "4.66"
+        ],
+        "reasons": [
+         "27.74 km/h (no speed figure in the data matches)",
+         "4.66 (no figure in the data matches)"
+        ],
+        "repaired": false,
+        "word_count": 17
+       },
+       {
+        "ok": false,
+        "unsupported": [
+         "4.66"
+        ],
+        "reasons": [
+         "27.74 km/h (no speed figure in the data matches)"
+        ],
+        "repaired": true,
+        "word_count": 15
+       }
+      ],
+      "outcome": "refused",
+      "message_id": null,
+      "latency_ms": 12000.5,
+      "turns": 0,
+      "seqs": [
+       1,
+       2,
+       3,
+       4
+      ]
+     }
+    ],
+    "radio": {
+     "queued": 0,
+     "aired": 0,
+     "superseded": 0
+    },
+    "dispatch": {
+     "events": 0,
+     "routed": 0,
+     "blocked": 0,
+     "cooldown": 0,
+     "superseded": 0
+    },
+    "llm": {
+     "calls": 0,
+     "inflight": 0,
+     "errors": 0,
+     "latency_total": 0.0
+    },
+    "tools": {
+     "calls": 0,
+     "errors": 0,
+     "by_name": {}
+    },
+    "validator": {
+     "checks": 2,
+     "failed": 2,
+     "repaired": 1
+    },
+    "last_blocked": null
+   }
   }
  ]
 }

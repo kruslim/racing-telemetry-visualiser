@@ -574,15 +574,51 @@ def coach_degraded_cases() -> list[EvalCase]:
 
 
 # --------------------------------------------------------------------------
+# C1: a driver question that needs the agent's judgement
+# --------------------------------------------------------------------------
+#: One question per agent that no template answers (the router gives no intent).
+QUESTIONS = {
+    "strategist": "What's the plan for our stop?",
+    "vehicle_engineer": "How are the tyres holding up?",
+    "spotter": "Anyone close enough to attack me?",
+    "coach": "Where am I losing time?",
+}
+
+
+def question_cases(agent: str) -> list[EvalCase]:
+    """The driver asks ``agent`` something only it can judge (``Trigger("driver_question")``)."""
+    from rtv.pitwall.questions import route_question
+
+    state = _end_of_scenario_state()
+    text = QUESTIONS[agent]
+    route = route_question(text)
+    payload = {"text": text, "source": "text", "question_id": f"q-{agent}", **route.to_payload()}
+    return [
+        EvalCase(
+            name=f"question-{agent}",
+            event=_synthetic_event(state, "driver_question", payload),
+            state=state,
+            note="The driver asked; answer the question from the data or say it cannot.",
+            agent=agent,
+        )
+    ]
+
+
+# --------------------------------------------------------------------------
 # assembly
 # --------------------------------------------------------------------------
 def build_cases(spec: ScenarioSpec | None = None) -> list[EvalCase]:
-    """The strategist's golden set: the scripted race plus the degraded states.
+    """The strategist's golden set: the scripted race, a question, the degraded states.
 
     The stage-08 plan cases sit before the stage-2 degraded ones, which keep their
     place at the end of the set.
     """
-    return scenario_cases(spec) + plan_degraded_cases() + degraded_cases()
+    return (
+        scenario_cases(spec)
+        + question_cases(STRATEGIST.name)
+        + plan_degraded_cases()
+        + degraded_cases()
+    )
 
 
 #: agent name -> the spec, its scenario config, and its degraded-case builder.
@@ -603,6 +639,7 @@ def build_agent_cases(agent: str) -> list[EvalCase]:
     return (
         scenario_cases(ROLE_SCENARIO, agent=spec, config=ROLE_DETECTOR_CONFIG)
         + degraded()
+        + question_cases(agent)
     )
 
 

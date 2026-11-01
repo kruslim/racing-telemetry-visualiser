@@ -1,9 +1,11 @@
-"""Radio feed grouping: driver messages and the calls that aired after them.
+"""Radio feed grouping: driver questions, their answers, and calls that aired after them.
 
-The same rule as ``frontend/js/pitwall/radio-panel.js``: agent calls within
+A call whose ``in_reply_to`` is a driver message's ``message_id`` is its answer
+(task C1: the backend routes every driver message as a question) and nests under
+it wherever it lands in the feed, marked ``answer``. Other agent calls within
 ``THREAD_WINDOW_S`` of session time after a driver message (at most four) nest
-under it as "after your message". Never "reply": the backend does not route driver
-messages to the agents as questions.
+under it as "after your message", the rule of the frozen web
+``frontend/js/pitwall/radio-panel.js``, which knows no answers.
 """
 
 from __future__ import annotations
@@ -25,8 +27,13 @@ def _in_window(thread: dict, message: dict) -> bool:
 
 
 def thread_feed(messages: list[dict]) -> list[dict]:
-    """Messages in arrival order -> entries ``{message, children}``, oldest first."""
+    """Messages in arrival order -> entries ``{message, children}``, oldest first.
+
+    An answer child carries ``"answer": True``; ``in_reply_to`` an unknown id
+    (the question scrolled out) is treated as an ordinary call.
+    """
     entries: list[dict] = []
+    by_id: dict[str, dict] = {}
     thread: dict | None = None
     for message in messages:
         if not message:
@@ -35,12 +42,34 @@ def thread_feed(messages: list[dict]) -> list[dict]:
             t = message.get("session_time")
             thread = {"message": message, "children": [], "at": t if is_num(t) else None}
             entries.append(thread)
+            if message.get("message_id"):
+                by_id[message["message_id"]] = thread
+            continue
+        asked = by_id.get(message.get("in_reply_to") or "")
+        if asked is not None:
+            asked["children"].append({**message, "answer": True})
         elif thread is not None and _in_window(thread, message):
             thread["children"].append(message)
         else:
             thread = None
             entries.append({"message": message, "children": [], "at": None})
     return entries[-FEED_LIMIT:]
+
+
+def question_status(message: dict, children: list[dict]) -> str | None:
+    """What the driver should see under their question while no answer is in.
+
+    ``None`` once answered, or for a driver message with no routing (an old one).
+    """
+    if any(c.get("answer") for c in children):
+        return None
+    route = (message.get("data") or {}).get("question")
+    if not isinstance(route, dict) or not route.get("owner"):
+        return None
+    owner = str(route["owner"]).replace("_", " ")
+    if route.get("intent"):
+        return f"asked the {owner}"
+    return f"asked the {owner} · waiting for the answer"
 
 
 def latest_strategist(messages: list[dict]) -> dict | None:

@@ -91,6 +91,8 @@ class FactSet:
         for value, unit, path in _walk_facts(payload, source):
             if unit is not None:
                 self._typed.setdefault(unit[0], []).append((value, unit[1], path))
+            elif _is_count(path, value):
+                self._typed.setdefault("count", []).append((value, "n", path))
 
     def facts(self, family: str) -> list[tuple[float, str, str]]:
         """Every ``(value, unit, path)`` of one unit family, in the order they were added."""
@@ -137,6 +139,60 @@ class FactSet:
             for form in _rounded_forms(spoken):
                 if abs(figure.value - form) <= max(ABS_TOL, REL_TOL * abs(form)):
                     return True
+        if figure.family == "laps" and _spelled_out(figure):
+            # "three laps running wide" for a recurring issue with occurrences: 3, or
+            # "second off in two laps" for two events at the corner: on the radio a
+            # spelled-out count of occurrences is said as laps. It is a count fact, so
+            # it matches a count (exactly), never a laps quantity like fuel.
+            return any(value == figure.value for value, _u, _p in self._typed.get("count", ()))
+        return False
+
+    def fact_values(
+        self, figure: Figure, family: str | None, unit: str | None
+    ) -> list[float]:
+        """The facts ``figure`` stands for, expressed in ``unit`` of ``family``.
+
+        With no family the figure is matched bare against the raw facts. A figure
+        said in another family than the one asked for stands for nothing.
+        """
+        if family is None or not self.typed:
+            return [fact for fact in self._raw if _matches(figure.value, _variants(fact))]
+        if figure.family not in (None, family) or unit is None:
+            return []
+        out: list[float] = []
+        for value, fact_unit, _path in self._typed.get(family, ()):
+            spoken = convert(value, family, fact_unit, figure.unit or unit)
+            if _matches(figure.value, _rounded_forms(spoken)):
+                out.append(convert(value, family, fact_unit, unit))
+        return out
+
+    def supports_difference(self, figure: Figure, others: list[Figure]) -> bool:
+        """``figure`` is the difference of two facts that are both said next to it.
+
+        "130 versus 139, 8 km/h down" is arithmetic on the record, not an invention,
+        but only when both terms are in the same sentence: a bare "8 km/h" could be
+        the difference of any two speeds in the data. The terms must be grounded
+        themselves and of the figure's unit family (or bare).
+        """
+        terms = [f for f in others if f is not figure and self.supports_figure(f)]
+        if len(terms) < 2:
+            return False
+        for i, a in enumerate(terms):
+            for b in terms[i + 1 :]:
+                family = figure.family or a.family or b.family
+                unit = figure.unit or a.unit or b.unit
+                if family is not None and unit is None:
+                    continue
+                if family is not None and (
+                    a.family not in (None, family) or b.family not in (None, family)
+                ):
+                    continue
+                xs = self.fact_values(a, family, unit)
+                ys = self.fact_values(b, family, unit)
+                for x in xs:
+                    for y in ys:
+                        if x != y and _matches(abs(figure.value), _rounded_forms(abs(x - y))):
+                            return True
         return False
 
     def explain(self, figure: Figure) -> str:
@@ -145,10 +201,25 @@ class FactSet:
             return f"{figure.written} (no figure in the data matches)"
         unit = _UNIT_WORDS.get(figure.unit or "", figure.family)
         text = f"{figure.written} {unit} (no {figure.family} figure in the data matches"
+        other_unit = self._other_unit_near(figure)
         elsewhere = self._typed_path_near(figure.value, exclude=figure.family)
-        if elsewhere:
-            text += f"; {_render(figure.value)} is {elsewhere}"
+        if other_unit:
+            text += f"; {other_unit}"
+        elif elsewhere:
+            text += f"; {_render(_round(figure.value))} is {elsewhere}"
         return text + ")"
+
+    def _other_unit_near(self, figure: Figure) -> str | None:
+        """A same-family fact that is ``figure`` in another unit: "27.7 m/s, not km/h"."""
+        for value, fact_unit, path in self._typed.get(figure.family or "", ()):
+            if fact_unit == figure.unit or not _matches(figure.value, _rounded_forms(value)):
+                continue
+            spoken = convert(value, figure.family or "", fact_unit, figure.unit or fact_unit)
+            return (
+                f"{_render(_round(value))} is {path} in {_UNIT_WORDS.get(fact_unit, fact_unit)}"
+                f", which is {_render(_round(spoken))} {_UNIT_WORDS.get(figure.unit or '', '')}"
+            ).rstrip()
+        return None
 
     def _typed_path_near(self, number: float, exclude: str | None = None) -> str | None:
         """The first typed fact of another family that is numerically ``number``."""
@@ -202,6 +273,16 @@ _UNIT_WORDS = {
     "g": "g",
     "x": "incidents",
 }
+
+
+def _matches(number: float, forms: list[float]) -> bool:
+    """``number`` is one of ``forms`` within the shared tolerance."""
+    return any(abs(number - form) <= max(ABS_TOL, REL_TOL * abs(form)) for form in forms)
+
+
+def _round(value: float) -> float:
+    """A value as an operator reads it: two decimals at most."""
+    return round(float(value), 2) if math.isfinite(value) else value
 
 
 def _rounded_forms(value: float) -> list[float]:
@@ -309,6 +390,20 @@ def _walk_facts(
     return out
 
 
+#: Keys whose integer value counts occurrences ("occurrences": 3, a corner's "count": 2).
+_COUNT_KEYS = frozenset({"occurrences", "count"})
+
+
+def _is_count(path: str, value: float) -> bool:
+    key = path.rsplit(".", 1)[-1]
+    return key in _COUNT_KEYS and float(value).is_integer() and value >= 0
+
+
+def _spelled_out(figure: Figure) -> bool:
+    """Written as a word ("three"), not digits ("3")."""
+    return figure.written[:1].isalpha()
+
+
 def _is_number(value: Any) -> bool:
     return (
         isinstance(value, (int, float))
@@ -332,6 +427,14 @@ def extract_numbers(text: str) -> list[tuple[float, str]]:
         except ValueError:  # pragma: no cover - regex guarantees parseability
             continue
     return found
+
+
+#: A sentence ends at . ! ? or ; followed by space; "2.4 s" and "1:32.4" never split.
+_SENTENCE_RE = re.compile(r"(?<=[.!?;])\s+")
+
+
+def _sentences(text: str) -> list[str]:
+    return [part for part in _SENTENCE_RE.split(text or "") if part.strip()]
 
 
 def _render(value: float) -> str:
@@ -376,20 +479,25 @@ def validate_output(
     detail: list[str] = []
     seen: set[str] = set()
     for text in (spoken_text or "", detail_text or ""):
-        if facts.typed:
-            figures = read_figures(text)
-        else:
-            figures = [Figure(value, written) for value, written in extract_numbers(text)]
-        for figure in figures:
-            numbers.append(figure.value)
-            if facts.supports_figure(figure):
-                continue
-            key = f"{figure.written}|{figure.family}"
-            if key in seen:
-                continue
-            seen.add(key)
-            unsupported.append(figure.written)
-            detail.append(facts.explain(figure))
+        for sentence in _sentences(text):
+            if facts.typed:
+                figures = read_figures(sentence)
+            else:
+                figures = [
+                    Figure(value, written) for value, written in extract_numbers(sentence)
+                ]
+            for figure in figures:
+                numbers.append(figure.value)
+                if facts.supports_figure(figure):
+                    continue
+                if facts.supports_difference(figure, figures):
+                    continue
+                key = f"{figure.written}|{figure.family}"
+                if key in seen:
+                    continue
+                seen.add(key)
+                unsupported.append(figure.written)
+                detail.append(facts.explain(figure))
 
     for field_name, value in _payload_numbers(payload):
         numbers.append(value)

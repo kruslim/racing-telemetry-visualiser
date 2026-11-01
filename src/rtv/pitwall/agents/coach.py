@@ -21,6 +21,7 @@ from pydantic import Field
 
 from rtv.pitwall import tools as T
 from rtv.pitwall.framework import AgentOutput, AgentSpec, RadioPriority, Trigger
+from rtv.pitwall.questions import question_trigger
 from rtv.racestate.models import EventType, FlagPhase, RaceEvent, RaceState
 from rtv.racestate.plan import plan_view
 from rtv.vision.live import COACH_KINDS
@@ -151,6 +152,8 @@ COACH_TRIGGERS: tuple[Trigger, ...] = (
         label="the onboard camera saw the line or kerb use",
         cooldown_s=120.0,
     ),
+    # A question the driver asked that needs judgement (rtv.pitwall.questions).
+    question_trigger(AGENT_NAME),
 )
 
 

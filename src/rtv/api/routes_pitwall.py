@@ -200,19 +200,23 @@ class DriverMessage(BaseModel):
     )
 
 
-@router.post("/pitwall/driver-message", summary="Something the driver said, onto the channel")
+@router.post("/pitwall/driver-message", summary="The driver asks the pitwall something")
 def pitwall_driver_message(
     body: DriverMessage, services: AppServices = Depends(get_services)
 ) -> dict:
-    """Push-to-talk from the cockpit.
+    """Push-to-talk or the desktop text box, from the cockpit.
 
     The transcript joins the radio log immediately (the driver has already used
     the airtime) and is marked ``speak: false`` -- the pitwall does not read the
-    driver's own words back to them. Agents see it in their recent-radio context.
+    driver's own words back to them. It is also a question: a keyword router picks
+    the owner, a plain lookup (fuel laps, gaps, lap times, position, laps to go,
+    tyre temps) is answered from the engine with no model call, and anything else
+    wakes the owning agent. The answer arrives on the radio with ``in_reply_to``
+    set to the transcript's ``message_id``; ``question`` here says where it went.
     """
     pitwall = _pitwall(services)
     text = body.text.strip()
     if not text:
         raise HTTPException(422, "Nothing was said.")
-    message = pitwall.driver_message(text, source=body.source)
-    return {"message": message.to_api()}
+    message = pitwall.ask(text, source=body.source)
+    return {"message": message.to_api(), "question": message.data.get("question")}

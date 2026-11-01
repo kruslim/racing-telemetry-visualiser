@@ -22,6 +22,7 @@ from pydantic import Field
 
 from rtv.pitwall import tools as T
 from rtv.pitwall.framework import AgentOutput, AgentSpec, RadioMessage, RadioPriority, Trigger
+from rtv.pitwall.questions import question_trigger
 from rtv.pitwall.validity import box_call_rules
 from rtv.racestate.models import EventType, RaceEvent, RaceState
 from rtv.racestate.plan import plan_view
@@ -169,6 +170,8 @@ VEHICLE_ENGINEER_TRIGGERS: tuple[Trigger, ...] = (
         label="stint end (post-stint tyre and brake review)",
         cooldown_s=0.0,
     ),
+    # A question the driver asked that needs judgement (rtv.pitwall.questions).
+    question_trigger(AGENT_NAME),
 )
 
 

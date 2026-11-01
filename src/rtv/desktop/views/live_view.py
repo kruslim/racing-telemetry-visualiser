@@ -41,7 +41,7 @@ from ..widgets.live import (
 from ..widgets.live_onboard import LiveOnboardPanel
 from ..widgets.plan import PlanPanel
 from ..widgets.radio import RadioFeed
-from .hub import Hub
+from .hub import Hub, bind_voice
 
 RENDER_MS = 100
 TIMELINE_S = 120.0
@@ -178,6 +178,7 @@ class LiveView(QWidget):
         self.replay.start_live.connect(hub.start_live)
         self.replay.stop_live.connect(hub.stop_live)
         self.radio.send_text.connect(self._send)
+        bind_voice(hub, self.radio, self._unheard)
         self.radio.volume_changed.connect(hub.radio.set_volume)
         self.radio.master_toggled.connect(lambda on: hub.radio.set_master_muted(not on))
         self.radio.mute_toggled.connect(hub.radio.set_agent_muted)
@@ -246,19 +247,19 @@ class LiveView(QWidget):
                 return
         self.hub.start_replay(session_id, speed)
 
-    def _send(self, text: str) -> None:
-        def unheard(message: str) -> None:
-            self.radio.add(
-                {
-                    "agent": "driver",
-                    "spoken_text": message,
-                    "speak": False,
-                    "session_time": self.hub.now(),
-                    "heard": False,
-                }
-            )
+    def _unheard(self, message: str) -> None:
+        self.radio.add(
+            {
+                "agent": "driver",
+                "spoken_text": message,
+                "speak": False,
+                "session_time": self.hub.now(),
+                "heard": False,
+            }
+        )
 
-        self.hub.send_driver(text, unheard)
+    def _send(self, text: str) -> None:
+        self.hub.send_driver(text, self._unheard)
 
     def _timeline_item(self, item: dict) -> None:
         run_id = (item.get("record") or {}).get("run_id")
@@ -304,6 +305,8 @@ class LiveView(QWidget):
                 "  validator: "
                 + ("ok" if v["ok"] else "withheld " + ", ".join(map(str, v["unsupported"])))
             )
+            for reason in v.get("reasons") or []:
+                lines.append(f"    {reason}")
         aired = next((m for m in self.hub.messages if m.get("message_id") == run.message_id), None)
         if aired:
             lines.append(f"Aired: {aired.get('spoken_text')}")

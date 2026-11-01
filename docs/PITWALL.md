@@ -188,7 +188,30 @@ left.". The kill switch, `suspend()`, a stale state and the spotter's own enable
 silence template calls too; the model-call budget does not, since they cost nothing.
 `dispatch` traces each one as a `template_call` activity record and lists the caller in
 the dispatch record's `templated`; `status()` has `template_calls` and `callers`.
-Template calls need the agent layer to be mounted (today that means a Kimi key is set).
+With `RTV_PITWALL_AGENTS=true` and no Kimi key (or no `ai` extra), `build_pitwall`
+mounts a template-only orchestrator (`services.build_template_pitwall`: no agents, no
+provider, `status()["agents_mounted"]` false), so template calls and driver-question
+lookups run with no key (appendix C1).
+
+**Driver questions** (`pitwall/questions.py`, appendix C1). `orch.ask(text, source=
+"text"|"voice")` (and `driver_message`, which calls it) puts the transcript on the channel
+(`agent="driver"`, `speak=False`, `data.question` = the route) and publishes a
+`driver_question` RaceEvent on the race bus (`payload`: `text`, `source`, `question_id` =
+the transcript's `message_id`, `owner`, `intent`, `matched`, `answered_by`), so the journal
+records it. `route_question(text)` is a keyword table, no model: fuel, pit and strategy go
+to the strategist, tyres, temperatures and damage to the vehicle engineer, traffic and gaps
+to the spotter, driving and corners to the coach, anything else to the strategist with
+`matched=False`. A plain lookup (`fuel_laps`, `gap_ahead`, `gap_behind`, `last_lap`,
+`best_lap`, `position`, `laps_to_go`, `tyre_temps`) is answered by `QuestionCaller` (a
+`DeterministicCaller`, in the owner's name) from the engine state, or with an honest "No
+... data" answer when the state lacks the value. Anything else wakes the owner's
+`Trigger("driver_question")` (cooldown 0, its own questions only); the run's first message
+starts `THE DRIVER ASKED: "..."` and the answer goes through the validator as usual. Every
+answer has `in_reply_to` = the question id and subject `answer:<id>`. A question nobody can
+answer (no such agent, agent disabled, budget spent, no live telemetry, the run failed)
+gets a `pitwall` reply saying so, also `in_reply_to`; with the kill switch off that reply
+is shown, not spoken. A queued question is never displaced from an agent's inbox by a
+detector event short of critical.
 
 **Autonomy and standby** (`RTV_PITWALL_AUTONOMOUS`, default false). A third switch next
 to the kill switch and `suspended`. With autonomy on, the orchestrator starts in standby;
@@ -214,7 +237,8 @@ traffic summary when a car is within 5 s, at most every 300 s, and camera notes;
 instant calls are the templates above) and coach (repeated mistakes, pace). A spec is a role prompt, an output
 model, scoped tools, triggers, a state slice, a radio subject, an optional policy and a
 prefetch list; adding an agent is one module plus one `AGENT_REGISTRY` entry. Agents never
-call each other; each run is shown the recent radio. Model per agent: the spec names a
+call each other; each run is shown the recent radio and its own last call on each of its
+last two subjects, with what the radio did with it (D1). Model per agent: the spec names a
 tier (strategist `reasoning`, the rest `fast`) and `framework.agent_model()` resolves it
 from `RTV_PITWALL_<NAME>_MODEL`, else `RTV_LLM_KIMI_MODEL_REASONING` / `_FAST` (all
 `kimi-k3` today). All calls go through `KimiProvider` with a forced respond tool.
@@ -3463,6 +3487,99 @@ expired calls. Golden cases: a test-only engineer box call superseded by the str
 real critical yellow-flag call in `journal_air`, plus airBadge cases.
 
 
+## C1 — the driver asks, the pitwall answers (2026-10-31)
+
+Plan task C1 (REVIEW.md P1-4). Described under "Driver questions" above. Pieces:
+`EventType.DRIVER_QUESTION`; `RadioMessage.in_reply_to`; `rtv.pitwall.questions`
+(`route_question`, `Route`, `LOOKUPS`, `answer_lookup`, `QuestionCaller`,
+`question_trigger(agent)`); every agent spec gains `question_trigger(AGENT_NAME)`;
+`agent_input.instruction` adds the `THE DRIVER ASKED` block for a `driver_question` event
+only, so other runs' inputs (and their journal rebuilds) are unchanged.
+`PitwallOrchestrator.ask`, `_reply_unanswered`, `_holds_slot`; `status()` adds
+`questions` and `agents_mounted`; the orchestrator always appends a `QuestionCaller` to
+its callers. `services.build_template_pitwall` fixes B2's gap (template calls without a
+key). `POST /pitwall/driver-message` calls `ask` and also returns `question` (the route).
+
+Desktop: the radio box is now "Ask"; `hub.ask(text, source)` is the entry point for C2's
+voice input (`send_driver` calls it). `model.radio.thread_feed` nests a message whose
+`in_reply_to` matches a driver message under it as `answer`, wherever it lands;
+`question_status` shows "asked the coach · waiting for the answer" until it does. The
+quota dialog's `agents_will_run` is false for the template-only mount. The frozen web
+radio panel keeps its 45 s "after your message" rule.
+
+Evals: `evals.pitwall_cases.question_cases(agent)`, one `question-<agent>` case per agent
+(`QUESTIONS`); the strategist's sits before its degraded cases. `scripts/ask_during_replay.py`
+asks ten scripted questions at fixed laps of a running replay and records each answer and
+its latency.
+
+Changed tests, by design: `test_a_driver_message_joins_the_log_but_is_never_read_back`
+now finds the transcript among the messages (a reply is also queued), and the LLM
+spotter's trigger set includes `driver_question`. New: `tests/test_driver_questions.py`.
+
+---
+
+## D1 — each agent sees its own previous call (2026-10-31)
+
+REVIEW P2-1, third bullet: an agent restated its standing call instead of revising it,
+because every run started from the state slice and the recent radio only.
+
+- **Context**: the run's first user message gains, before `RECENT RADIO`, a block
+  `YOUR EARLIER CALLS (revise or confirm them; do not restate one that still stands word
+  for word, and say what changed if you change it)`, one line per subject, at most the
+  last two subjects (`agent_input.PREVIOUS_SUBJECTS`), oldest first:
+  `You said on lap 4: "Plan to box lap 13." (aired late by 9 s)`. Statuses come from the
+  B1 radio fields: `aired`, `late` (`late_by_s`), `expired` (`never aired, dropped:
+  <expired_reason>`) and `queued` (not aired yet). The spoken text is the agent's own,
+  without the `Late call: ` tag.
+- **Where**: `PitwallOrchestrator` keeps each agent's newest model call per subject
+  (`_remember_call`, after the validity stamp; refusals, withheld calls and non-model
+  sources are skipped) and `previous_calls(name)` turns them into entries with
+  `agent_input.previous_call(message, queued=)`. It holds the message objects, so the
+  status is what the radio did by the time the next run starts. `reset()` clears them.
+  `AgentRuntime.invoke(..., previous_calls=)` passes them on. `radio.py` is unchanged.
+- **Record**: `run_start.data.input.previous` (`message_id`, `subject`, `lap`,
+  `session_time`, `spoken_text`, `status`, `late_by_s`, `expired_reason`), written only
+  when the agent has an earlier call, like B3's `superseded`, so other runs' records and
+  rebuilds are unchanged and `v` stays 1. The first call is still built from the record,
+  so the rebuild stays byte-identical (`tests/test_agent_input.py`,
+  `tests/test_previous_calls.py`).
+- **With B3**: a call another agent's call replaced shows as `superseded` (`never aired,
+  replaced: <superseded_reason>`); the run that gets B3's one-off `NOT AIRED` line for it
+  does not list it again. Answers to driver questions (C1, `in_reply_to`) are not kept.
+- Prompt text only: role prompts and `GROUNDING_RULES` are unchanged, so `prompt_sha`
+  and `spec_drift` do not move. The strategist has one subject (`pit_stop`), so it is
+  shown one line.
+
+## A3 — derived numbers and readable audit values (2026-10-31)
+
+On the A1 Spa replay most refusals were arithmetic or units, not inventions. Changes:
+
+- **Speeds in km/h.** Detectors keep the sim's m/s, but what an agent is shown (its trigger
+  event, and every row of `get_recent_detector_events` / `get_corner_detail`) goes through
+  `rtv.racestate.derived.agent_payload`: `speed`, `mean_speed`, `wheel_speed` become
+  `speed_kmh`, `mean_speed_kmh`, `wheel_speed_kmh`. Three of A1's four refusals were 27.7 m/s
+  said as "27.7 km/h". The FactSet holds the same view (`framework._invoke`).
+- **Derived fields to copy.** Recurring issues carry `consecutive_laps`, `laps_spanned`,
+  `laps_with_issue`; `get_corner_detail.live` carries `laps_with_events`, `consecutive_laps`.
+  `TyreState` gains `{temp,pressure}_change_since_stint_start` and `_vs_previous_lap`
+  (engine, per completed lap); `get_tyre_trend` returns them as `since_stint_start` /
+  `vs_previous_lap` plus `axles` (front-minus-rear, left-minus-right, spread).
+  `get_stint_history.current_stint_laps` has lap-time deltas vs the previous lap, the stint's
+  first lap and the best, and `green_streak_laps`; fuel projection and stint history carry
+  `race_total_laps`.
+- **Validator.** `FactSet.supports_difference`: an unmatched figure is grounded when it is
+  the difference of two grounded figures said in the same sentence, in its unit family.
+  A spelled-out laps count ("three laps running") also matches a count fact
+  (`occurrences`, `count`), never a digit laps quantity. `explain()` names a same-family
+  fact in another unit ("27.74 is race_state.player.speed in m/s, which is 99.86 km/h").
+  `tools._target_pct` no longer recurses on an unmatched corner label.
+- **Audit.** `validate` records carry `unsupported_detail`; the desktop and web view models
+  round long decimals (`roundFigures` / `round_figures` in the activity model) and expose
+  `reasons` (desktop live run detail lines, review audit tooltip). Golden cases added.
+- `evals/real/spa_run` baseline rebuilt: F3's two coach false positives pass again.
+- Kimi Spa replay deferred: the Kimi Code quota was blocked when A3 merged, so it merged on
+  the offline checks; one combined Spa replay later measures A3 against `spa-kimi-run-A1/`.
+
 ## Stage 08 — race plan and projection layer (2026-11-01)
 
 Plan task D4; prompt `prompts/done/08-race-plan-projection.md`. Built: the projection
@@ -3491,8 +3608,9 @@ Deviations:
 - `get_undercut_overcut` is an extra tool over `projection.undercut_overcut`, which the
   prompt lists as a projection but gives no tool; the spotter gets
   `get_traffic_projection` because traffic is its subject.
-- D1 (previous-call context) is not merged, so the plan version is not yet in the
-  previous-call line; the plan slice carries the version instead.
+- D1 (previous-call context) merged while this was in progress; its previous-call
+  lines are left as they are, and the plan version reaches the agent through the plan
+  slice instead.
 - Rejected proposals are kept in `plan.revisions` (`accepted: false`) as well as the
   activity log, so the review can show them from the state snapshots alone.
 - The plan exists only when `lifecycle.session_type == "race"`; practice and qualifying

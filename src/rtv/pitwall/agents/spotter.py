@@ -34,6 +34,7 @@ from pydantic import Field
 
 from rtv.pitwall import tools as T
 from rtv.pitwall.framework import AgentOutput, AgentSpec, RadioMessage, RadioPriority, Trigger
+from rtv.pitwall.questions import question_trigger
 from rtv.racestate.models import EventType, RaceEvent, RaceState
 from rtv.racestate.strategy_math import standings_around_player
 from rtv.vision.live import SPOTTER_KINDS
@@ -145,6 +146,8 @@ SPOTTER_TRIGGERS: tuple[Trigger, ...] = (
         label="the onboard camera saw traffic, debris or damage",
         cooldown_s=60.0,
     ),
+    # A question the driver asked that needs judgement (rtv.pitwall.questions).
+    question_trigger(AGENT_NAME),
 )
 
 
