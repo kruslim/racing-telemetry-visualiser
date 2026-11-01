@@ -29,6 +29,7 @@ AGENT = {
     "vehicle_engineer": "#4fa3ff",
     "spotter": "#ff6b9a",
     "coach": "#35c98a",
+    "race_control": "#3fd0d4",
     "driver": "#e8edf2",
 }
 AGENT_TEXT = {
@@ -36,6 +37,7 @@ AGENT_TEXT = {
     "vehicle_engineer": "#a9d0ff",
     "spotter": "#ff9fbd",
     "coach": "#8ff0c3",
+    "race_control": "#a6eef0",
     "driver": "#e8edf2",
 }
 AGENT_LABEL = {
@@ -43,6 +45,7 @@ AGENT_LABEL = {
     "vehicle_engineer": "vehicle engineer",
     "spotter": "spotter",
     "coach": "coach",
+    "race_control": "race control",
     "driver": "driver",
 }
 

@@ -1,6 +1,6 @@
 # RTV v2 — Pitwall
 
-The live pitwall: a deterministic race-state engine, four event-driven agents on one
+The live pitwall: a deterministic race-state engine, five event-driven agents on one
 prioritised radio feed, a race journal and a live VLM worker. This file has two parts.
 **Current architecture** below is the one page to read before changing anything. The
 **[Appendix: stage history](#appendix-stage-history)** holds the per-stage build notes,
@@ -53,7 +53,9 @@ event log twice. Types cover flags, laps and bests, lock-ups / wheelspin / off-t
 incidents, pit entry and exit, stints, pit window and fuel margin, rivals, blue flags,
 recurring issues, tyre bands, car health, traffic, `car_alongside` (iRacing's
 `CarLeftRight` proximity sensor, live only: an `.ibt` does not record it), weather and
-`visual_observation` (published by the vision seam only; the engine never reads it).
+`visual_observation` (published by the vision seam only; the engine never reads it),
+and race control's aggregates (`incident_limit`, `track_limits`, `penalty`,
+`blue_flag_ignored`; below).
 Every event that happened somewhere on the lap (lock-up, wheelspin, off-track, incident,
 recurring issue) carries `payload.place = {label, name, lap_dist_pct, provisional}` in the
 post-race review's corner labels (`T1 La Source`), from the session corner map in
@@ -199,6 +201,43 @@ mounts a template-only orchestrator (`services.build_template_pitwall`: no agent
 provider, `status()["agents_mounted"]` false), so template calls and driver-question
 lookups run with no key (appendix C1).
 
+**Race control** (`racestate/race_control.py`, `pitwall/agents/race_control.py`, appendix
+stage 09 part A). The engine aggregates what a steward would see about the player into
+`RaceState.race_control` (`incidents, incident_limit, incidents_remaining, limit_source,
+incident_stage, offs_in_window, offs_window_laps, offs, penalty, penalty_since,
+serve_in_pit, missing`) and four events, each latched so the agent is woken once:
+
+| event | fires when | backed by | capability |
+|---|---|---|---|
+| `incident_limit` | the count crosses a stage against the limit: `approaching` (8 or fewer left, two 4x contacts), `final` (4 or fewer, one 4x), `reached` (0); only the worst stage crossed, never back down | `PlayerCarMyIncidentCount` + `WeekendInfo.WeekendOptions.IncidentLimit` | `incident_limit` |
+| `track_limits` | 3 off-tracks inside the last 3 laps (`track_limit_offs`, `track_limit_window_laps`); re-armed when the window drops below 3 | the offtrack detector | `track_limits` |
+| `penalty` | a driver flag on the player is `shown` or `cleared` (`black`, `furled`, `repair`, `disqualify`); `serve_in_pit` for black and repair | `SessionFlags` | `penalties` |
+| `blue_flag_ignored` | the same car lapping us stayed within 1.0 s behind for 3 corners (lap buckets) *and* 5 s | CarIdx standings | `blue_flag_compliance` |
+
+A detector the catalog or the session info cannot back has its capability False and a
+`race_control.missing[name]` entry saying why (an unlimited race: `incident_limit:
+["WeekendInfo.WeekendOptions.IncidentLimit: unlimited"]`; an `.ibt`:
+`blue_flag_compliance: ["CarIdxLapDistPct"]`). iRacing publishes no track-limit warning
+count and no penalty timer, so neither is modelled. With a numeric limit every
+`incident` event also carries `incident_limit`, `incidents_remaining`, `incident_stage`.
+
+Two paths, like the spotter. Read-outs are race-control templates
+(`callers.RACE_CONTROL_TEMPLATES`, 5 s max age): "Incident, 14 of 17, 3 to the limit." on
+an `incident` with a known limit (the spotter's "Incident, that's 4x." stays quiet then),
+"Black flag. Serve it in the pit lane.", "Meatball flag, pit for repairs.", "Black flag
+cleared.", "Track limits, 3 offs in 3 laps.", "Blue flag, P1 held up 4 corners, let them
+by.". The LLM agent is woken only by a consequence: `incident_limit` at stage `final`, a
+`penalty` shown that is served in the pit lane, `track_limits` with 8 or fewer incidents
+left, `blue_flag_ignored` (only when `blue_flag_compliance`, so never on an `.ibt`), and
+its own driver questions. Its slice is flags, `race_control`, player, session laps and
+time left, the cars around us and the race-control capabilities: no fuel, tyres or plan.
+Its `policy` withholds a call whose structured `incidents` or `incident_limit` differs
+from the state's, that names a penalty no flag shows, or asks to box with nothing to
+serve. `pit_request: box_now` gives the subject `penalty_stop`, a member of the B3
+`pit_stop` group (action `box_now`), so the strategist's call and race control's cannot
+contradict each other on the radio. On the real Spa race (`IncidentLimit: unlimited`, 4x,
+no driver flag) race control makes two track-limits read-outs and is never woken.
+
 **Driver questions** (`pitwall/questions.py`, appendix C1). `orch.ask(text, source=
 "text"|"voice")` (and `driver_message`, which calls it) puts the transcript on the channel
 (`agent="driver"`, `speak=False`, `data.question` = the route) and publishes a
@@ -206,9 +245,9 @@ lookups run with no key (appendix C1).
 the transcript's `message_id`, `owner`, `intent`, `matched`, `answered_by`), so the journal
 records it. `route_question(text)` is a keyword table, no model: fuel, pit and strategy go
 to the strategist, tyres, temperatures and damage to the vehicle engineer, traffic and gaps
-to the spotter, driving and corners to the coach, anything else to the strategist with
-`matched=False`. A plain lookup (`fuel_laps`, `gap_ahead`, `gap_behind`, `last_lap`,
-`best_lap`, `position`, `laps_to_go`, `tyre_temps`) is answered by `QuestionCaller` (a
+to the spotter, driving and corners to the coach, incidents, penalties and track limits
+to race control, anything else to the strategist with `matched=False`. A plain lookup (`fuel_laps`, `gap_ahead`, `gap_behind`, `last_lap`,
+`best_lap`, `position`, `laps_to_go`, `tyre_temps`, `incidents`) is answered by `QuestionCaller` (a
 `DeterministicCaller`, in the owner's name) from the engine state, or with an honest "No
 ... data" answer when the state lacks the value. Anything else wakes the owner's
 `Trigger("driver_question")` (cooldown 0, its own questions only); the run's first message
@@ -237,12 +276,20 @@ max_calls_per_session`) and `status()["last_autonomy"]`; `status()` also has `mo
 `armed_roster` and `session_type`. With autonomy off the dispatch decisions are exactly
 those before stage 07 (a test proves it on the synthetic race).
 
-**Agents** (`pitwall/agents/`). Four declarative `AgentSpec`s: strategist (fuel, stops,
-rivals), vehicle engineer (tyres, car health, recurring issues), spotter (a lap-line
-traffic summary when a car is within 5 s, at most every 300 s, and camera notes; its
-instant calls are the templates above) and coach (repeated mistakes, pace). A spec is a role prompt, an output
+**Agents** (`pitwall/agents/`). Five declarative `AgentSpec`s, all live:
+
+| agent | owns | woken by (model calls) | template read-outs | tier | max age |
+|---|---|---|---|---|---|
+| strategist | fuel, stops, the race plan, rivals | pit window, fuel margin and critical, flag changes, rivals pitting, stint milestones, questions | | reasoning | 30 s |
+| vehicle_engineer | tyres, car health, recurring issues | recurring issues, tyre bands, car health, pit entry, questions | | fast | 20 s |
+| spotter | what is around the car | a lap-line summary with a car within 5 s (300 s cooldown), camera notes, questions | alongside, closing, blue flag, yellow/red, incident | fast | never late |
+| coach | how the car is driven | repeated mistakes, off-tracks, stint milestones, camera notes, questions | | fast | 30 s |
+| race_control | compliance and consequence | one 4x from the incident limit, a penalty to serve, offs near the limit, a held-up blue flag, questions | incident vs limit, driver flags, track limits, blue flag held up | fast | 15 s |
+
+A spec is a role prompt, an output
 model, scoped tools, triggers, a state slice, a radio subject, an optional policy and a
-prefetch list; adding an agent is one module plus one `AGENT_REGISTRY` entry. Agents never
+prefetch list, and optionally the text shown for a policy-withheld call
+(`withheld_text`); adding an agent is one module plus one `AGENT_REGISTRY` entry. Agents never
 call each other; each run is shown the recent radio and its own last call on each of its
 last two subjects, with what the radio did with it (D1). Model per agent: the spec names a
 tier (strategist `reasoning`, the rest `fast`) and `framework.agent_model()` resolves it
@@ -270,7 +317,7 @@ text kept in `detail_text`.
 non-critical message with the same `(agent, subject)` supersedes a queued one; a critical
 message is never superseded. Subjects of different agents that answer one decision share a
 group (`pitwall/decisions.py`, appendix B3: `pit_stop` = the strategist's calls plus the
-engineer's `damage_stop`/`tyre_stop` "box now"). In a group the newer call replaces a queued
+engineer's `damage_stop`/`tyre_stop` "box now" and race control's `penalty_stop`). In a group the newer call replaces a queued
 one of the same or lower priority from any agent, and a call that contradicts a
 higher-priority one still queued or aired within 60 s is dropped; the loser goes to
 consumers marked `superseded` (`radio_superseded` with `by_message_id`, `rule`, `reason`),
@@ -488,6 +535,13 @@ rtv.racestate.projection: lap_time_degradation, fuel_save_options, traffic_proje
 evals.pitwall_checks: projection_check(result, state), plan_check(state, revisions)
 evals.pitwall_cases: PlanSandbox(state), plan_degraded_cases()
 rtv.vision.live.publish_note(engine, session_id, note)
+snapshot().race_control: RaceControlState     # stage 09: incidents vs limit, offs, penalty
+rtv.racestate.race_control: RaceControlMonitor, incident_limit_from(info), stage_for(n),
+    PENALTY_FLAGS, SERVE_IN_PIT, INCIDENT_LIMIT_KEY, STAGES
+rtv.pitwall.callers: RACE_CONTROL_TEMPLATES, race_control_caller(settings)
+rtv.pitwall.agents.race_control: RACE_CONTROL, RaceControlCall, race_control_policy
+evals.pitwall_checks: race_control_check(result, state, event), race_control_consequences
+evals.pitwall_cases: RACE_CONTROL_SCENARIO, race_control_degraded_cases()
 ```
 
 The HTTP and WebSocket surface: `/api/v1/racestate` (and `/events`), `/api/v1/replay/*`,
@@ -499,11 +553,12 @@ and `/vision/live`. FastAPI's `/docs` lists them all.
 
 Prompts in `prompts/` (done ones in `prompts/done/`), revised by plan task D0. Stages 07
 (session lifecycle and autonomy), 08 (race plan and projections) and 10 (the race
-director scheduler, evals only) are done; 09 is next.
+director scheduler, evals only) are done, and so is stage 09 part A (race control, D6a);
+the 09 prompt stays in `prompts/` until part B is done.
 
 | Stage | Prompt | Goal |
 |---|---|---|
-| 09 | `09-race-control-debrief.md` | Two new agents: race control during the race, a debrief after it |
+| 09 part B | `09-race-control-debrief.md` | The debrief analyst after the race (D6b; needs A2) |
 
 ---
 
@@ -3777,6 +3832,57 @@ checked structured figures, and the pitwall coach only its FactSet. Now all thre
   "Brake point 14 m late". Tests: `tests/test_one_prose_check.py`.
 - Kimi: one coach eval run (`evals/run.py`, Gemini judge) after the combined Spa replay.
 
+## Stage 09 part A — race control (2026-11-01)
+
+Plan task D6a; part A of `prompts/09-race-control-debrief.md` (dependencies 07, 08, A1, B2
+all merged; stage 10 not merged when this was built, so no director scenario was added).
+Built: `racestate/race_control.py` (`RaceControlMonitor`, `incident_limit_from`,
+`stage_for`), `RaceState.race_control`, four capability flags, the `incident_limit`,
+`track_limits`, `penalty` and `blue_flag_ignored` events, race control's template caller,
+the `race_control` agent with its policy and `penalty_stop` subject in the `pit_stop`
+group, the `incidents` question lookup and race-control routing, the agent in RTV
+Desktop's lanes, flow graph, radio mutes and review audit, `race_control_check`
+(`consequence_ok`, `count_ok`, `refusal_ok`), a golden set (three scripted-race cases,
+three degraded, one question) and a swapped-fact case. Synthetic race knobs:
+`ScenarioSpec.incidents`, `offtracks`, `penalty_flags`, `incident_limit` (all off by
+default, so the ground-truth race is byte-identical). Tests: `tests/test_race_control.py`
+and a real-Spa test in `tests/test_real_ibt.py` (unlimited, 4x, the incident events add up
+to the counter, no penalty, two track-limits read-outs, blue flag a stated blind spot, the
+agent never woken). The `spa_run` baseline did not change (`build_real_evals.py --diff
+spa_run`: no change; race control has no runs in that journal).
+
+Did "a new agent is configuration" survive? Mostly. The agent is one module and one
+registry entry, its read-outs are one more `DeterministicCaller`, and the orchestrator,
+radio feed, validator and API needed nothing. Four things outside the agent changed, each
+small: `AgentSpec.withheld_text` (the framework's one change: the policy-withheld text was
+hard-coded to the strategist's "contradicts the fuel plan"), one `pit_stop` group entry in
+`decisions.py`, the router's owner tuple and table (a test requires every agent to be
+routable), and two field keys (`incident_limit`, `incidents_remaining`) in
+`grounding.units` so the limit figures are typed as incident counts. The engine side
+(detectors, state section, capabilities) is new deterministic work, which is where the
+design wants it.
+
+Deviations:
+
+- The per-agent model setting is `RTV_PITWALL_RACE_CONTROL_MODEL` (the existing
+  `RTV_PITWALL_<NAME>_MODEL` pattern), not the prompt's `RTV_PITWALL_MODEL_RACE_CONTROL`;
+  `RTV_PITWALL_RACE_CONTROL_MAX_AGE_S` likewise.
+- "Track limits one off from a warning" has no channel: iRacing reports no warning count.
+  Each off is a 1x, so the consequence that wakes the agent is repeated offs with 8 or
+  fewer incidents left to the limit; the read-out names the count only.
+- "One more incident ends the race" is modelled as 4 or fewer left (one 4x contact).
+- With a numeric limit the incident read-out is race control's, and the spotter's incident
+  template stays quiet, so the driver hears one sentence per incident. With no limit (the
+  Spa race, the synthetic race) the spotter's call is unchanged.
+- Blue-flag compliance needs a held time as well as corners: on the 5 s synthetic lap three
+  corners is under a second, which a car passing normally takes.
+- Race control also gets `question_trigger` and an `incidents` lookup: the C1 router test
+  requires every registered agent to own some questions.
+- Roster tests that list the agents by name now list five; no other test was rewritten.
+- The frozen web pages keep their four-agent `AGENTS` list: their activity model creates
+  an unseen agent on its first record, so race control's records do not break them (it has
+  no lane there). The golden view file is unchanged.
+
 ## Stage 10 — race director scheduler, evals only (2026-11-01)
 
 Plan task D5; prompt `prompts/done/10-director-scheduler.md`. Dependencies checked: stage
@@ -3823,6 +3929,13 @@ Deviations:
 - The example's entries fire FCY (lap 3) -> restart (+90 s) -> mandatory stop (lap 5) ->
   rain (+120 s after the restart, green) -> hazard (420 s): the stop is an `at_lap` entry,
   so on 60 s laps it lands before the rain.
+- Race control (stage 09 part A, merged first as PR #52) gets its director scenario here:
+  `docs/director_incident_limit.example.json` (`--scenario incident_limit`) injects a 4x to
+  14 of a 17x limit and the `incident_limit` stage-final event. The read-out airs from
+  `RACE_CONTROL_TEMPLATES` with no model call (`template_ok`) and the stage event wakes the
+  race-control agent (`race_control_ok`), on the synthetic race and the Spa .ibt.
+  `race_control_policy` now also accepts an injected event's own count and limit (the
+  counter is never rewritten); a real event's figures must still be the counter's.
 - Kimi: not run in this stage (offline checks only). The operator's live runs (the example
   over the synthetic race with `--live`, and over the recorded Spa session) are queued in
   `project-review/waves/kimi-queue.md`.

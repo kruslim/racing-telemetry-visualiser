@@ -91,6 +91,8 @@ _LAPS_KEYS = frozenset({"every", "laps_completed", "stint_laps", "laps_on_tyres"
 _LITRE_KEYS = frozenset(
     {"per_lap", "per_lap_std", "fuel_per_lap", "level", "capacity", "fuel", "fuel_to_finish"}
 )
+#: Race control's incident figures (stage 09): counts in iRacing's "x" points.
+_INCIDENT_KEYS = frozenset({"incident_limit", "incidents_remaining"})
 _POSITION_KEYS = frozenset(
     {"position", "class_position", "running_order", "field_size", "positions_lost"}
 )
@@ -186,7 +188,7 @@ def field_unit(path: str) -> tuple[str, str] | None:
         return ("rpm", "rpm")
     if key == "gear":
         return ("gear", "gear")
-    if key == "incidents":
+    if key == "incidents" or key in _INCIDENT_KEYS:
         return ("incidents", "x")
     return None
 

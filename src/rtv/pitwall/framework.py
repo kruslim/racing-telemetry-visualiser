@@ -369,6 +369,10 @@ class AgentSpec:
     #: fields (``valid_until_lap``, ``invalid_if_lap_dist_past``, ...). Read
     #: from the message's structured ``data``, never from the spoken words.
     validity: Callable[..., dict[str, Any]] | None = None
+    #: What is shown (never spoken) in place of a call the ``policy`` withheld.
+    #: The default is the strategist's; race control's policy guards incident
+    #: counts and penalty claims, so it says so (stage 09).
+    withheld_text: str = ""
     #: Hold the answer to the Layer-1 prose check (brake direction against the corner
     #: analysis) whenever a tool handed the run a Layer-1 corner. The coach's, task A2.
     prose_check: bool = False
@@ -1052,7 +1056,7 @@ class AgentRuntime:
             refused = True
             speak = False
             priority = RadioPriority.INFO
-            spoken = POLICY_WITHHELD_SPOKEN
+            spoken = self.spec.withheld_text or POLICY_WITHHELD_SPOKEN
             detail = f"Withheld: {violation}. Original text: " + output.spoken_text
         elif not report.ok and report.unsupported:
             # Grounded refusal: we would rather say nothing useful than something

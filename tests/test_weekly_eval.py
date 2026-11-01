@@ -65,7 +65,7 @@ def test_dry_run_writes_summary_and_report_without_models(tmp_path, no_models, c
     assert summary["metrics"]["replay.refusals"] == 1
     assert summary["metrics"]["real_offline.cases"] == summary["metrics"]["real.cases"]
     assert set(summary["fingerprint"]["agents"]) == {
-        "strategist", "vehicle_engineer", "spotter", "coach"
+        "strategist", "vehicle_engineer", "spotter", "coach", "race_control"
     }
     report = (folder / "REPORT.md").read_text()
     assert report.index("## Headline changes") < report.index("### Summary")

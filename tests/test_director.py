@@ -1143,3 +1143,67 @@ def test_director_eval_cases_cover_weather_and_regulation():
         c for c in build_agent_cases("vehicle_engineer") if c.name.startswith("director-")
     ]
     assert [c.event.event_type.value for c in engineer] == ["weather_change"]
+
+
+# ---- race control (stage 09 part A): an injected approach to the incident limit --------
+from evals.director_rehearsal import INCIDENT_LIMIT_SCRIPT, SCENARIOS  # noqa: E402
+
+from rtv.pitwall.agents.race_control import RaceControlCall, race_control_policy  # noqa: E402
+
+
+@pytest.fixture(scope="module")
+def incident_rehearsal():
+    return asyncio.run(rehearse(ScenarioScript.load(INCIDENT_LIMIT_SCRIPT)))
+
+
+def test_the_incident_limit_scenario_is_named_for_the_runner():
+    assert SCENARIOS["incident_limit"] == INCIDENT_LIMIT_SCRIPT
+    assert SCENARIOS["example"] == EXAMPLE_SCRIPT
+
+
+def test_the_incident_read_out_is_race_controls_template(incident_rehearsal):
+    assert incident_rehearsal.ok, incident_rehearsal.markdown()
+    contact = next(r for r in incident_rehearsal.injections if r.id == "heavy_contact_lap_3")
+    assert contact.templated == ["race_control"] and contact.woke == []
+    (aired,) = contact.aired
+    assert aired["source"] == "template"
+    assert aired["spoken_text"] == "Incident, 14 of 17, 3 to the limit."
+
+
+def test_the_final_stage_wakes_the_race_control_agent(incident_rehearsal):
+    stage = next(r for r in incident_rehearsal.injections if r.id == "limit_final_stage")
+    assert stage.woke == ["race_control"] and stage.as_real == ["race_control"]
+    assert stage.checks["race_control_ok"] is True
+    (aired,) = [a for a in stage.aired if a["agent"] == "race_control"]
+    assert not aired["refused"] and aired["source"] != "template"
+
+
+def _limit_event(*, injected: bool) -> RaceEvent:
+    payload = {"stage": "final", "incidents": 14, "incident_limit": 17, "incidents_remaining": 3}
+    if injected:
+        payload.update({INJECTED_KEY: True, DIRECTOR_KIND_KEY: "custom", DIRECTOR_ID_KEY: "x"})
+    return RaceEvent(
+        event_type=EventType.INCIDENT_LIMIT, severity=Severity.CRITICAL, session_time=1.0,
+        tick=1, payload=payload,
+    )
+
+
+def _limit_call(incidents: int, limit: int) -> RaceControlCall:
+    return RaceControlCall(
+        priority="critical", spoken_text="One more heavy contact ends our race.",
+        detail_text="Close to the limit.", consequence="incident_limit",
+        incidents=incidents, incident_limit=limit, confidence="high",
+    )
+
+
+def test_race_control_may_copy_an_injected_events_own_figures():
+    state = RaceState()  # the counter says 0 and no limit: telemetry is never rewritten
+    assert race_control_policy(_limit_call(14, 17), state, _limit_event(injected=True)) is None
+    # Not the event's figures either: still withheld.
+    assert race_control_policy(_limit_call(13, 17), state, _limit_event(injected=True))
+    assert race_control_policy(_limit_call(14, 18), state, _limit_event(injected=True))
+
+
+def test_a_real_events_figures_must_still_be_the_counters():
+    state = RaceState()
+    assert race_control_policy(_limit_call(14, 17), state, _limit_event(injected=False))

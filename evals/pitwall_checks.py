@@ -581,12 +581,105 @@ def coach_check(
     return _finish(checks, issues, {"theme": theme, "allowed_themes": sorted(allowed or [])})
 
 
+# ==========================================================================
+# stage 09: race control
+# ==========================================================================
+#: The consequences a race-control answer may name for each trigger. A read-out
+#: the templates already made (an "approaching" stage, a cleared flag) has none.
+def race_control_consequences(event, state: RaceState) -> set[str]:
+    """The defensible ``consequence`` values for ``event``."""
+    p = getattr(event, "payload", {}) or {}
+    kind = event.event_type.value
+    if kind == "incident_limit":
+        return {"incident_limit"} if p.get("stage") in ("final", "reached") else {"none"}
+    if kind == "penalty":
+        return {"penalty"} if p.get("state") == "shown" else {"none"}
+    if kind == "track_limits":
+        left, margin = p.get("incidents_remaining"), p.get("approach_margin")
+        near = isinstance(left, int) and isinstance(margin, int) and left <= margin
+        return {"track_limits", "incident_limit"} if near else {"none"}
+    if kind == "blue_flag_ignored":
+        return {"blue_flag"}
+    if kind == "driver_question":
+        return {"incident_limit", "penalty", "track_limits", "blue_flag", "none"}
+    return {"none"}
+
+
+_COUNT_RE = re.compile(r"\b(\d+)\s*(?:x\b|incidents?\b)", re.IGNORECASE)
+
+
+def race_control_check(
+    result: dict[str, Any],
+    state: RaceState,
+    event,
+    *,
+    facts: FactSet | None = None,
+    **_: Any,
+) -> dict:
+    """Score one race-control call: a real consequence, exact counts, no invented penalty."""
+    checks, issues = _base_checks(result, facts, state)
+    spoken = checks["_spoken"]
+    data = result.get("data") or result
+    payload = getattr(event, "payload", {}) or {}
+    rc = state.race_control
+    consequence = data.get("consequence")
+
+    allowed = race_control_consequences(event, state)
+    checks["consequence_ok"] = consequence in allowed
+    if not checks["consequence_ok"]:
+        issues.append(
+            f"consequence {consequence!r} is outside {sorted(allowed)} for "
+            f"{getattr(event, 'key', '?')}: race control speaks only to a consequence"
+        )
+
+    # The incident count and the limit are copied, never estimated.
+    want_count = payload.get("incidents", rc.incidents)
+    want_limit = payload.get("incident_limit", rc.incident_limit)
+    count_ok = True
+    if data.get("incidents") is not None and data.get("incidents") != want_count:
+        count_ok = False
+        issues.append(f"said {data.get('incidents')} incidents; the counter says {want_count}")
+    if data.get("incident_limit") is not None and data.get("incident_limit") != want_limit:
+        count_ok = False
+        issues.append(
+            f"said a limit of {data.get('incident_limit')}; the session's is {want_limit}"
+        )
+    spoken_counts = {int(m) for m in _COUNT_RE.findall(spoken)}
+    known = {v for v in (want_count, want_limit, rc.incidents_remaining) if isinstance(v, int)}
+    if spoken_counts - known:
+        count_ok = False
+        issues.append(
+            f"spoke incident figures {sorted(spoken_counts - known)} that are not the count, "
+            "the limit or what is left"
+        )
+    checks["count_ok"] = count_ok
+
+    # No penalty claim without a penalty channel and a flag showing. Read from the
+    # structured answer: "no penalty showing" is the honest sentence, not a claim.
+    showing = bool(state.capabilities.penalties and rc.penalty)
+    claims = (
+        (data.get("penalty") or "none") != "none"
+        or consequence == "penalty"
+        or data.get("pit_request") == "box_now"
+    )
+    checks["refusal_ok"] = showing or not claims
+    if not checks["refusal_ok"]:
+        issues.append("claimed a penalty but no driver flag is showing (or no SessionFlags)")
+
+    return _finish(
+        checks,
+        issues,
+        {"consequence": consequence, "allowed_consequences": sorted(allowed)},
+    )
+
+
 #: agent name -> its scorer. ``cross_check`` keeps the strategist's signature so
 #: the stage-2 harness and its tests are untouched.
 ROLE_CHECKS = {
     "vehicle_engineer": engineer_check,
     "spotter": spotter_check,
     "coach": coach_check,
+    "race_control": race_control_check,
 }
 
 

@@ -103,6 +103,17 @@ class ScenarioSpec:
     session_num: int | None = None
     sessions: tuple[str, ...] = ()
 
+    #: Race control (stage 09). ``(lap, pct, delta)`` steps of the player's
+    #: incident counter; ``(lap, from_pct, to_pct)`` spans off track
+    #: (PlayerTrackSurface 0); ``(lap, from_pct, to_pct, bits)`` SessionFlags bits
+    #: OR'd in (0x10000 black, 0x80000 furled, 0x100000 repair, 0x20000 DQ); and
+    #: the session-info ``WeekendOptions.IncidentLimit`` (``"17"``, ``"unlimited"``).
+    #: All empty / None by default, so the ground-truth scenario stays byte-identical.
+    incidents: tuple[tuple[int, float, int], ...] = ()
+    offtracks: tuple[tuple[int, float, float], ...] = ()
+    penalty_flags: tuple[tuple[int, float, float, int], ...] = ()
+    incident_limit: str | None = None
+
     #: Channels to omit from the catalog, for degradation tests.
     exclude: tuple[str, ...] = field(default=())
 
@@ -213,6 +224,8 @@ def scenario_session_info(spec: ScenarioSpec | None = None) -> dict:
             "TiresAero": {"AeroSettings": {"RearWingSetting": "7"}},
         },
     }
+    if spec.incident_limit is not None:
+        info["WeekendInfo"]["WeekendOptions"] = {"IncidentLimit": spec.incident_limit}
     if spec.sessions:
         info["SessionInfo"] = {
             "Sessions": [
@@ -299,6 +312,14 @@ def scenario_frames(spec: ScenarioSpec | None = None) -> Iterator[Frame]:
                 _after(lap, pct, spec.pit_exit_lap, spec.pit_exit_pct)
             )
             refuelled = _after(lap, pct, spec.pit_exit_lap, spec.pit_exit_pct)
+            incidents = sum(
+                delta for at, at_pct, delta in spec.incidents if _after(lap, pct, at, at_pct)
+            )
+            off = any(_in_span(lap, pct, at, lo, hi) for at, lo, hi in spec.offtracks)
+            flag_bits = 0
+            for at, lo, hi, bits in spec.penalty_flags:
+                if _in_span(lap, pct, at, lo, hi):
+                    flag_bits |= bits
 
             # --- fuel ---------------------------------------------------
             if refuelled:
@@ -338,7 +359,7 @@ def scenario_frames(spec: ScenarioSpec | None = None) -> Iterator[Frame]:
                 ),
                 "SessionLapsRemainEx": max(0, spec.race_laps - lap + 1),
                 "SessionLapsTotal": spec.race_laps,
-                "SessionFlags": YELLOW if yellow else GREEN,
+                "SessionFlags": (YELLOW if yellow else GREEN) | flag_bits,
                 "Lap": lap,
                 "LapDist": pct * spec.lap_length_m,
                 "LapDistPct": pct,
@@ -352,8 +373,9 @@ def scenario_frames(spec: ScenarioSpec | None = None) -> Iterator[Frame]:
                 "PlayerCarIdx": spec.player_idx,
                 "PlayerCarPosition": player_position,
                 "PlayerCarClassPosition": player_position,
-                "PlayerTrackSurface": 1 if in_pits else 3,  # in_pit_stall / on_track
-                "PlayerCarMyIncidentCount": 0,
+                # in_pit_stall / off_track / on_track
+                "PlayerTrackSurface": 1 if in_pits else (0 if off else 3),
+                "PlayerCarMyIncidentCount": incidents,
                 "FuelLevel": level,
                 "FuelLevelPct": level / spec.fuel_capacity,
                 "OilTemp": 95.0 + 0.2 * progress,

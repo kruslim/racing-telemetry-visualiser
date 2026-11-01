@@ -290,7 +290,13 @@ def test_stamp_records_the_snapshot_and_survives_a_broken_rule():
 def test_default_max_ages_and_the_settings_override():
     ages = {spec.name: spec.max_age_s for spec in build_agents()}
     # B2: the LLM spotter only gives slow summaries, which are never tagged late.
-    assert ages == {"strategist": 30.0, "vehicle_engineer": 20.0, "spotter": None, "coach": 30.0}
+    assert ages == {
+        "strategist": 30.0,
+        "vehicle_engineer": 20.0,
+        "spotter": None,
+        "coach": 30.0,
+        "race_control": 15.0,
+    }
     engineer = next(s for s in build_agents() if s.name == "vehicle_engineer")
     assert agent_max_age(engineer, Settings(_env_file=None)) == 20.0
     over = Settings(_env_file=None, pitwall_vehicle_engineer_max_age_s=5)

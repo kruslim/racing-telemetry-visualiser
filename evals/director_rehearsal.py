@@ -58,6 +58,12 @@ from rtv.store.journal import SessionRecorder
 
 #: The shipped worked script.
 EXAMPLE_SCRIPT = Path(__file__).resolve().parents[1] / "docs" / "director_scenario.example.json"
+#: Race control's scenario (stage 09 part A): an injected approach to the incident limit.
+INCIDENT_LIMIT_SCRIPT = (
+    Path(__file__).resolve().parents[1] / "docs" / "director_incident_limit.example.json"
+)
+#: Scenario names ``evals/run_director.py --scenario`` accepts besides a path.
+SCENARIOS: dict[str, Path] = {"example": EXAMPLE_SCRIPT, "incident_limit": INCIDENT_LIMIT_SCRIPT}
 
 #: The synthetic race a script is rehearsed over by default. Generated test data, like
 #: every ``evals/synthetic_*`` race: a 12-lap race of 60 s laps (10 Hz keeps it quick),
@@ -319,6 +325,30 @@ def rehearsal_answer(
             "finding": "none",
             "confidence": "medium",
             "rationale": "No warning in the car health data.",
+        }
+    if agent == "race_control":
+        figures = {
+            name: int(m.group(1))
+            for name in ("incidents", "incident_limit")
+            if (m := re.search(rf'"{name}":(\d+)', first))
+        }
+        if key.startswith("incident_limit") and len(figures) == 2:
+            return {
+                "priority": "critical",
+                "spoken_text": "One more heavy contact ends our race. Give everyone room.",
+                "detail_text": "The incident count is one heavy contact from the session's limit.",
+                "consequence": "incident_limit",
+                "incidents": figures["incidents"],
+                "incident_limit": figures["incident_limit"],
+                "driver_action": "Give everyone room.",
+                "confidence": "high",
+            }
+        return {
+            "priority": "info",
+            "spoken_text": "Nothing for race control.",
+            "detail_text": "No consequence in the race-control data.",
+            "consequence": "none",
+            "confidence": "medium",
         }
     if agent == "spotter":
         return {
@@ -629,6 +659,17 @@ def _score(
         if entry.event_type is EventType.WEATHER_CHANGE:
             woke = set(report.woke)
             checks["weather_wakes_ok"] = {"strategist", "vehicle_engineer"} <= woke
+        if entry.event_type is EventType.INCIDENT:
+            # The read-out is race control's template, never a model call.
+            checks["template_ok"] = "race_control" in report.templated and (
+                "race_control" not in report.woke
+            )
+        if entry.event_type is EventType.INCIDENT_LIMIT:
+            woken = event.payload.get("stage") == "final"
+            calls = [a for a in heard if a["agent"] == "race_control"]
+            checks["race_control_ok"] = (
+                ("race_control" in report.woke) is woken and bool(calls) is woken
+            )
         if entry.event_type in (EventType.TRAFFIC_CLOSE, EventType.BLUE_FLAG):
             checks["template_ok"] = "spotter" in report.templated and (
                 "spotter" not in report.woke

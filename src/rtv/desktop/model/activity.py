@@ -35,7 +35,10 @@ def round_figures(text: Any, digits: int = 2) -> str:
     return _LONG_DECIMAL_RE.sub(_sub, text)
 
 
-AGENTS = ("strategist", "vehicle_engineer", "spotter", "coach")
+#: Stage 09 added race control. The frozen web pages keep their four-agent list:
+#: their model creates an agent it has not seen on its first record, so a fifth
+#: agent's records never break them (it just has no lane there).
+AGENTS = ("strategist", "vehicle_engineer", "spotter", "coach", "race_control")
 
 NODES = (
     "telemetry",

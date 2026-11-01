@@ -102,9 +102,10 @@ def _ctx(state, event, events=(), **extras) -> ToolContext:
 # --------------------------------------------------------------------------
 # the registry is still just configuration
 # --------------------------------------------------------------------------
-def test_the_registry_holds_four_distinct_agents():
+def test_the_registry_holds_five_distinct_agents():
     names = [spec.name for spec in AGENT_REGISTRY]
-    assert names == ["strategist", "vehicle_engineer", "spotter", "coach"]
+    # Stage 09 added race control as one module plus one registry entry.
+    assert names == ["strategist", "vehicle_engineer", "spotter", "coach", "race_control"]
     assert len(set(names)) == len(names)
 
 
@@ -146,6 +147,7 @@ def test_agent_models_fall_back_to_the_llm_tier_defaults_when_unset():
         "vehicle_engineer": "kimi-small",
         "spotter": "kimi-small",
         "coach": "kimi-small",
+        "race_control": "kimi-small",
     }
 
 

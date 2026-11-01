@@ -12,6 +12,7 @@ output directory you name: the journal (``<out>/<session_id>/runs/*-eval.jsonl``
     python evals/run_director.py --out eval-out/director --live       # Kimi (quota)
     python evals/run_director.py --out eval-out/spa --session <id> --data-dir data --live
     python evals/run_director.py --scenario my_script.json --out eval-out/x --speed 4
+    python evals/run_director.py --scenario incident_limit --out eval-out/rc  # race control
 
 Offline (the default) the agents answer from a scripted provider, which needs no key and
 proves the routing, the templates, the overlay, the plan checks and the grounding.
@@ -32,6 +33,7 @@ sys.path.insert(0, str(ROOT))
 
 from evals.director_rehearsal import (  # noqa: E402
     EXAMPLE_SCRIPT,
+    SCENARIOS,
     rehearse,
     write_outputs,
 )
@@ -52,7 +54,7 @@ def _store_source(session_id: str, data_dir: Path):
 
 
 async def _run(args) -> int:
-    script = ScenarioScript.load(args.scenario)
+    script = ScenarioScript.load(SCENARIOS.get(args.scenario, args.scenario))
     if args.live:
         from rtv import llm
 
@@ -78,7 +80,10 @@ async def _run(args) -> int:
 
 def main() -> int:
     p = argparse.ArgumentParser(description="Rehearse a race-director scenario (evals only).")
-    p.add_argument("--scenario", default=str(EXAMPLE_SCRIPT), help="ScenarioScript JSON.")
+    p.add_argument(
+        "--scenario", default=str(EXAMPLE_SCRIPT),
+        help="ScenarioScript JSON, or a name: " + ", ".join(SCENARIOS) + ".",
+    )
     p.add_argument("--out", required=True, help="Output directory (never data/sessions).")
     p.add_argument("--session", default="", help="Rehearse over this stored session.")
     p.add_argument("--data-dir", default="data", help="Data directory of --session.")
