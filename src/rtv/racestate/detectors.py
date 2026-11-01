@@ -111,6 +111,23 @@ class DetectorConfig:
     #: Seconds between the gap samples the closing rate is measured over.
     traffic_sample_s: float = 1.0
 
+    # --- race control (stage 09, rtv.racestate.race_control) -------------
+    #: Incidents left at which the count is "approaching" the session's limit:
+    #: two heavy contacts (4x each) away.
+    incident_approach_margin: int = 8
+    #: Incidents left at which one more heavy contact (a 4x) ends the race.
+    incident_final_margin: int = 4
+    #: Off-tracks inside the window that make a track-limits pattern...
+    track_limit_offs: int = 3
+    #: ...and the window, in laps (the current lap and the ones before it).
+    track_limit_window_laps: int = 3
+    #: Corners (lap-distance buckets of ``corner_buckets``) a car lapping us may
+    #: stay inside the blue-flag gap before we are holding it up.
+    blue_flag_corners: int = 3
+    #: ...for at least this many seconds, inside this gap behind us.
+    blue_flag_held_s: float = 5.0
+    blue_flag_held_gap_s: float = 1.0
+
 
 DEFAULT_CONFIG = DetectorConfig()
 
