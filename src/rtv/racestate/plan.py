@@ -23,6 +23,11 @@ posture and pace target; nobody else writes it.
 * :func:`plan_view` is what an agent is shown: values, units in the field names (so the
   typed FactSet reads them as ``race_state.plan.next_stop_lap = 13 lap``), provenance and
   version, and no free text (an agent-written rationale could carry a figure).
+* A ``regulation_change`` event for a ``mandatory_pit_stop`` (only the race director
+  emits one, in an eval rehearsal) makes a stop required inside its lap window even when
+  the tank reaches the flag: :func:`mandatory_stop` reads it from the event history, and
+  :func:`derive`, :func:`sanity_check` and :func:`propose_revision` honour it. With no
+  such event (every live session) they behave exactly as before.
 
 Pure and model-free. The race-state engine applies it under its lock.
 """
@@ -30,7 +35,8 @@ Pure and model-free. The race-state engine applies it under its lock.
 from __future__ import annotations
 
 import math
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
+from dataclasses import dataclass
 from typing import Any
 
 from rtv.racestate import projection as pj
@@ -46,11 +52,14 @@ from rtv.racestate.models import (
 
 __all__ = [
     "ELEMENTS",
+    "MANDATORY_PIT_STOP",
+    "MandatoryStop",
     "PlanElement",
     "PlanRevision",
     "ProposalOutcome",
     "RacePlan",
     "is_race_segment",
+    "mandatory_stop",
     "plan_view",
     "propose_revision",
     "proposal_facts",
@@ -89,6 +98,76 @@ PACE_BAND = 0.03
 MAX_FUEL_SAVE_FRACTION = 0.15
 #: Revisions kept on the plan (the journal keeps every one).
 MAX_REVISIONS = 40
+
+
+#: The ``regulation`` of a ``regulation_change`` payload that makes a stop mandatory.
+MANDATORY_PIT_STOP = "mandatory_pit_stop"
+
+
+@dataclass(frozen=True)
+class MandatoryStop:
+    """A stop a regulation requires, between two laps (inclusive; ``None`` = open)."""
+
+    from_lap: int | None
+    to_lap: int | None
+    #: Session time the regulation came in; a pit exit after it serves it.
+    since: float
+    served: bool = False
+
+    def pending(self, state: RaceState) -> bool:
+        """Still to be made: not served, and its last lap not yet run."""
+        if self.served:
+            return False
+        lap = state.player.lap
+        return self.to_lap is None or lap is None or lap <= self.to_lap
+
+    def allows(self, lap: int) -> bool:
+        return (self.from_lap is None or lap >= self.from_lap) and (
+            self.to_lap is None or lap <= self.to_lap
+        )
+
+    def window(self) -> str:
+        lo = "now" if self.from_lap is None else f"lap {self.from_lap}"
+        hi = "the flag" if self.to_lap is None else f"lap {self.to_lap}"
+        return f"{lo} to {hi}"
+
+
+def _lap_of(value: Any) -> int | None:
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        return None
+    return int(value)
+
+
+def regulation_stop(payload: Mapping[str, Any], since: float = 0.0) -> MandatoryStop | None:
+    """The mandatory stop a regulation payload declares, or ``None``."""
+    if str(payload.get("regulation") or "") != MANDATORY_PIT_STOP:
+        return None
+    return MandatoryStop(
+        from_lap=_lap_of(payload.get("applies_from_lap")),
+        to_lap=_lap_of(payload.get("applies_to_lap")),
+        since=float(since),
+    )
+
+
+def mandatory_stop(events: Iterable[RaceEvent]) -> MandatoryStop | None:
+    """The newest mandatory-stop regulation in ``events``, marked served by a later pit exit.
+
+    Only the race director emits ``regulation_change`` (an eval rehearsal), so on a live
+    session this is always ``None``.
+    """
+    found: MandatoryStop | None = None
+    for event in events:
+        if event.event_type is EventType.REGULATION_CHANGE:
+            stop = regulation_stop(event.payload, event.session_time)
+            if stop is not None:
+                found = stop
+        elif (
+            found is not None
+            and event.event_type is EventType.PIT_EXIT
+            and event.session_time >= found.since
+        ):
+            found = MandatoryStop(found.from_lap, found.to_lap, found.since, served=True)
+    return found
 
 
 def is_race_segment(state: RaceState) -> bool:
@@ -130,19 +209,35 @@ def stops_needed(state: RaceState) -> int | None:
 
 
 def derive(
-    state: RaceState, plan: RacePlan | None, *, pit_lane_loss_s: float
+    state: RaceState,
+    plan: RacePlan | None,
+    *,
+    pit_lane_loss_s: float,
+    events: Sequence[RaceEvent] = (),
 ) -> tuple[dict[str, tuple[Any, str]], dict[str, str]]:
     """Every element the deterministic data supports now: ``{name: (value, rationale)}``.
 
     ``next_stop_lap`` keeps a standing agent or operator choice (the fuel to add is then
-    priced for that lap); everything else is what the engine would choose.
+    priced for that lap); everything else is what the engine would choose. A pending
+    mandatory stop in ``events`` (:func:`mandatory_stop`) means at least one stop.
     """
     out: dict[str, tuple[Any, str]] = {}
     missing: dict[str, str] = {}
     stop = sm.stop_plan(state)
+    rule = mandatory_stop(events)
+    rule = rule if rule is not None and rule.pending(state) else None
     if stop.grounded:
         needed = stops_needed(state) or 0
-        if not stop.stop_required:
+        if not stop.stop_required and rule is not None:
+            out["stop_count"] = (
+                1,
+                f"A regulation requires a stop ({rule.window()}); the fuel needs none.",
+            )
+            for name in ("next_stop_lap", "fuel_to_add_l"):
+                missing[name] = (
+                    f"The regulation's stop ({rule.window()}) has no lap planned yet."
+                )
+        elif not stop.stop_required:
             out["stop_count"] = (0, "The tank reaches the flag with fuel to spare.")
             for name in ("next_stop_lap", "fuel_to_add_l"):
                 missing[name] = "No stop is needed: the tank reaches the flag."
@@ -229,6 +324,7 @@ def refresh_plan(
     pit_exit: bool = False,
     pit_lane_loss_s: float = sm.DEFAULT_PIT_LANE_LOSS_S,
     segment: int | None = None,
+    events: Sequence[RaceEvent] = (),
 ) -> PlanRevision | None:
     """Create or refresh the plan in ``state.plan`` from the deterministic data.
 
@@ -246,7 +342,7 @@ def refresh_plan(
     if state.player.on_pit_road:
         # The stop is in progress; the fuel model catches up at the next lap line.
         return None
-    derived, missing = derive(state, plan, pit_lane_loss_s=pit_lane_loss_s)
+    derived, missing = derive(state, plan, pit_lane_loss_s=pit_lane_loss_s, events=events)
     if plan is None and not derived:
         return None
     if plan is None:
@@ -259,7 +355,9 @@ def refresh_plan(
     for name in ELEMENTS:
         current: PlanElement | None = getattr(new, name)
         if current is not None and current.provenance != "derived":
-            problem = sanity_check(state, {name: current.value}, base=new, only=(name,))
+            problem = sanity_check(
+                state, {name: current.value}, base=new, only=(name,), events=events
+            )
             if problem is None:
                 continue
             reasons.append(f"{name} reverted: {problem}")
@@ -488,12 +586,16 @@ def sanity_check(
     base: RacePlan | None = None,
     only: Sequence[str] | None = None,
     pit_lane_loss_s: float = sm.DEFAULT_PIT_LANE_LOSS_S,
+    events: Sequence[RaceEvent] = (),
 ) -> str | None:
     """Why the plan ``base`` with ``values`` applied is not feasible, or ``None``.
 
     Deterministic bounds only, and the reason quotes only deterministic figures (the
-    window, the tank, the reference lap), never the value being checked.
+    window, the tank, the reference lap, a regulation's laps), never the value being
+    checked. A pending mandatory stop in ``events`` requires a stop inside its window.
     """
+    rule = mandatory_stop(events)
+    rule = rule if rule is not None and rule.pending(state) else None
     merged = {name: _value(base, name) for name in ELEMENTS}
     merged.update(values)
     names = list(only) if only is not None else list(values)
@@ -508,13 +610,17 @@ def sanity_check(
             return "stop_count needs a fuel model, and consumption has not been learned yet."
         if stops < needed:
             return f"stop_count is fewer stops than the fuel needs ({needed})."
+        if rule is not None and stops < 1:
+            return f"stop_count: a regulation requires a stop ({rule.window()})."
         if fuel.laps_to_finish is not None and stops > max(0, math.ceil(fuel.laps_to_finish)):
             return "stop_count is more stops than laps left to run."
     if "next_stop_lap" in names and merged.get("next_stop_lap") is not None:
         target = int(merged["next_stop_lap"])
         if not stop.grounded:
             return f"next_stop_lap needs the stop plan, which has no data ({stop.reason})"
-        if not stop.stop_required:
+        if rule is not None and not rule.allows(target):
+            return f"next_stop_lap is outside the regulation's stop window ({rule.window()})."
+        if not stop.stop_required and rule is None:
             return "next_stop_lap: the tank reaches the flag (no_stop_needed), so no stop to plan."
         if lap is not None and target < lap:
             return f"next_stop_lap is already behind the car (current lap {lap})."
@@ -694,7 +800,9 @@ def propose_revision(
     problem = _unsupported(facts, values)
     if problem:
         return reject(problem, changes)
-    problem = sanity_check(seen, values, base=plan, pit_lane_loss_s=pit_lane_loss_s)
+    problem = sanity_check(
+        seen, values, base=plan, pit_lane_loss_s=pit_lane_loss_s, events=events
+    )
     if problem:
         return reject(problem, changes)
 

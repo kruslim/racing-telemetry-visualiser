@@ -124,7 +124,7 @@ The code is one Python package, `src/rtv/`, with one FastAPI app (`main.py`, wir
 | `coaching/` | Layer 1 lap findings, Layer 3a orchestrator, Layer 3b LangGraph coach |
 | `vision/` | Video sync, frame capture, VLM visual notes |
 | `tracks/` | Corner names for 33 GT3 venues from OpenStreetMap |
-| `director/` | Interfaces for a scripted race director (no scheduler yet) |
+| `director/` | The scripted race director: seam, scheduler and overlay (eval rehearsals only) |
 | `desktop/` | RTV Desktop, the PySide6 client |
 
 ## 3. Telemetry path: ingest, storage, streaming
@@ -430,10 +430,10 @@ why calls are checked again at air time, and why there is a late tag at all.
   between runs are within noise.
 - **Latency.** Model calls take 8-18 s, so agent advice is minutes-scale strategy and
   coaching, not instant reactions.
-- **Pending build stages.** Stage 09 part A (a race-control agent) and stage 10
-  (a scripted race director for evals) are planned in `prompts/` and recorded in
-  [PITWALL.md](PITWALL.md) as they land (the race plan and the post-race debrief are
-  built). The director has interfaces and a tested seam only.
+- **Pending build stages.** None: stages 08 (race plan), 09 (race control and the post-race
+  debrief) and 10 are built and recorded in [PITWALL.md](PITWALL.md). The race director
+  (stage 10) runs only from evals (`evals/run_director.py`), never in the app, and has
+  not yet been rehearsed against Kimi.
 
 ## 17. Technical questions and answers
 
