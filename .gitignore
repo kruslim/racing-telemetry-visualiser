@@ -39,3 +39,6 @@ CLAUDE.local.md
 
 # Real telemetry fixtures (large; fetched by scripts/fetch_fixtures.py)
 /tests/fixtures/real/
+
+# Eval outputs (director rehearsals and other eval runs write here)
+/eval-out/

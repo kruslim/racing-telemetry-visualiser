@@ -52,7 +52,8 @@ def _dry_run(sets: dict[str, list]) -> int:
             print(f"# {case.name}")
             print(f"  {json.dumps(case.describe(), default=str)}")
             if agent == "strategist":
-                print(f"  defensible calls: {sorted(expected_calls(case.state))}")
+                calls = expected_calls(case.state, case.injected)
+                print(f"  defensible calls: {sorted(calls)}")
             if case.note:
                 print(f"  note: {case.note}")
         print()
@@ -119,7 +120,9 @@ async def _run_agent(agent: str, cases: list, args) -> list[dict]:
         # copy of the case's state with the same rules and keeps them for plan_ok.
         sandbox = PlanSandbox(case.state)
         runtime.tool_extras["engine"] = sandbox
-        message = await runtime.invoke(case.event, case.state, events=case.events)
+        message = await runtime.invoke(
+            case.event, case.state, events=case.events, injected=case.injected
+        )
         if message is None:
             print(f"\n# {case.name}\n  ! the agent produced nothing")
             continue
@@ -129,7 +132,11 @@ async def _run_agent(agent: str, cases: list, args) -> list[dict]:
             case.state,
             case.event,
             **_kwargs_for(agent, case, args.pit_loss),
-            **({"revisions": sandbox.revisions} if agent == "strategist" else {}),
+            **(
+                {"revisions": sandbox.revisions, "injected": case.injected, "events": case.events}
+                if agent == "strategist"
+                else {}
+            ),
         )
         rows.append({**score, "agent": agent})
         print(f"\n# {case.name}  ({case.event.key}, lap {case.event.lap})")

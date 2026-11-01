@@ -1,0 +1,46 @@
+{
+  "name": "Approach to the incident limit",
+  "version": 1,
+  "description": "A ScenarioScript for race control (stage 09 part A): a 4x on lap 3 takes the player to 14 of a 17x limit, one heavy contact from it. The incident read-out is a race-control template ('Incident, 14 of 17, 3 to the limit.'), and the incident_limit event at stage final is the one consequence that wakes the race-control agent. Eval path only: python evals/run_director.py --scenario incident_limit --out eval-out/incident-limit.",
+  "injections": [
+    {
+      "id": "heavy_contact_lap_3",
+      "kind": "custom",
+      "event_type": "incident",
+      "severity": "critical",
+      "when": {
+        "at_lap": 3,
+        "at_lap_dist_pct": 0.4
+      },
+      "payload": {
+        "delta": 4,
+        "incidents": 14,
+        "lap_dist_pct": 0.4,
+        "incident_limit": 17,
+        "incidents_remaining": 3,
+        "incident_stage": "final"
+      },
+      "note": "The real incident event's keys, with the limit the session would carry: the race-control template reads it out with no model call."
+    },
+    {
+      "id": "limit_final_stage",
+      "kind": "custom",
+      "event_type": "incident_limit",
+      "severity": "critical",
+      "when": {
+        "after": "heavy_contact_lap_3",
+        "delay_s": 0.0
+      },
+      "payload": {
+        "stage": "final",
+        "incidents": 14,
+        "incident_limit": 17,
+        "incidents_remaining": 3,
+        "delta": 4,
+        "limit_source": "session_info",
+        "final_margin": 4
+      },
+      "note": "The stage event the engine emits with the incident: stage final wakes race control, which must copy 14 and 17 exactly (race_control_policy accepts an injected event's own figures)."
+    }
+  ]
+}

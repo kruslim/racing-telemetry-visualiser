@@ -29,6 +29,12 @@ corner, and ``validate_output(..., prose_check=True)`` runs
 wrote about that corner. A brake direction the corner analysis contradicts ("brake later"
 where the driver already brakes late) is a :attr:`GroundingReport.contradictions` entry and
 goes through the same repair and refusal path as an invented figure.
+
+One check is about words, not numbers: a call that says rain or a wet track
+(:data:`WEATHER_CLAIM_RE`) needs a weather fact -- a ``weather_change`` event or the
+race director's injected weather condition (eval rehearsals), or a wet
+``track_wetness`` reading. Nothing in a live session announces rain that has not
+arrived, and a falling temperature trend is not a forecast.
 """
 
 from __future__ import annotations
@@ -58,6 +64,18 @@ REL_TOL = 0.02
 _ALWAYS_ALLOWED = frozenset({0.0, 1.0, 2.0, 3.0})
 
 MAX_SPOKEN_WORDS = 25
+
+#: Words that claim rain or water on the track. Each needs a weather fact (see
+#: :meth:`FactSet.has_weather`); otherwise the call is refused like an invented figure.
+WEATHER_CLAIM_RE = re.compile(
+    r"\b(rain\w*|showers?|drizzle|downpour|storm\w*|wet|wetter|wetness|damp)\b",
+    re.IGNORECASE,
+)
+#: Payload keys and ``measure`` values that make a weather fact.
+_WEATHER_MEASURES = frozenset({"track_wetness", "precipitation", "rain"})
+_WEATHER_KEYS = frozenset({"forecast_minutes", "precipitation"})
+#: iRacing's ``TrackWetness`` enum: 1 is dry, 2 and up is some water on the track.
+_WET_READING = 2.0
 
 
 class GroundingReport(BaseModel):
@@ -96,8 +114,17 @@ class FactSet:
         #: Layer-1 corner findings a tool returned, by label, in the shape the prose check
         #: reads (:func:`layer1_corner`).
         self.corners: dict[str, dict[str, Any]] = {}
+        #: Sources that announce rain or a wet track (see :meth:`has_weather`).
+        self.weather_sources: list[str] = []
+
+    @property
+    def has_weather(self) -> bool:
+        """A source says there is (or will be) water on the track: a weather claim is grounded."""
+        return bool(self.weather_sources)
 
     def add(self, source: str, payload: Any) -> None:
+        if _says_weather(payload):
+            self.weather_sources.append(source)
         corner = layer1_corner(payload)
         if corner is not None:
             self.corners.setdefault(corner["label"], corner)
@@ -254,6 +281,29 @@ class FactSet:
             if abs(number - fact) <= max(ABS_TOL, REL_TOL * abs(fact)):
                 return source
         return None
+
+
+def _says_weather(payload: Any, depth: int = 0) -> bool:
+    """A weather_change payload, an injected weather condition, or a wet reading."""
+    if depth > 8:
+        return False
+    if isinstance(payload, dict):
+        if payload.get("event_type") == "weather_change" or payload.get("kind") == "weather":
+            return True
+        if payload.get("measure") in _WEATHER_MEASURES or _WEATHER_KEYS & payload.keys():
+            return True
+        wetness = payload.get("track_wetness")
+        if _is_number(wetness) and float(wetness) >= _WET_READING:
+            return True
+        return any(_says_weather(v, depth + 1) for v in payload.values())
+    if isinstance(payload, list | tuple):
+        return any(_says_weather(v, depth + 1) for v in payload)
+    return False
+
+
+def weather_claims(text: str) -> list[str]:
+    """The rain / wet-track words in ``text``, as written."""
+    return [m.group(0) for m in WEATHER_CLAIM_RE.finditer(text or "")]
 
 
 def _typed_default() -> bool:
@@ -589,6 +639,20 @@ def validate_output(
                 seen.add(key)
                 unsupported.append(figure.written)
                 detail.append(facts.explain(figure))
+
+    if not facts.has_weather:
+        for text in (spoken_text or "", detail_text or ""):
+            for word in weather_claims(text):
+                key = f"weather|{word.lower()}"
+                if key in seen:
+                    continue
+                seen.add(key)
+                unsupported.append(word)
+                detail.append(
+                    f"{word} (a weather claim needs a weather fact: no weather_change event, "
+                    "injected weather condition or wet track reading was shown; a "
+                    "temperature trend is not a forecast)"
+                )
 
     for field_name, value in _payload_numbers(payload):
         numbers.append(value)

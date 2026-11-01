@@ -39,6 +39,7 @@ from typing import Literal
 
 from pydantic import Field
 
+from rtv.director.engine import INJECTED_KEY
 from rtv.pitwall import tools as T
 from rtv.pitwall.framework import AgentOutput, AgentSpec, RadioMessage, RadioPriority, Trigger
 from rtv.pitwall.questions import question_trigger
@@ -217,13 +218,20 @@ def race_control_subject(event: RaceEvent, output: AgentOutput) -> str:
 
 
 def race_control_policy(output: AgentOutput, state: RaceState, event: RaceEvent) -> str | None:
-    """Counts exact, and no penalty claim the flags do not show."""
+    """Counts exact, and no penalty claim the flags do not show.
+
+    A race-director event (eval rehearsals only, :mod:`rtv.director`) carries its own
+    scripted count and limit; those figures are the event's, with provenance, so a
+    call that copies them exactly passes too. Telemetry is never rewritten, so the
+    counter would otherwise reject every rehearsed incident-limit call.
+    """
     rc = state.race_control
+    payload = event.payload if event.payload.get(INJECTED_KEY) else {}
     incidents = getattr(output, "incidents", None)
-    if incidents is not None and incidents != rc.incidents:
+    if incidents is not None and incidents not in (rc.incidents, payload.get("incidents")):
         return f"incident count {incidents} is not the counter's {rc.incidents}"
     limit = getattr(output, "incident_limit", None)
-    if limit is not None and limit != rc.incident_limit:
+    if limit is not None and limit not in (rc.incident_limit, payload.get("incident_limit")):
         return f"incident limit {limit} is not the session's {rc.incident_limit}"
     penalty = getattr(output, "penalty", "none")
     claims_penalty = penalty != "none" or getattr(output, "consequence", "") == "penalty"
