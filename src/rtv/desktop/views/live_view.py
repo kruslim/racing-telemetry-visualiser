@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
 )
 
 from ..model import activity
+from ..model import session as session_model
 from ..model import view_model as vm
 from ..model.format import clock, humanise, integer, is_num, thousands
 from ..model.radio import latest_strategist
@@ -340,6 +341,7 @@ class LiveView(QWidget):
         self.status.set_feed(feed_state, detail)
         llm = view["llm"]
         self.status.set_ai(llm)
+        self.status.set_lifecycle(session_model.lifecycle_view(state, hub.status))
         self.strategy.set_view(
             vm.strategy_view(state), hub.fuel_history.points(), frozen=socket_down
         )

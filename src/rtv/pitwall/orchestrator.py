@@ -59,6 +59,16 @@ from rtv.racestate.models import EventType, RaceEvent, RaceState, Severity
 log = get_logger("pitwall.orchestrator")
 
 DEFAULT_MAX_INFLIGHT = 2
+_KEEP = object()
+#: The lifecycle events autonomy follows (no agent trigger matches them).
+_LIFECYCLE_EVENTS = frozenset(
+    {
+        EventType.SESSION_START,
+        EventType.SESSION_GREEN,
+        EventType.SESSION_CHECKERED,
+        EventType.SESSION_END,
+    }
+)
 #: How much recent radio each agent is shown, for continuity between calls.
 RADIO_CONTEXT = 5
 #: How many recent events tools may reconstruct history from.
@@ -95,6 +105,9 @@ class PitwallOrchestrator:
         retry_backoff_s: float | None = None,
         activity: ActivityLog | None = None,
         vision_radio: bool = False,
+        autonomous: bool = False,
+        autonomous_sessions: Sequence[str] = ("race",),
+        rosters: Mapping[str, Sequence[str]] | None = None,
         callers: Sequence[DeterministicCaller] | None = None,
     ) -> None:
         self.engine = engine
@@ -177,6 +190,25 @@ class PitwallOrchestrator:
         #: unproven on real footage, so it is review material (the timeline and
         #: the journal) until RTV_VISION_LIVE_RADIO says otherwise.
         self.vision_radio = vision_radio
+        #: Session lifecycle autonomy (RTV_PITWALL_AUTONOMOUS). A third flag next
+        #: to the kill switch and ``suspended``: standby holds the agents between
+        #: sessions and before the green flag. It never turns on anything the
+        #: operator switched off -- the kill switch and per-agent flags are checked
+        #: first and are never written here.
+        self.autonomous = bool(autonomous)
+        self.autonomous_sessions = {s.strip() for s in autonomous_sessions if s.strip()}
+        self.rosters = {
+            kind: {n.strip() for n in names if n.strip()}
+            for kind, names in dict(rosters or {}).items()
+        }
+        self._standby_reason: str | None = (
+            "waiting for a session" if self.autonomous else None
+        )
+        #: Agents armed for this segment; None = every mounted agent.
+        self._armed_roster: set[str] | None = None
+        self.session_type: str | None = None
+        #: The last arm / disarm decision, for status and the journal.
+        self.last_autonomy: dict[str, Any] | None = None
         #: Template calls (:mod:`rtv.pitwall.callers`): no model call, published
         #: from ``dispatch`` itself. ``None`` = the defaults (the spotter's).
         self.callers: list[DeterministicCaller] = (
@@ -364,6 +396,7 @@ class PitwallOrchestrator:
         the async workers decide *when*. That makes trigger routing unit-testable
         without an event loop.
         """
+        self.observe_lifecycle(event)
         if not self._enabled or self._suspended:
             self._trace_dispatch(event, [], {}, "disabled" if not self._enabled else "suspended")
             return []
@@ -381,6 +414,10 @@ class PitwallOrchestrator:
         # Template calls first: no model, no budget, on the channel before any
         # agent has even been considered.
         templated = self._call_templates(event, state)
+        if self._standby_reason is not None:
+            # Autonomy holds the model-backed agents only; templates cost nothing.
+            self._trace_dispatch(event, [], {}, "standby", templated)
+            return []
         if self.budget_exhausted:
             self._announce_budget_exhausted()
             self._trace_dispatch(event, [], {}, "budget_exhausted", templated)
@@ -390,6 +427,9 @@ class PitwallOrchestrator:
         for name, runtime in self.runtimes.items():
             if not self._agent_enabled.get(name, True):
                 skipped[name] = "disabled"
+                continue
+            if self._armed_roster is not None and name not in self._armed_roster:
+                skipped[name] = "roster"
                 continue
             trigger = runtime.match(event, state)
             if trigger is None:
@@ -710,6 +750,108 @@ class PitwallOrchestrator:
                 messages.append(message)
         return messages
 
+    # ---- session lifecycle autonomy -----------------------------------------
+    @property
+    def standby(self) -> bool:
+        return self._standby_reason is not None
+
+    @property
+    def standby_reason(self) -> str | None:
+        return self._standby_reason
+
+    def observe_lifecycle(self, event: RaceEvent) -> None:
+        """Follow the session lifecycle events; arm and disarm under autonomy.
+
+        Called from :meth:`dispatch` for every event, before the kill switch is
+        consulted, so standby tracks the session even while the operator has the
+        layer off. It only ever writes the standby flag and the armed roster.
+        """
+        kind = event.event_type
+        if kind not in _LIFECYCLE_EVENTS:
+            return
+        payload = event.payload or {}
+        if kind is EventType.SESSION_START:
+            self.session_type = payload.get("session_type")
+            if self.autonomous:
+                self._set_standby("waiting for the green flag", event, armed_roster=None)
+        elif not self.autonomous:
+            return
+        elif kind is EventType.SESSION_GREEN:
+            self.session_type = payload.get("session_type") or self.session_type
+            self._arm_for(self.session_type, event)
+        elif kind is EventType.SESSION_CHECKERED:
+            # Only once the player has the flag: the leader's flag is not ours.
+            if payload.get("player_finished") is not False and not self.standby:
+                self._set_standby("the player took the checkered flag", event)
+        elif kind is EventType.SESSION_END and not self.standby:
+            self._set_standby("the session ended", event)
+        elif kind is EventType.SESSION_END:
+            self._standby_reason = "waiting for a session"
+
+    def _arm_for(self, session_type: str | None, event: RaceEvent) -> None:
+        if session_type is None:
+            self._set_standby("the session type is unknown, so autonomy does not arm", event)
+        elif session_type in self.autonomous_sessions:
+            self._arm(None, event)
+        elif self.rosters.get(session_type):
+            self._arm(set(self.rosters[session_type]) & set(self.runtimes), event)
+        else:
+            self._set_standby(f"no agents are on the {session_type} roster", event)
+
+    def _arm(self, roster: set[str] | None, event: RaceEvent) -> None:
+        self._standby_reason = None
+        self._armed_roster = roster
+        names = sorted(roster) if roster is not None else list(self.runtimes)
+        log.info(
+            "Pitwall armed for %s at t=%.1fs: %s",
+            self.session_type or "an unknown session", event.session_time,
+            ", ".join(names) or "none",
+        )
+        self._trace_autonomy(event, armed=True, reason="green flag")
+
+    def _set_standby(
+        self, reason: str, event: RaceEvent, *, armed_roster: Any = _KEEP
+    ) -> None:
+        was_armed = self.autonomous and self._standby_reason is None
+        self._standby_reason = reason
+        if armed_roster is not _KEEP:
+            self._armed_roster = armed_roster
+        if was_armed:
+            limit = f"/{self._max_calls}" if self._max_calls else ""
+            log.info(
+                "Pitwall standing down (%s): %d%s model calls used this session.",
+                reason, self.calls_used, limit,
+            )
+        self._trace_autonomy(event, armed=False, reason=reason)
+
+    def _trace_autonomy(self, event: RaceEvent, *, armed: bool, reason: str) -> None:
+        self.last_autonomy = {
+            "armed": armed,
+            "reason": reason,
+            "event": event.event_type.value,
+            "session_time": event.session_time,
+            "session_type": self.session_type,
+            "roster": sorted(self._armed_roster) if self._armed_roster is not None else None,
+            "calls_used": self.calls_used,
+            "max_calls_per_session": self._max_calls or None,
+        }
+        data = {k: v for k, v in self.last_autonomy.items() if k != "session_time"}
+        safe_trace(
+            self.activity, "autonomy", event_key=event.key,
+            session_time=event.session_time, tick=event.tick, **data,
+        )
+
+    @property
+    def mode(self) -> str:
+        """One word for the UI: off, suspended, standby, armed (autonomy) or on."""
+        if not self._enabled:
+            return "off"
+        if self._suspended:
+            return "suspended"
+        if self._standby_reason is not None:
+            return "standby"
+        return "armed" if self.autonomous else "on"
+
     # ---- control ---------------------------------------------------------
     @property
     def enabled(self) -> bool:
@@ -818,6 +960,15 @@ class PitwallOrchestrator:
             "healthy": self.healthy(),
             "suspended": self._suspended,
             "suspend_reason": self._suspend_reason,
+            "mode": self.mode,
+            "autonomous": self.autonomous,
+            "standby": self.standby,
+            "standby_reason": self._standby_reason,
+            "armed_roster": (
+                sorted(self._armed_roster) if self._armed_roster is not None else None
+            ),
+            "session_type": self.session_type,
+            "last_autonomy": self.last_autonomy,
             "max_inflight": self._max_inflight,
             "dispatched": self.dispatched,
             "skipped_busy": self.skipped_busy,

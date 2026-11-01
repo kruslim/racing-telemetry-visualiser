@@ -96,6 +96,13 @@ class ScenarioSpec:
     #: in a real ``.ibt`` -- so the ground-truth scenario stays byte-identical.
     alongside: tuple[tuple[int, float, float, int], ...] = ()
 
+    #: iRacing's SessionNum for this stream, and the session list the
+    #: session-info document carries (SessionType strings, indexed by number).
+    #: None / empty by default, which keeps the ground-truth scenario (no
+    #: SessionNum channel) byte-identical. See ``evals/synthetic_weekend.py``.
+    session_num: int | None = None
+    sessions: tuple[str, ...] = ()
+
     #: Channels to omit from the catalog, for degradation tests.
     exclude: tuple[str, ...] = field(default=())
 
@@ -166,6 +173,8 @@ def scenario_catalog(spec: ScenarioSpec | None = None) -> Catalog:
     spec = spec or ScenarioSpec()
     excluded = set(spec.exclude)
     heads = [h for h in _headers(spec) if h.name not in excluded]
+    if spec.session_num is not None and "SessionNum" not in excluded:
+        heads.insert(3, RawHeader("SessionNum", IRType.INT))
     cat = build_catalog(heads, source="ibt", flatten_max=6)
     cat.car_id = "synthetic-gt3"
     cat.track_id = "synthetic-circuit"
@@ -180,7 +189,7 @@ def scenario_session_info(spec: ScenarioSpec | None = None) -> dict:
     vehicle engineer's ``get_setup_snapshot`` reads.
     """
     spec = spec or ScenarioSpec()
-    return {
+    info = {
         "WeekendInfo": {
             "TrackName": "synthetic-circuit",
             "TrackDisplayName": "Synthetic Circuit",
@@ -204,6 +213,14 @@ def scenario_session_info(spec: ScenarioSpec | None = None) -> dict:
             "TiresAero": {"AeroSettings": {"RearWingSetting": "7"}},
         },
     }
+    if spec.sessions:
+        info["SessionInfo"] = {
+            "Sessions": [
+                {"SessionNum": i, "SessionType": kind, "SessionName": kind.upper()}
+                for i, kind in enumerate(spec.sessions)
+            ]
+        }
+    return info
 
 
 # --------------------------------------------------------------------------
@@ -394,6 +411,8 @@ def scenario_frames(spec: ScenarioSpec | None = None) -> Iterator[Frame]:
                     1,
                 )
 
+            if spec.session_num is not None:
+                values["SessionNum"] = spec.session_num
             for name in excluded:
                 values.pop(name, None)
 

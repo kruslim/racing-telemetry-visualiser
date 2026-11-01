@@ -1,0 +1,466 @@
+{
+ "cases": [
+  {
+   "agent": "vehicle_engineer",
+   "answers": [
+    {
+     "ok": true,
+     "over_word_limit": false,
+     "policy": null,
+     "repaired": false,
+     "same_as_recorded": true,
+     "unsupported": []
+    }
+   ],
+   "case_id": "vehicle_engineer-1-car_health_warning",
+   "check_issues": [],
+   "checks": {
+    "corner_ok": true,
+    "finding_ok": true,
+    "grounding_ok": true,
+    "radio_ok": true,
+    "refusal_ok": true,
+    "score": 1.0,
+    "setup_ok": true
+   },
+   "corners": [],
+   "event_key": "car_health_warning",
+   "validity": {
+    "reason": "22 s old, limit 20 s",
+    "recorded_verdict": "late",
+    "rule": {
+     "max_age_s": 20.0
+    },
+    "rule_same_as_recorded": true,
+    "verdict": "late"
+   }
+  },
+  {
+   "agent": "strategist",
+   "answers": [
+    {
+     "ok": true,
+     "over_word_limit": false,
+     "policy": null,
+     "repaired": false,
+     "same_as_recorded": true,
+     "unsupported": []
+    }
+   ],
+   "case_id": "strategist-1-fuel_margin_low",
+   "check_issues": [],
+   "checks": {
+    "decision_ok": true,
+    "grounding_ok": true,
+    "radio_ok": true,
+    "refusal_ok": true,
+    "rejoin_ok": true,
+    "score": 1.0,
+    "window_ok": true
+   },
+   "corners": [],
+   "event_key": "fuel_margin_low",
+   "validity": {
+    "reason": null,
+    "recorded_verdict": "fresh",
+    "rule": {
+     "invalid_if_on_pit_road": true,
+     "max_age_s": 30.0,
+     "valid_until_lap": 13
+    },
+    "rule_same_as_recorded": true,
+    "verdict": "fresh"
+   }
+  },
+  {
+   "agent": "coach",
+   "answers": [
+    {
+     "ok": true,
+     "over_word_limit": false,
+     "policy": null,
+     "repaired": false,
+     "same_as_recorded": true,
+     "unsupported": []
+    }
+   ],
+   "case_id": "coach-1-offtrack",
+   "check_issues": [],
+   "checks": {
+    "corner_ok": true,
+    "grounding_ok": true,
+    "one_cue_ok": true,
+    "radio_ok": true,
+    "score": 1.0,
+    "telemetry_ok": true,
+    "theme_ok": true
+   },
+   "corners": [
+    "prose names 'T8', not in the session's corner map"
+   ],
+   "event_key": "offtrack",
+   "validity": {
+    "reason": null,
+    "recorded_verdict": "fresh",
+    "rule": {
+     "max_age_s": 30.0
+    },
+    "rule_same_as_recorded": true,
+    "verdict": "fresh"
+   }
+  },
+  {
+   "agent": "vehicle_engineer",
+   "answers": [
+    {
+     "ok": false,
+     "over_word_limit": true,
+     "policy": null,
+     "repaired": false,
+     "same_as_recorded": true,
+     "unsupported": [
+      "40"
+     ]
+    },
+    {
+     "ok": true,
+     "over_word_limit": false,
+     "policy": null,
+     "repaired": true,
+     "same_as_recorded": true,
+     "unsupported": []
+    }
+   ],
+   "case_id": "vehicle_engineer-2-tyre_out_of_band",
+   "check_issues": [],
+   "checks": {
+    "corner_ok": true,
+    "finding_ok": true,
+    "grounding_ok": true,
+    "radio_ok": true,
+    "refusal_ok": true,
+    "score": 1.0,
+    "setup_ok": true
+   },
+   "corners": [],
+   "event_key": "tyre_out_of_band",
+   "validity": {
+    "reason": "35 s old, limit 20 s",
+    "recorded_verdict": "late",
+    "rule": {
+     "max_age_s": 20.0
+    },
+    "rule_same_as_recorded": true,
+    "verdict": "late"
+   }
+  },
+  {
+   "agent": "spotter",
+   "answers": [
+    {
+     "ok": true,
+     "over_word_limit": false,
+     "policy": null,
+     "repaired": false,
+     "same_as_recorded": true,
+     "unsupported": []
+    }
+   ],
+   "case_id": "spotter-1-flag_change-yellow",
+   "check_issues": [],
+   "checks": {
+    "brevity_ok": true,
+    "car_ok": true,
+    "grounding_ok": true,
+    "radio_ok": true,
+    "refusal_ok": true,
+    "score": 1.0,
+    "side_ok": true,
+    "threat_ok": true
+   },
+   "corners": [],
+   "event_key": "flag_change:yellow",
+   "validity": {
+    "reason": "12 s old, limit 3 s",
+    "recorded_verdict": "late",
+    "rule": {
+     "max_age_s": 3.0
+    },
+    "rule_same_as_recorded": true,
+    "verdict": "late"
+   }
+  },
+  {
+   "agent": "strategist",
+   "answers": [
+    {
+     "ok": true,
+     "over_word_limit": false,
+     "policy": null,
+     "repaired": false,
+     "same_as_recorded": true,
+     "unsupported": []
+    }
+   ],
+   "case_id": "strategist-2-flag_change-green",
+   "check_issues": [],
+   "checks": {
+    "decision_ok": true,
+    "grounding_ok": true,
+    "radio_ok": true,
+    "refusal_ok": true,
+    "rejoin_ok": true,
+    "score": 1.0,
+    "window_ok": true
+   },
+   "corners": [],
+   "event_key": "flag_change:green",
+   "validity": {
+    "reason": null,
+    "recorded_verdict": "fresh",
+    "rule": {
+     "invalid_if_on_pit_road": true,
+     "max_age_s": 30.0,
+     "valid_until_lap": 13
+    },
+    "rule_same_as_recorded": true,
+    "verdict": "fresh"
+   }
+  },
+  {
+   "agent": "strategist",
+   "answers": [
+    {
+     "ok": true,
+     "over_word_limit": false,
+     "policy": null,
+     "repaired": false,
+     "same_as_recorded": true,
+     "unsupported": []
+    }
+   ],
+   "case_id": "strategist-3-flag_change-green",
+   "check_issues": [],
+   "checks": {
+    "decision_ok": true,
+    "grounding_ok": true,
+    "radio_ok": true,
+    "refusal_ok": true,
+    "rejoin_ok": true,
+    "score": 1.0,
+    "window_ok": true
+   },
+   "corners": [],
+   "event_key": "flag_change:green",
+   "validity": {
+    "reason": null,
+    "recorded_verdict": "fresh",
+    "rule": {
+     "invalid_if_on_pit_road": true,
+     "max_age_s": 30.0,
+     "valid_until_lap": 13
+    },
+    "rule_same_as_recorded": true,
+    "verdict": "fresh"
+   }
+  },
+  {
+   "agent": "coach",
+   "answers": [
+    {
+     "ok": true,
+     "over_word_limit": false,
+     "policy": null,
+     "repaired": false,
+     "same_as_recorded": true,
+     "unsupported": []
+    }
+   ],
+   "case_id": "coach-2-offtrack",
+   "check_issues": [],
+   "checks": {
+    "corner_ok": true,
+    "grounding_ok": true,
+    "one_cue_ok": true,
+    "radio_ok": true,
+    "score": 1.0,
+    "telemetry_ok": true,
+    "theme_ok": true
+   },
+   "corners": [
+    "prose names 'T4', not in the session's corner map"
+   ],
+   "event_key": "offtrack",
+   "validity": {
+    "reason": null,
+    "recorded_verdict": "fresh",
+    "rule": {
+     "max_age_s": 30.0
+    },
+    "rule_same_as_recorded": true,
+    "verdict": "fresh"
+   }
+  },
+  {
+   "agent": "coach",
+   "answers": [
+    {
+     "ok": false,
+     "over_word_limit": false,
+     "policy": null,
+     "repaired": false,
+     "same_as_recorded": false,
+     "unsupported": [
+      "two"
+     ]
+    }
+   ],
+   "case_id": "coach-3-offtrack",
+   "check_issues": [
+    "ungrounded figures: two (not in the race state)"
+   ],
+   "checks": {
+    "corner_ok": true,
+    "grounding_ok": false,
+    "one_cue_ok": true,
+    "radio_ok": true,
+    "score": 0.833,
+    "telemetry_ok": true,
+    "theme_ok": true
+   },
+   "corners": [],
+   "event_key": "offtrack",
+   "validity": {
+    "reason": null,
+    "recorded_verdict": "fresh",
+    "rule": {
+     "max_age_s": 30.0
+    },
+    "rule_same_as_recorded": true,
+    "verdict": "fresh"
+   }
+  },
+  {
+   "agent": "coach",
+   "answers": [
+    {
+     "ok": false,
+     "over_word_limit": false,
+     "policy": null,
+     "repaired": false,
+     "same_as_recorded": false,
+     "unsupported": [
+      "three"
+     ]
+    }
+   ],
+   "case_id": "coach-4-recurring_issue",
+   "check_issues": [
+    "ungrounded figures: three (not in the race state)"
+   ],
+   "checks": {
+    "corner_ok": true,
+    "grounding_ok": false,
+    "one_cue_ok": true,
+    "radio_ok": true,
+    "score": 0.833,
+    "telemetry_ok": true,
+    "theme_ok": true
+   },
+   "corners": [],
+   "event_key": "recurring_issue",
+   "validity": {
+    "reason": null,
+    "recorded_verdict": "fresh",
+    "rule": {
+     "max_age_s": 30.0
+    },
+    "rule_same_as_recorded": true,
+    "verdict": "fresh"
+   }
+  },
+  {
+   "agent": "vehicle_engineer",
+   "answers": [
+    {
+     "ok": true,
+     "over_word_limit": false,
+     "policy": null,
+     "repaired": false,
+     "same_as_recorded": true,
+     "unsupported": []
+    }
+   ],
+   "case_id": "vehicle_engineer-3-recurring_issue",
+   "check_issues": [
+    "named corner \"T4 Speaker's Corner\" but the event is at 'C09'"
+   ],
+   "checks": {
+    "corner_ok": false,
+    "finding_ok": true,
+    "grounding_ok": true,
+    "radio_ok": true,
+    "refusal_ok": true,
+    "score": 0.833,
+    "setup_ok": true
+   },
+   "corners": [],
+   "event_key": "recurring_issue",
+   "validity": {
+    "reason": "33 s old, limit 20 s",
+    "recorded_verdict": "late",
+    "rule": {
+     "max_age_s": 20.0
+    },
+    "rule_same_as_recorded": true,
+    "verdict": "late"
+   }
+  },
+  {
+   "agent": "coach",
+   "answers": [
+    {
+     "ok": true,
+     "over_word_limit": false,
+     "policy": null,
+     "repaired": false,
+     "same_as_recorded": true,
+     "unsupported": []
+    }
+   ],
+   "case_id": "coach-5-stint_lap_milestone",
+   "check_issues": [],
+   "checks": {
+    "corner_ok": true,
+    "grounding_ok": true,
+    "one_cue_ok": true,
+    "radio_ok": true,
+    "score": 1.0,
+    "telemetry_ok": true,
+    "theme_ok": true
+   },
+   "corners": [],
+   "event_key": "stint_lap_milestone",
+   "validity": {
+    "reason": null,
+    "recorded_verdict": "fresh",
+    "rule": {
+     "max_age_s": 30.0
+    },
+    "rule_same_as_recorded": true,
+    "verdict": "fresh"
+   }
+  }
+ ],
+ "summary": {
+  "answers": 13,
+  "cases": 12,
+  "corner_issues": 2,
+  "final_answers_failing_checks": 3,
+  "mean_check_score": 0.958,
+  "validator_changed_vs_recorded": 2,
+  "validator_failures": 3,
+  "validity_rules_changed": 0,
+  "validity_verdicts_changed": 0
+ }
+}

@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
 )
 
 from ..model import review
+from ..model import session as session_model
 from ..model.activity import AGENTS
 from ..model.format import (
     NA,
@@ -166,19 +167,9 @@ class SessionBar(QFrame):
         if not runs:
             self.runs.addItem("No pitwall runs yet — record one", None)
         for run in runs:
-            started = run.get("started_wall_ms")
-            from datetime import datetime
-
-            when = (
-                datetime.fromtimestamp(started / 1000).strftime("%d %b %H:%M")
-                if is_num(started)
-                else "?"
-            )
-            agents = "agents on" if run.get("has_agents") else "agents off"
-            done = "complete" if run.get("complete") else "incomplete"
-            self.runs.addItem(
-                f"{run.get('source')} · {when} · {agents} · {done}", run.get("run_id")
-            )
+            # Labelled with its session type: one live session holds practice,
+            # qualifying and race runs (stage 07).
+            self.runs.addItem(session_model.run_label(run), run.get("run_id"))
         if selected:
             index = self.runs.findData(selected)
             if index >= 0:

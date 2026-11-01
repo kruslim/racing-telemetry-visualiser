@@ -536,3 +536,182 @@ def build_all_cases() -> dict[str, list[EvalCase]]:
     """Every agent's golden set, keyed by agent name."""
     names = [STRATEGIST.name, *ROLE_BUILDERS]
     return {name: build_agent_cases(name) for name in names}
+
+
+# --------------------------------------------------------------------------
+# swapped-fact cases (task A1): the right number replaced by another real fact
+# --------------------------------------------------------------------------
+def agent_facts(spec: AgentSpec, case: EvalCase, *, typed: bool | None = None):
+    """The FactSet the runtime would build for ``case``: slice, event, prefetched tools.
+
+    Mirrors ``AgentRuntime._invoke`` and ``_prefetch`` without a model, so a
+    grounding check in an eval sees exactly what a live agent would have been shown.
+    """
+    from rtv.pitwall.framework import ToolContext
+    from rtv.pitwall.validator import FactSet
+
+    facts = FactSet(typed=typed)
+    facts.add("race_state", spec.state_slice(case.state))
+    facts.add("event", case.event.payload)
+    ctx = ToolContext(
+        state=case.state, event=case.event, events=list(case.events), config={}, extras={}
+    )
+    for name, args in spec.prefetch:
+        tool = spec.tool(name)
+        if tool is None:
+            continue
+        try:
+            resolved = dict(args(case.state, case.event) if callable(args) else args or {})
+            facts.add(name, tool(ctx, resolved))
+        except Exception:  # a tool that cannot run here grounds nothing, as live
+            continue
+    return facts
+
+
+@dataclass
+class SwappedFactCase:
+    """One golden case answered twice: with the right fact, and with a different one.
+
+    The swapped answer says a number that *is* in the agent's FactSet, but it is the
+    wrong fact for the unit it is said in (a tyre pressure spoken as laps of fuel). An
+    any-number grounding check lets it through; a typed one must not.
+    """
+
+    agent: str
+    case: EvalCase
+    #: The claim's unit family and unit, e.g. ("laps", "laps").
+    family: str
+    unit: str
+    right_path: str
+    wrong_path: str
+    faithful: dict[str, Any]
+    swapped: dict[str, Any]
+
+    def describe(self) -> dict[str, Any]:
+        return {
+            "agent": self.agent,
+            "case": self.case.name,
+            "right": f"{self.right_path} -> {self.faithful['spoken_text']!r}",
+            "swapped": f"{self.wrong_path} -> {self.swapped['spoken_text']!r}",
+        }
+
+
+def _render_figure(value: float) -> str:
+    value = round(value, 1)
+    return str(int(value)) if float(value).is_integer() else f"{value:.1f}"
+
+
+#: agent -> (case name or event key, spoken template, claim family/unit, right path,
+#: wrong-path candidates in preference order, structured data for the agent's checker).
+_SWAPS: dict[str, tuple[str, str, tuple[str, str], str, tuple[str, ...], dict]] = {
+    "strategist": (
+        "pit_window_open",
+        "Box this lap, {v} laps of fuel left.",
+        ("laps", "laps"),
+        "race_state.fuel.laps_remaining",
+        (
+            "race_state.tyres.pressures.LF",
+            "race_state.tyres.temps.LF",
+            "race_state.player.lap",
+        ),
+        {"recommendation": "box_now", "confidence": "high", "rationale": "", "risks": []},
+    ),
+    "vehicle_engineer": (
+        "engineer-oil-over-threshold",
+        "Oil is at {v} degrees, short-shift to cool it.",
+        ("temp", "c"),
+        "race_state.car_health.oil_temp",
+        (
+            "get_tyre_trend.pressures_kpa.LF",
+            "race_state.tyres.pressures.LF",
+            "race_state.player.rpm",
+        ),
+        {"finding": "oil_temp", "severity": "advisory"},
+    ),
+    "spotter": (
+        "spotter-car-closing",
+        "Car behind, {v} seconds back and closing.",
+        ("s", "s"),
+        "event.gap",
+        ("event.position", "race_state.player.position", "race_state.player.lap"),
+        {"threat": "car_close", "side": "unknown"},
+    ),
+    "coach": (
+        "coach-offtrack",
+        "You went off at {v} km/h, brake a touch earlier there.",
+        ("speed", "kmh"),
+        "event.speed",
+        ("event.lap_dist_pct", "race_state.player.lap_dist_pct", "race_state.player.lap"),
+        {"theme": "line", "cue": "Brake a touch earlier.", "corner": None},
+    ),
+}
+
+
+def _lookup(facts, path: str) -> tuple[float, str, str] | None:
+    from rtv.grounding.units import FAMILIES
+
+    for family in FAMILIES:
+        for value, unit, fact_path in facts.facts(family):
+            if fact_path == path:
+                return value, unit, family
+    return None
+
+
+def _clashes(facts, family: str, unit: str, spoken: float) -> bool:
+    """Would ``spoken`` in ``unit`` be grounded by a real fact of ``family`` anyway?"""
+    from rtv.grounding.units import Figure
+
+    return facts.supports_figure(Figure(spoken, _render_figure(spoken), family, unit))
+
+
+def swapped_fact_cases() -> list[SwappedFactCase]:
+    """One swapped-fact case per agent, built from that agent's own golden set."""
+    from rtv.grounding.units import convert
+    from rtv.pitwall.agents import AGENT_REGISTRY
+
+    specs = {spec.name: spec for spec in AGENT_REGISTRY}
+    out: list[SwappedFactCase] = []
+    for agent, (wanted, template, (family, unit), right, candidates, data) in _SWAPS.items():
+        spec = specs[agent]
+        cases = build_agent_cases(agent)
+        case = next(c for c in cases if c.name == wanted or c.event.key == wanted)
+        facts = agent_facts(spec, case)
+        found = _lookup(facts, right)
+        if found is None:
+            raise LookupError(f"{agent}: the right fact {right} is not in the FactSet")
+        value, fact_unit, _ = found
+        right_value = convert(value, family, fact_unit, unit)
+        wrong_path = wrong_value = None
+        for path in candidates:
+            hit = _lookup(facts, path)
+            if hit is None:
+                continue
+            v, u, fam = hit
+            spoken = v * 100.0 if u == "fraction" else v
+            if abs(spoken) <= 3 or _clashes(facts, family, unit, round(spoken, 1)):
+                continue  # too small to be a claim, or genuinely true in this unit too
+            wrong_path, wrong_value = path, spoken
+            break
+        if wrong_path is None:
+            raise LookupError(f"{agent}: no candidate wrong fact is distinct in {family}")
+        out.append(
+            SwappedFactCase(
+                agent=agent,
+                case=case,
+                family=family,
+                unit=unit,
+                right_path=right,
+                wrong_path=wrong_path,
+                faithful={
+                    "spoken_text": template.format(v=_render_figure(right_value)),
+                    "detail_text": "",
+                    "data": dict(data),
+                },
+                swapped={
+                    "spoken_text": template.format(v=_render_figure(wrong_value)),
+                    "detail_text": "",
+                    "data": dict(data),
+                },
+            )
+        )
+    return out
