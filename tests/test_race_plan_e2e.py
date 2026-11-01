@@ -115,7 +115,9 @@ def test_the_race_plan_across_a_race(client):
     ]
     rejected = [r for r in records if r["kind"] == "plan_proposal_rejected"]
     proposals = [
-        r for r in records if r["kind"] == "tool_call" and r["data"]["tool"] == "propose_plan_revision"
+        r
+        for r in records
+        if r["kind"] == "tool_call" and r["data"]["tool"] == "propose_plan_revision"
     ]
 
     # A baseline plan appears as soon as the fuel model does (lap 2), derived.
