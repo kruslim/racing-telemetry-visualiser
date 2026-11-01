@@ -269,7 +269,9 @@ class RadioFeed(QWidget):
         cl.addWidget(label("Mute:", "muted"))
         self.mute_buttons: dict[str, QPushButton] = {}
         for agent in AGENTS:
-            button = QPushButton("engineer" if agent == "vehicle_engineer" else agent)
+            button = QPushButton(
+                {"vehicle_engineer": "engineer", "race_control": "race control"}.get(agent, agent)
+            )
             button.setCheckable(True)
             button.setAccessibleName(f"Mute {t.AGENT_LABEL[agent]}")
             button.setStyleSheet(f"color: {t.agent_text(agent)}; min-height: 28px; padding: 0 8px;")

@@ -393,3 +393,41 @@ def test_findings_place_the_venue_names_on_the_real_lap(client):
     other = named[1]
     wrong = [(f"advice[{t1['label']}]", t1["label"], f"{other['name']} again.")]
     assert check_prose(wrong, f).kinds == ["name"]
+
+def test_stage09_race_control_on_the_real_race(client):
+    """Stage 09 part A: an unlimited race with no driver flag, and blue flags as a blind spot."""
+    from rtv.pitwall.agents.race_control import RACE_CONTROL
+    from rtv.pitwall.framework import AgentRuntime
+    from rtv.racestate.models import EventType, RaceState
+
+    _replayed(client)
+    state = RaceState.model_validate(client.get("/api/v1/racestate").json())
+    rc, caps = state.race_control, state.capabilities
+    # WeekendOptions.IncidentLimit is "unlimited" in this race: no limit, said so.
+    assert rc.incident_limit is None and rc.limit_source == "unlimited"
+    assert caps.incidents and not caps.incident_limit
+    assert rc.missing["incident_limit"] == [
+        "WeekendInfo.WeekendOptions.IncidentLimit: unlimited"
+    ]
+    # No CarIdx arrays in an .ibt: blue-flag compliance is a stated blind spot.
+    assert caps.blue_flag_compliance is False
+    assert "CarIdxLapDistPct" in rc.missing["blue_flag_compliance"]
+    assert caps.penalties and caps.track_limits
+
+    history = client.app.state.services.engine.bus.history()
+    incidents = [e for e in history if e.event_type is EventType.INCIDENT]
+    # Every rise of the counter is one incident event, and they add up to the total.
+    assert incidents and rc.incidents == state.player.incidents
+    assert sum(e.payload["delta"] for e in incidents) == incidents[-1].payload["incidents"]
+    assert incidents[-1].payload["incidents"] == rc.incidents
+    assert all("incident_limit" not in e.payload for e in incidents)
+    kinds = {e.event_type for e in history}
+    assert EventType.INCIDENT_LIMIT not in kinds and EventType.BLUE_FLAG_IGNORED not in kinds
+    # The recorded race: 4x in all, no driver flag ever shown, and two separate runs of
+    # three offs inside three laps (template read-outs only).
+    assert rc.incidents == 4
+    assert EventType.PENALTY not in kinds
+    assert sum(1 for e in history if e.event_type is EventType.TRACK_LIMITS) == 2
+    # A clean, unlimited race: the race-control agent is never woken.
+    runtime = AgentRuntime(RACE_CONTROL, provider=None)
+    assert [e.key for e in history if runtime.match(e, state)] == []

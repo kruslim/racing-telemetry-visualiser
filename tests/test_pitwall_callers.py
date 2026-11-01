@@ -381,7 +381,8 @@ def test_status_lists_the_callers():
 
 
 def test_build_callers_follows_agents_only():
-    assert [c.agent for c in build_callers()] == ["spotter"]
+    assert [c.agent for c in build_callers()] == ["spotter", "race_control"]
+    assert [c.agent for c in build_callers(only=["spotter"])] == ["spotter"]
     assert build_callers(only=["strategist"]) == []
 
 

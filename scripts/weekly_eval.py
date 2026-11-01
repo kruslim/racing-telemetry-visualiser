@@ -455,12 +455,16 @@ async def step_golden_live(watch: QuotaWatch) -> dict[str, Any]:
         for case in cases:
             if watch.hit:
                 break
-            message = await runtime.invoke(case.event, case.state, events=case.events)
+            message = await runtime.invoke(
+                case.event, case.state, events=case.events, injected=case.injected
+            )
             if message is None:
                 continue
             score = check_for_agent(
                 agent, message.to_api(), case.state, case.event,
                 **_kwargs_for(agent, case, DEFAULT_PIT_LANE_LOSS_S),
+                **({"injected": case.injected, "events": case.events}
+                   if agent == "strategist" else {}),
             )
             mine.append({**score, "agent": agent, "case": case.name,
                          "spoken_text": message.spoken_text, "refused": message.refused})

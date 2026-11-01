@@ -186,6 +186,10 @@ class Settings(BaseSettings):
     pitwall_coach_model: str = Field(
         default="", description="Override the live coach's model. Empty = RTV_LLM_KIMI_MODEL_FAST."
     )
+    pitwall_race_control_model: str = Field(
+        default="",
+        description="Override race control's model. Empty = RTV_LLM_KIMI_MODEL_FAST.",
+    )
     pitwall_strategist_max_age_s: float | None = Field(
         default=None,
         description=(
@@ -214,6 +218,14 @@ class Settings(BaseSettings):
         description=(
             "Seconds a coach call may wait for the radio before it airs "
             "tagged late. Unset = the agent's default (30 s); 0 = never tagged late."
+        ),
+    )
+    pitwall_race_control_max_age_s: float | None = Field(
+        default=None,
+        description=(
+            "Seconds a race-control agent call may wait for the radio before it airs "
+            "tagged late. Unset = the agent's default (15 s); 0 = never tagged late. "
+            "Its template read-outs (incidents, flags) use 5 s."
         ),
     )
     pitwall_agents_only: str = Field(
@@ -303,14 +315,14 @@ class Settings(BaseSettings):
         "would otherwise cost one doomed call per race event for a whole race.",
     )
 
-    # --- race director (v2 stage 5: planned; interfaces only) ------------
+    # --- race director (v2 stages 5 and 10; scripted only in evals) -------
     pitwall_director_script: str = Field(
         default="",
         description="Path to a ScenarioScript JSON file (see "
         "docs/director_scenario.example.json). Loaded and VALIDATED at startup, "
         "then bound to the default NoopDirector -- which injects nothing, because "
-        "the race-director layer ships as interfaces only. Pointing at a script "
-        "is currently a way to lint it, not to run it.",
+        "the app never runs a director. Pointing at a script is a way to lint it; "
+        "evals/run_director.py rehearses it.",
     )
 
     # --- pitwall TTS (v2 stage 4: the radio's voice) ---------------------

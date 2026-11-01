@@ -34,12 +34,14 @@ an empty tank). The band is what we score.
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping, Sequence
 from typing import Any
 
+from rtv.director.overlay import injected_caution, pending_mandatory_stop
 from rtv.pitwall.validator import FactSet, name_issues, validate_output
 from rtv.racestate import plan as race_plan
 from rtv.racestate import projection as pj
-from rtv.racestate.models import FlagPhase, RaceState
+from rtv.racestate.models import FlagPhase, RaceEvent, RaceState
 from rtv.racestate.strategy_math import simulate_pit_outcome, stop_plan
 
 #: Laps of tolerance when checking a called stop lap against the window.
@@ -50,25 +52,40 @@ POSITION_TOL = 1
 BOXING = {"box_now", "box_next_lap", "pit_under_yellow", "plan_stop"}
 
 
-def expected_calls(state: RaceState) -> set[str]:
+def expected_calls(state: RaceState, injected: Sequence[Mapping[str, Any]] = ()) -> set[str]:
     """The set of defensible recommendations for this race state.
 
     Deliberately generous where the data genuinely allows a judgement call, and
     strict where it does not: with no fuel model there is exactly one honest
     answer, and it is 'hold'.
+
+    ``injected`` is a director case's overlay: a scripted mandatory stop that the fuel
+    does not need makes staying out indefensible, and a scripted caution counts as one.
     """
     fuel = state.fuel
     lap = state.player.lap
     if not fuel.per_lap or lap is None:
         return {"hold"}
 
+    rule = pending_mandatory_stop(injected, state) if injected else None
+    stop_by_fuel = fuel.margin_laps is not None and fuel.margin_laps < 0
+    if rule is not None and not stop_by_fuel:
+        allowed = {"plan_stop"}
+        if rule.allows(lap):
+            allowed |= {"box_now", "box_next_lap"}
+        if injected_caution(injected):
+            allowed |= {"pit_under_yellow"}
+        return allowed
+
     latest = fuel.pit_window_latest_lap
     if latest is not None and lap >= latest - 1:
         # At or past the run-dry bound: stopping is the only defensible call.
         return {"box_now", "box_next_lap", "pit_under_yellow"}
 
-    stop_required = fuel.margin_laps is not None and fuel.margin_laps < 0
-    under_yellow = state.flags.phase is FlagPhase.YELLOW
+    stop_required = stop_by_fuel
+    under_yellow = state.flags.phase is FlagPhase.YELLOW or (
+        bool(injected) and injected_caution(injected)
+    )
     if stop_required and fuel.window_open:
         plan = stop_plan(state)
         if plan.call in ("box_this_lap", "box_next_lap"):
@@ -143,7 +160,9 @@ def projection_check(result: dict[str, Any], state: RaceState) -> tuple[bool, li
 
 
 def plan_check(
-    state: RaceState, revisions: list[dict[str, Any]] | None
+    state: RaceState,
+    revisions: list[dict[str, Any]] | None,
+    events: Sequence[RaceEvent] = (),
 ) -> tuple[bool, list[str]]:
     """Every accepted revision must lie inside the deterministic feasible band.
 
@@ -160,7 +179,7 @@ def plan_check(
             for name, change in (rev.get("changes") or {}).items()
             if name in race_plan.ELEMENTS and change.get("to") is not None
         }
-        problem = race_plan.sanity_check(state, values, base=state.plan)
+        problem = race_plan.sanity_check(state, values, base=state.plan, events=events)
         if problem:
             issues.append(f"accepted plan revision outside the feasible band: {problem}")
     return not issues, issues
@@ -173,8 +192,14 @@ def cross_check(
     facts: FactSet | None = None,
     pit_lane_loss_s: float = 25.0,
     revisions: list[dict[str, Any]] | None = None,
+    injected: Sequence[Mapping[str, Any]] = (),
+    events: Sequence[RaceEvent] = (),
 ) -> dict:
-    """Score one strategist call against the deterministic race state."""
+    """Score one strategist call against the deterministic race state.
+
+    ``injected`` and ``events`` are a director case's overlay and event history: a
+    scripted regulation then bounds the decision, the stop lap and the plan check.
+    """
     issues: list[str] = []
     data = result.get("data") or result
     recommendation = data.get("recommendation")
@@ -204,7 +229,7 @@ def cross_check(
         issues.append(f"spoken_text is {report.word_count} words; radio limit is 25")
 
     # --- the decision itself ----------------------------------------------
-    allowed = expected_calls(state)
+    allowed = expected_calls(state, injected)
     decision_ok = recommendation in allowed
     if not decision_ok:
         issues.append(
@@ -224,6 +249,10 @@ def cross_check(
         elif earliest is not None and target < earliest - LAP_TOL:
             window_ok = False
             issues.append(f"target_lap {target} is before the window opens at {earliest}")
+        rule = pending_mandatory_stop(injected, state) if injected else None
+        if rule is not None and not rule.allows(int(target)):
+            window_ok = False
+            issues.append(f"target_lap {target} is outside the regulation's window")
 
     # --- the rejoin claim has to match the deterministic projection --------
     rejoin_ok = True
@@ -251,7 +280,7 @@ def cross_check(
     if data_missing and not refusal_ok:
         issues.append("data for a pit call is missing but the agent still made one")
 
-    plan_ok, plan_issues = plan_check(state, revisions)
+    plan_ok, plan_issues = plan_check(state, revisions, events)
     projection_ok, projection_issues = projection_check(result, state)
     issues.extend(plan_issues + projection_issues)
 
@@ -325,6 +354,8 @@ ENGINEER_FINDINGS: dict[str, set[str]] = {
     "tow": {"damage", "car_health"},
     "oil_temp": {"car_health"},
     "water_temp": {"car_health"},
+    # A scripted weather step (race director cases): water changes grip and tyre heat.
+    "track_wetness": {"tyre_temps", "tyre_pressures", "traction", "none"},
 }
 
 SPOTTER_THREATS: dict[str, set[str]] = {
@@ -555,12 +586,105 @@ def coach_check(
     return _finish(checks, issues, {"theme": theme, "allowed_themes": sorted(allowed or [])})
 
 
+# ==========================================================================
+# stage 09: race control
+# ==========================================================================
+#: The consequences a race-control answer may name for each trigger. A read-out
+#: the templates already made (an "approaching" stage, a cleared flag) has none.
+def race_control_consequences(event, state: RaceState) -> set[str]:
+    """The defensible ``consequence`` values for ``event``."""
+    p = getattr(event, "payload", {}) or {}
+    kind = event.event_type.value
+    if kind == "incident_limit":
+        return {"incident_limit"} if p.get("stage") in ("final", "reached") else {"none"}
+    if kind == "penalty":
+        return {"penalty"} if p.get("state") == "shown" else {"none"}
+    if kind == "track_limits":
+        left, margin = p.get("incidents_remaining"), p.get("approach_margin")
+        near = isinstance(left, int) and isinstance(margin, int) and left <= margin
+        return {"track_limits", "incident_limit"} if near else {"none"}
+    if kind == "blue_flag_ignored":
+        return {"blue_flag"}
+    if kind == "driver_question":
+        return {"incident_limit", "penalty", "track_limits", "blue_flag", "none"}
+    return {"none"}
+
+
+_COUNT_RE = re.compile(r"\b(\d+)\s*(?:x\b|incidents?\b)", re.IGNORECASE)
+
+
+def race_control_check(
+    result: dict[str, Any],
+    state: RaceState,
+    event,
+    *,
+    facts: FactSet | None = None,
+    **_: Any,
+) -> dict:
+    """Score one race-control call: a real consequence, exact counts, no invented penalty."""
+    checks, issues = _base_checks(result, facts, state)
+    spoken = checks["_spoken"]
+    data = result.get("data") or result
+    payload = getattr(event, "payload", {}) or {}
+    rc = state.race_control
+    consequence = data.get("consequence")
+
+    allowed = race_control_consequences(event, state)
+    checks["consequence_ok"] = consequence in allowed
+    if not checks["consequence_ok"]:
+        issues.append(
+            f"consequence {consequence!r} is outside {sorted(allowed)} for "
+            f"{getattr(event, 'key', '?')}: race control speaks only to a consequence"
+        )
+
+    # The incident count and the limit are copied, never estimated.
+    want_count = payload.get("incidents", rc.incidents)
+    want_limit = payload.get("incident_limit", rc.incident_limit)
+    count_ok = True
+    if data.get("incidents") is not None and data.get("incidents") != want_count:
+        count_ok = False
+        issues.append(f"said {data.get('incidents')} incidents; the counter says {want_count}")
+    if data.get("incident_limit") is not None and data.get("incident_limit") != want_limit:
+        count_ok = False
+        issues.append(
+            f"said a limit of {data.get('incident_limit')}; the session's is {want_limit}"
+        )
+    spoken_counts = {int(m) for m in _COUNT_RE.findall(spoken)}
+    known = {v for v in (want_count, want_limit, rc.incidents_remaining) if isinstance(v, int)}
+    if spoken_counts - known:
+        count_ok = False
+        issues.append(
+            f"spoke incident figures {sorted(spoken_counts - known)} that are not the count, "
+            "the limit or what is left"
+        )
+    checks["count_ok"] = count_ok
+
+    # No penalty claim without a penalty channel and a flag showing. Read from the
+    # structured answer: "no penalty showing" is the honest sentence, not a claim.
+    showing = bool(state.capabilities.penalties and rc.penalty)
+    claims = (
+        (data.get("penalty") or "none") != "none"
+        or consequence == "penalty"
+        or data.get("pit_request") == "box_now"
+    )
+    checks["refusal_ok"] = showing or not claims
+    if not checks["refusal_ok"]:
+        issues.append("claimed a penalty but no driver flag is showing (or no SessionFlags)")
+
+    return _finish(
+        checks,
+        issues,
+        {"consequence": consequence, "allowed_consequences": sorted(allowed)},
+    )
+
+
 #: agent name -> its scorer. ``cross_check`` keeps the strategist's signature so
 #: the stage-2 harness and its tests are untouched.
 ROLE_CHECKS = {
     "vehicle_engineer": engineer_check,
     "spotter": spotter_check,
     "coach": coach_check,
+    "race_control": race_control_check,
 }
 
 
@@ -574,6 +698,8 @@ def check_for_agent(
     """Score one answer with whichever checker that agent's role calls for."""
     if agent in ROLE_CHECKS:
         kwargs.pop("revisions", None)
+        kwargs.pop("injected", None)
+        kwargs.pop("events", None)
         return ROLE_CHECKS[agent](result, state, event, **kwargs)
     kwargs.pop("setup_available", None)
     kwargs.pop("telemetry_available", None)

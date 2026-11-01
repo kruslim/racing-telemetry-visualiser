@@ -10,7 +10,8 @@ radio can keep one standing answer per decision.
   Today that is one decision, ``pit_stop``: when the car stops. The strategist's
   every call is about it (subject ``pit_stop``), and the engineer joins it only
   when it asks for a stop now (``damage_stop`` or ``tyre_stop``, set from its
-  structured ``pit_request``, never from its words).
+  structured ``pit_request``, never from its words), and race control (stage 09)
+  only when a penalty has to be served in the pit lane (``penalty_stop``).
 * :func:`action_of` reads what a call *does* about the decision from its
   structured answer: ``box_now``, ``stop_later`` or ``stay_out`` (``None`` for
   ``hold``, refusals and anything that does not take a side).
@@ -36,6 +37,8 @@ DECISION_GROUPS: dict[str, frozenset[tuple[str, str]]] = {
             ("strategist", "pit_stop"),
             ("vehicle_engineer", "damage_stop"),
             ("vehicle_engineer", "tyre_stop"),
+            # Stage 09: a penalty served in the pit lane is a stop too.
+            ("race_control", "penalty_stop"),
         }
     ),
 }
@@ -83,8 +86,9 @@ def action_of(message: Any) -> str | None:
         return None
     if message.agent == "strategist":
         return _STRATEGIST_ACTIONS.get(str((message.data or {}).get("recommendation")))
-    if message.agent == "vehicle_engineer":
-        # The engineer is in the group only when it asked for a stop now.
+    if message.agent in ("vehicle_engineer", "race_control"):
+        # The engineer and race control are in the group only when they asked for
+        # a stop now (damage, a failing tyre, a penalty to serve).
         return "box_now"
     return None
 

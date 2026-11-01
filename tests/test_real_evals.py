@@ -47,8 +47,14 @@ def test_spa_offline_results_match_the_baseline():
     )
 
 
+#: Agents added after the spa_run journal was recorded have no runs in it. Race
+#: control (stage 09) is also never woken on that race: no incident limit, no
+#: driver flag shown, no CarIdx standings for blue-flag compliance.
+NOT_IN_SPA_RUN = {"race_control"}
+
+
 def test_spa_set_covers_every_agent_and_rebuilds_each_input(spa_cases):
-    assert {c["agent"] for c in spa_cases} == set(SPECS)
+    assert {c["agent"] for c in spa_cases} == set(SPECS) - NOT_IN_SPA_RUN
     for case in spa_cases:
         first = agent_input.model_input(case["input"])
         assert first["agent"] == case["agent"]

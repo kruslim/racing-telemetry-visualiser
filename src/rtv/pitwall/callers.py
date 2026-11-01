@@ -291,6 +291,10 @@ def _incident(event: RaceEvent, state: RaceState) -> TemplateCall | None:
     total = event.payload.get("incidents")
     if not isinstance(total, int):
         return None
+    if event.payload.get("incident_limit") is not None:
+        # With a known limit the count is race control's read-out ("Incident, 14 of
+        # 17."), not a second, different sentence about the same incident.
+        return None
     return TemplateCall(
         spoken_text=f"Incident, that's {total}x.",
         detail_text=(
@@ -311,6 +315,136 @@ SPOTTER_TEMPLATES: dict[str, Template] = {
     EventType.FLAG_CHANGE.value: _hazard_flag,
     EventType.INCIDENT.value: _incident,
 }
+
+
+# --------------------------------------------------------------------------
+# race control's templates (stage 09): read-outs with exact numbers, no model
+# --------------------------------------------------------------------------
+RACE_CONTROL = "race_control"
+#: Seconds a race-control read-out may wait for the channel before it airs late.
+RACE_CONTROL_MAX_AGE_S = 5.0
+
+#: How each driver flag is said when it is shown.
+_PENALTY_WORDS = {
+    "black": "Black flag. Serve it in the pit lane.",
+    "repair": "Meatball flag, pit for repairs.",
+    "furled": "Furled black flag, that's a warning.",
+    "disqualify": "Black flag with the cross, we're disqualified.",
+}
+_PENALTY_NAMES = {
+    "black": "Black flag",
+    "repair": "Meatball flag",
+    "furled": "Warning flag",
+    "disqualify": "Disqualification flag",
+}
+
+
+def _rc_incident(event: RaceEvent, state: RaceState) -> TemplateCall | None:
+    """"Incident, 14 of 17." -- only when the session has a numeric limit."""
+    p = event.payload
+    total, limit, left = p.get("incidents"), p.get("incident_limit"), p.get("incidents_remaining")
+    if not isinstance(total, int) or not isinstance(limit, int):
+        return None
+    stage = p.get("incident_stage")
+    if stage == "reached":
+        spoken = f"Incident, {total} of {limit}, that's the limit."
+        priority = RadioPriority.CRITICAL
+    elif stage in ("approaching", "final") and isinstance(left, int):
+        spoken = f"Incident, {total} of {limit}, {left} to the limit."
+        priority = RadioPriority.ADVISORY
+    else:
+        spoken = f"Incident, {total} of {limit}."
+        priority = RadioPriority.ADVISORY
+    return TemplateCall(
+        spoken_text=spoken,
+        detail_text=(
+            f"Incident count up {p.get('delta')} to {total} of a {limit} limit "
+            f"({left} left), at {p.get('lap_dist_pct')} of the lap."
+        ),
+        priority=priority,
+        subject="race_control:incidents",
+        data={"consequence": "incident_limit", "incidents": total, "incident_limit": limit},
+        cooldown_s=HAZARD_COOLDOWN_S,
+    )
+
+
+def _rc_penalty(event: RaceEvent, state: RaceState) -> TemplateCall | None:
+    """The flag itself, shown or cleared. What to do about it is the agent's call."""
+    p = event.payload
+    flag, change = p.get("flag"), p.get("state")
+    if flag not in _PENALTY_WORDS:
+        return None
+    if change == "shown":
+        spoken = _PENALTY_WORDS[flag]
+        priority = RadioPriority.ADVISORY if flag == "furled" else RadioPriority.CRITICAL
+    elif change == "cleared":
+        spoken = f"{_PENALTY_NAMES[flag]} cleared."
+        priority = RadioPriority.INFO
+    else:
+        return None
+    return TemplateCall(
+        spoken_text=spoken,
+        detail_text=(
+            f"SessionFlags {flag} {change}; driver flags now: "
+            f"{', '.join(p.get('active') or []) or 'none'}."
+        ),
+        priority=priority,
+        subject=f"race_control:penalty:{flag}",
+        data={"consequence": "penalty", "penalty": flag, "state": change},
+        cooldown_s=HAZARD_COOLDOWN_S,
+    )
+
+
+def _rc_track_limits(event: RaceEvent, state: RaceState) -> TemplateCall | None:
+    p = event.payload
+    offs, window = p.get("offs"), p.get("window_laps")
+    if not isinstance(offs, int) or not isinstance(window, int):
+        return None
+    return TemplateCall(
+        spoken_text=f"Track limits, {offs} offs in {window} laps.",
+        detail_text=(
+            f"{offs} off-tracks on laps {p.get('laps')}; the pattern threshold is "
+            f"{p.get('threshold')} in {window} laps. iRacing reports no warning count."
+        ),
+        subject="race_control:track_limits",
+        data={"consequence": "track_limits", "offs": offs},
+    )
+
+
+def _rc_blue_ignored(event: RaceEvent, state: RaceState) -> TemplateCall | None:
+    p = event.payload
+    corners = p.get("corners")
+    if not isinstance(corners, int):
+        return None
+    idx = p.get("car_idx")
+    return TemplateCall(
+        spoken_text=f"Blue flag, {_car(p.get('position'))} held up {corners} corners, let them by.",
+        detail_text=(
+            f"Car {idx}, {p.get('laps_ahead')} laps up, has been within {p.get('gap')} s "
+            f"behind for {corners} corners (threshold {p.get('threshold_corners')})."
+        ),
+        subject="race_control:blue_flag",
+        data={"consequence": "blue_flag", "car_idx": idx},
+        subject_car_idx=idx if isinstance(idx, int) else None,
+        expires_after_s=TRAFFIC_EXPIRES_S,
+    )
+
+
+#: Race control's read-outs. ``incident_limit`` has none on purpose: the incident
+#: read-out already says the count against the limit, and the stage event exists to
+#: wake the agent when there is a consequence (``agents/race_control.py``).
+RACE_CONTROL_TEMPLATES: dict[str, Template] = {
+    EventType.INCIDENT.value: _rc_incident,
+    EventType.PENALTY.value: _rc_penalty,
+    EventType.TRACK_LIMITS.value: _rc_track_limits,
+    EventType.BLUE_FLAG_IGNORED.value: _rc_blue_ignored,
+}
+
+
+def race_control_caller(settings: Any = None) -> DeterministicCaller:
+    return DeterministicCaller(
+        RACE_CONTROL, RACE_CONTROL_TEMPLATES, max_age_s=RACE_CONTROL_MAX_AGE_S
+    )
 
 
 def spotter_max_age(settings: Any = None) -> float | None:
@@ -335,19 +469,21 @@ def build_callers(
     settings: Any = None, *, only: Sequence[str] | None = None
 ) -> list[DeterministicCaller]:
     """The deterministic callers to run; ``only`` filters by agent name."""
-    callers = [spotter_caller(settings)]
+    callers = [spotter_caller(settings), race_control_caller(settings)]
     if only:
         callers = [c for c in callers if c.agent in only]
     return callers
 
 
 __all__ = [
+    "RACE_CONTROL_TEMPLATES",
     "SPOTTER_TEMPLATES",
     "TEMPLATE_SOURCE",
     "DeterministicCaller",
     "Template",
     "TemplateCall",
     "build_callers",
+    "race_control_caller",
     "spotter_caller",
     "template_message",
 ]

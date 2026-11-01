@@ -15,6 +15,12 @@ Stage 3 generalised this from one agent to four. The generator takes an
 :class:`~rtv.pitwall.framework.AgentSpec` and filters with that agent's own
 ``match()``, so a case exists exactly when the live path would have woken that
 agent -- there is no second, hand-maintained list of triggers to drift.
+
+Stage 10 adds the race director's cases (:func:`director_cases`): the shipped example
+script rehearsed over the director race, snapshotted at each scripted weather and
+regulation event, with the injected overlay the agent was shown (``EvalCase.injected``).
+Those event types exist only in a director rehearsal, so these are the only cases that
+can cover them.
 """
 
 from __future__ import annotations
@@ -24,6 +30,7 @@ from typing import Any
 
 from evals.synthetic_race import ScenarioSpec, replay_scenario
 from rtv.pitwall.agents.coach import COACH
+from rtv.pitwall.agents.race_control import RACE_CONTROL
 from rtv.pitwall.agents.spotter import SPOTTER
 from rtv.pitwall.agents.strategist import STRATEGIST
 from rtv.pitwall.agents.vehicle_engineer import VEHICLE_ENGINEER
@@ -58,6 +65,9 @@ class EvalCase:
     note: str = ""
     #: Which agent this case is for. Drives the checks applied to the answer.
     agent: str = "strategist"
+    #: The race director's overlay of scripted conditions in force (director cases
+    #: only): what goes in the agent's slice as ``injected``.
+    injected: list[dict[str, Any]] = field(default_factory=list)
 
     def describe(self) -> dict[str, Any]:
         return {
@@ -74,6 +84,7 @@ class EvalCase:
             ],
             "flags": self.state.flags.phase.value,
             "gap_basis": self.state.standings.gap_basis,
+            **({"injected": [i["director_id"] for i in self.injected]} if self.injected else {}),
         }
 
 
@@ -574,6 +585,108 @@ def coach_degraded_cases() -> list[EvalCase]:
 
 
 # --------------------------------------------------------------------------
+# stage 09: race control
+# --------------------------------------------------------------------------
+#: A 17x race with a pattern race control must react to: 4x on lap 1, 4x and an
+#: off on lap 2 (three offs in two laps, the third at 10x of 17: track limits close
+#: to the limit), 4x on lap 3 (14x: one heavy contact from the limit) and a black
+#: flag shown on lap 4 and cleared at the lap-5 pit entry it was served at.
+RACE_CONTROL_SCENARIO = ScenarioSpec(
+    incident_limit="17",
+    incidents=((1, 0.50, 4), (2, 0.20, 4), (2, 0.70, 2), (3, 0.10, 4)),
+    offtracks=((1, 0.50, 0.52), (2, 0.20, 0.22), (2, 0.80, 0.82)),
+    penalty_flags=((4, 0.60, 1.00, 0x10000), (5, 0.00, 0.86, 0x10000)),
+)
+
+
+def race_control_degraded_cases() -> list[EvalCase]:
+    """No consequence, no penalty channel, and the blue flag only a live field can show."""
+    base = _end_of_scenario_state(ROLE_DETECTOR_CONFIG, RACE_CONTROL_SCENARIO)
+    events = _scenario_events(spec=RACE_CONTROL_SCENARIO)
+    out: list[EvalCase] = []
+
+    approaching = base.model_copy(deep=True)
+    # Back to 9x of 17: eight left, two heavy contacts from the limit.
+    approaching.player.incidents = 9
+    approaching.race_control.incidents = 9
+    approaching.race_control.incidents_remaining = 8
+    approaching.race_control.incident_stage = "approaching"
+    out.append(
+        EvalCase(
+            name="race-control-approaching-only",
+            event=_synthetic_event(
+                approaching,
+                "incident_limit",
+                {
+                    "stage": "approaching",
+                    "incidents": approaching.race_control.incidents,
+                    "incident_limit": approaching.race_control.incident_limit,
+                    "incidents_remaining": approaching.race_control.incidents_remaining,
+                },
+            ),
+            state=approaching,
+            events=events,
+            note="Approaching is a read-out the template already made: the answer is 'none'.",
+            agent=RACE_CONTROL.name,
+        )
+    )
+
+    blind = base.model_copy(deep=True)
+    blind.capabilities.penalties = False
+    blind.race_control.penalty = []
+    blind.race_control.serve_in_pit = False
+    blind.race_control.missing["penalties"] = ["SessionFlags"]
+    out.append(
+        EvalCase(
+            name="race-control-no-flags-channel",
+            event=_synthetic_event(
+                blind,
+                "track_limits",
+                {
+                    "offs": 3,
+                    "window_laps": 3,
+                    "threshold": 3,
+                    "laps": [blind.player.lap],
+                    "incidents": blind.race_control.incidents,
+                    "incident_limit": blind.race_control.incident_limit,
+                    "incidents_remaining": blind.race_control.incidents_remaining,
+                    "approach_margin": 8,
+                },
+            ),
+            state=blind,
+            events=events,
+            note="No SessionFlags: speak to the incident count, never claim a penalty.",
+            agent=RACE_CONTROL.name,
+        )
+    )
+
+    field = _end_of_scenario_state(ROLE_DETECTOR_CONFIG, ROLE_SCENARIO)
+    lapping = next((c for c in field.standings.cars if not c.is_player), None)
+    out.append(
+        EvalCase(
+            name="race-control-blue-flag-held-up",
+            event=_synthetic_event(
+                field,
+                "blue_flag_ignored",
+                {
+                    "car_idx": lapping.idx if lapping else None,
+                    "position": lapping.position if lapping else None,
+                    "gap": 1.2,
+                    "laps_ahead": 1.0,
+                    "corners": 3,
+                    "threshold_corners": 3,
+                },
+            ),
+            state=field,
+            events=_scenario_events(),
+            note="A car a lap up held behind us for three corners: let it through.",
+            agent=RACE_CONTROL.name,
+        )
+    )
+    return out
+
+
+# --------------------------------------------------------------------------
 # C1: a driver question that needs the agent's judgement
 # --------------------------------------------------------------------------
 #: One question per agent that no template answers (the router gives no intent).
@@ -582,6 +695,7 @@ QUESTIONS = {
     "vehicle_engineer": "How are the tyres holding up?",
     "spotter": "Anyone close enough to attack me?",
     "coach": "Where am I losing time?",
+    "race_control": "Do I need to serve this penalty now?",
 }
 
 
@@ -605,6 +719,63 @@ def question_cases(agent: str) -> list[EvalCase]:
 
 
 # --------------------------------------------------------------------------
+# stage 10: the race director's scripted weather and regulation
+# --------------------------------------------------------------------------
+#: Director-only event types: no detector emits them, so only a rehearsal covers them.
+DIRECTOR_EVENT_TYPES = frozenset(
+    {EventType.WEATHER_CHANGE.value, EventType.REGULATION_CHANGE.value}
+)
+
+
+def director_cases(agent: AgentSpec = STRATEGIST) -> list[EvalCase]:
+    """Rehearse the example script over the director race and snapshot ``agent``'s cases.
+
+    No agent runs: the engine and the :class:`~rtv.director.ScriptedDirector` alone, and
+    a case wherever a scripted weather or regulation event matches one of ``agent``'s
+    triggers (its own ``match()``, as for every generated case). Each case carries the
+    overlay the live path would have put in the slice.
+    """
+    from evals.director_rehearsal import DIRECTOR_RACE, EXAMPLE_SCRIPT
+    from evals.synthetic_race import scenario_source
+    from rtv.director import ScenarioScript, ScriptedDirector
+
+    source = scenario_source(DIRECTOR_RACE)
+    engine = RaceStateEngine(source="replay")
+    engine.bind_catalog(source.catalog, session_id="eval-director")
+    engine.set_session_info(source.session_info)
+    director = ScriptedDirector(ScenarioScript.load(EXAMPLE_SCRIPT))
+    runtime = AgentRuntime(agent, provider=None)
+    cases: list[EvalCase] = []
+    for frame in source.frames:
+        engine.on_frame(frame, source.catalog)
+        fired = director.poll(engine.snapshot())
+        if not fired:
+            continue
+        for event in fired:
+            engine.bus.publish(event)
+        state = engine.snapshot()
+        for event in fired:
+            if event.event_type.value not in DIRECTOR_EVENT_TYPES:
+                continue
+            trigger = runtime.match(event, state)
+            if trigger is None:
+                continue
+            runtime.arm(trigger, event)
+            cases.append(
+                EvalCase(
+                    name=f"director-{agent.name}-{event.payload.get('director_id')}",
+                    event=event,
+                    state=state,
+                    events=list(engine.bus.history(200)),
+                    note="race director rehearsal: scripted, never race data",
+                    agent=agent.name,
+                    injected=director.overlay(state),
+                )
+            )
+    return cases
+
+
+# --------------------------------------------------------------------------
 # assembly
 # --------------------------------------------------------------------------
 def build_cases(spec: ScenarioSpec | None = None) -> list[EvalCase]:
@@ -616,6 +787,7 @@ def build_cases(spec: ScenarioSpec | None = None) -> list[EvalCase]:
     return (
         scenario_cases(spec)
         + question_cases(STRATEGIST.name)
+        + director_cases(STRATEGIST)
         + plan_degraded_cases()
         + degraded_cases()
     )
@@ -626,7 +798,11 @@ ROLE_BUILDERS = {
     VEHICLE_ENGINEER.name: (VEHICLE_ENGINEER, engineer_degraded_cases),
     SPOTTER.name: (SPOTTER, spotter_degraded_cases),
     COACH.name: (COACH, coach_degraded_cases),
+    RACE_CONTROL.name: (RACE_CONTROL, race_control_degraded_cases),
 }
+
+#: Agents whose scripted race is not :data:`ROLE_SCENARIO`.
+ROLE_SCENARIOS = {RACE_CONTROL.name: RACE_CONTROL_SCENARIO}
 
 
 def build_agent_cases(agent: str) -> list[EvalCase]:
@@ -637,9 +813,12 @@ def build_agent_cases(agent: str) -> list[EvalCase]:
         raise KeyError(f"No eval cases are defined for agent {agent!r}")
     spec, degraded = ROLE_BUILDERS[agent]
     return (
-        scenario_cases(ROLE_SCENARIO, agent=spec, config=ROLE_DETECTOR_CONFIG)
+        scenario_cases(
+            ROLE_SCENARIOS.get(agent, ROLE_SCENARIO), agent=spec, config=ROLE_DETECTOR_CONFIG
+        )
         + degraded()
         + question_cases(agent)
+        + director_cases(spec)
     )
 
 
@@ -662,7 +841,10 @@ def agent_facts(spec: AgentSpec, case: EvalCase, *, typed: bool | None = None):
     from rtv.pitwall.validator import FactSet
 
     facts = FactSet(typed=typed)
-    facts.add("race_state", spec.state_slice(case.state))
+    slice_ = spec.state_slice(case.state)
+    if case.injected:
+        slice_ = {**slice_, "injected": case.injected}
+    facts.add("race_state", slice_)
     facts.add("event", case.event.payload)
     ctx = ToolContext(
         state=case.state, event=case.event, events=list(case.events), config={}, extras={}
@@ -754,6 +936,15 @@ _SWAPS: dict[str, tuple[str, str, tuple[str, str], str, tuple[str, ...], dict]] 
         "event.speed",
         ("event.lap_dist_pct", "race_state.player.lap_dist_pct", "race_state.player.lap"),
         {"theme": "line", "cue": "Brake a touch earlier.", "corner": None},
+    ),
+    # Stage 09: the incident figures are a count family of their own.
+    "race_control": (
+        "incident_limit",
+        "{v} incidents left before the limit, keep it clean.",
+        ("incidents", "x"),
+        "event.incidents_remaining",
+        ("event.delta", "race_state.player.position", "race_state.player.lap"),
+        {"consequence": "incident_limit", "confidence": "high"},
     ),
 }
 

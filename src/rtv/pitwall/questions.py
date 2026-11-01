@@ -7,9 +7,10 @@ on the race bus, so it is journalled and replayed like any detector event. Then:
 1. :func:`route_question` maps the words to an owner with a keyword table, no
    model: fuel, pit and strategy go to the strategist, tyres, temperatures and
    damage to the vehicle engineer, traffic and gaps to the spotter, driving and
-   corners to the coach. Nothing matched goes to the strategist, the lead voice.
+   corners to the coach, incidents, penalties and track limits to race control
+   (stage 09). Nothing matched goes to the strategist, the lead voice.
 2. A question that is a plain lookup (laps of fuel, gap ahead or behind, last or
-   best lap, position, laps to go, tyre temperatures) also gets an ``intent``.
+   best lap, position, laps to go, tyre temperatures, incidents) also gets an ``intent``.
    :data:`QUESTION_CALLER` answers it from the engine state with a template, with
    no model call and no key: B2's :class:`~rtv.pitwall.callers.DeterministicCaller`
    path. A value the engine does not have (no field data in an ``.ibt`` replay, no
@@ -35,7 +36,7 @@ from rtv.racestate.models import EventType, RaceEvent, RaceState
 #: Who answers a question nothing in the table matched.
 DEFAULT_OWNER = "strategist"
 #: Owners in tie-break order (the radio's order of ownership).
-OWNERS = ("strategist", "vehicle_engineer", "spotter", "coach")
+OWNERS = ("strategist", "vehicle_engineer", "spotter", "coach", "race_control")
 #: An answer is about a moment; after this it airs tagged late.
 ANSWER_MAX_AGE_S = 10.0
 #: A spoken answer is dropped if the channel has not reached it within this.
@@ -132,6 +133,12 @@ _LOOKUP_TABLE: tuple[tuple[str, str, re.Pattern[str], re.Pattern[str] | None], .
         _rx(r"\b(fuel|gas|tank|tyres?|tires?|pit|box)\b"),
     ),
     (
+        "incidents",
+        "race_control",
+        _rx(r"\bincidents?\b|incident count|how many x\b|\bmy x\b"),
+        _rx(r"\b(why|should|what (do|can) i do|how do i|avoid|penalty|black flag)\b"),
+    ),
+    (
         "position",
         "spotter",
         _rx(r"\bposition\b|what place|which place|where am i (running|placed)|\bwhat p\b|\bp\?$"),
@@ -155,6 +162,16 @@ _TOPIC_TABLE: Mapping[str, tuple[tuple[re.Pattern[str], int], ...]] = {
         (_rx(r"\b(traffic|blue flags?|lapped|lapping|alongside|three wide|clear)\b"), 3),
         (_rx(rf"\b{_GAP}\b|\b{_AHEAD}\b|\b{_BEHIND}\b|\b(closing|catching|pulling away)\b"), 2),
         (_rx(r"\b(who|cars?|rivals?|leader|field|left|right|defend|attack|pass)\b"), 1),
+    ),
+    "race_control": (
+        (
+            _rx(
+                r"\b(penalty|penalties|black flag|drive ?through|stop and go|meatball"
+                r"|disqualif\w*|dq|stewards?|track limits?|incident limit|warning flag)\b"
+            ),
+            4,
+        ),
+        (_rx(r"\b(incidents?|serve|served|serving|warning|limits?)\b"), 2),
     ),
     "coach": (
         (
@@ -364,6 +381,27 @@ def _answer_laps_to_go(state: RaceState) -> TemplateCall:
     return _no_data("No race length data in this session.", "No laps or time remaining.")
 
 
+def _answer_incidents(state: RaceState) -> TemplateCall:
+    count = state.player.incidents
+    if not state.capabilities.incidents or not isinstance(count, int):
+        return _no_data("No incident data in this session.", "player.incidents is not set.")
+    rc = state.race_control
+    limit, left = rc.incident_limit, rc.incidents_remaining
+    if isinstance(limit, int) and isinstance(left, int):
+        spoken = f"{count}x of {limit}, {left} to the limit."
+        detail = f"player.incidents {count}, race_control.incident_limit {limit} ({left} left)."
+    else:
+        spoken = (
+            f"{count}x, no incident limit this session."
+            if rc.limit_source == "unlimited"
+            else f"{count}x."
+        )
+        detail = f"player.incidents {count}; incident limit: {rc.limit_source}."
+    return TemplateCall(
+        spoken, detail, data={"incidents": count, "incident_limit": limit}
+    )
+
+
 _TYRE_NAMES = {"LF": "left front", "RF": "right front", "LR": "left rear", "RR": "right rear"}
 
 
@@ -395,6 +433,7 @@ LOOKUPS = {
     "position": _answer_position,
     "laps_to_go": _answer_laps_to_go,
     "tyre_temps": _answer_tyre_temps,
+    "incidents": _answer_incidents,
 }
 
 
