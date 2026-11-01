@@ -7,9 +7,11 @@ Audi R8 LMS EVO II GT3, Spa, 19 laps; see `docs/` and project files
 journal and its sha256; `baseline.json` is the offline result the tests compare against.
 The full journal stays in project files (`spa-kimi-run-F3/`), not in the repo.
 
-Current set: 12 runs (coach 5, strategist 3, vehicle_engineer 3, spotter 1) from the first
-~1080 s of the race. That replay was cut short by a Kimi quota 429; the set is regenerated
-from a full replay when the key has quota again (same commands, below).
+Current set: 23 runs (coach 10, strategist 6, vehicle_engineer 6, spotter 1) from the
+combined 2x Spa replay of 2026-11-01 on main 41ceed6 (A1-A3, B2, B3, C1, D1, D4), with
+`scripts/ask_during_replay.py` asking the driver questions alongside; the two runs that
+errored before answering are left out. The full journal is project files
+`spa-kimi-run-combined/`. About 0.9 MB, most of it the full race state per case.
 
 ## Use
 
@@ -38,14 +40,7 @@ Per case: `answers` (today's validator and policy on each recorded answer, and w
 matches the verdict recorded live), `checks` (the role scorer of `evals/pitwall_checks.py`
 on the final answer), `corners` (corner labels and names checked against the session's
 corner map) and `validity` (the B1 air-time rule re-stamped and checked at the recorded air
-time). Findings in the first baseline: the coach said "T8" and "T4" while the corner map
-was still provisional; `engineer_check` flags "T4 Speaker's Corner" against the event's
-bucket `C09` (the check compares the raw strings, a false positive for a later fix).
-
-After A1 (typed grounding) merged, the baseline was rebuilt on its validator: two coach calls
-that passed live now fail it, on spelled-out counts ("two laps", "three laps running wide" for
-a recurring issue with `occurrences: 3`). `same_as_recorded` is false on exactly those two.
-
-After A3 (derived numbers) the baseline was rebuilt again: a spelled-out count said as laps
-("two laps", "three laps running wide") now matches a count fact (`occurrences`, a corner's
-`count`), so both coach calls pass again and `same_as_recorded` is true on every answer.
+time). In this baseline every answer reproduces its live verdict. Findings: the coach named
+"T8" and "T4" before the corner map was built; `engineer_check` flags "T4 Speaker's Corner"
+against the event's bucket `C09` (it compares raw strings: a false positive in the check);
+one spotter answer to a driver question is 19 words against the spotter's 14.
