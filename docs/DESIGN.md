@@ -430,9 +430,10 @@ why calls are checked again at air time, and why there is a late tag at all.
   between runs are within noise.
 - **Latency.** Model calls take 8-18 s, so agent advice is minutes-scale strategy and
   coaching, not instant reactions.
-- **Pending build stages.** Stages 08 (race plan), 09 (race control and debrief agents) and 10
+- **Pending build stages.** Stage 09 part A (a race-control agent) and stage 10
   (a scripted race director for evals) are planned in `prompts/` and recorded in
-  [PITWALL.md](PITWALL.md) as they land. The director has interfaces and a tested seam only.
+  [PITWALL.md](PITWALL.md) as they land (the race plan and the post-race debrief are
+  built). The director has interfaces and a tested seam only.
 
 ## 17. Technical questions and answers
 

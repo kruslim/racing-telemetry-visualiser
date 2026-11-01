@@ -287,6 +287,22 @@ class Settings(BaseSettings):
         "'none', or 'file' (log a one-line result and write "
         "<run_id>.notice.txt next to the journal run).",
     )
+    debrief_model: str = Field(
+        default="",
+        description="Kimi model for the post-race debrief (stage 09 part B). Empty = the "
+        "rtv.llm reasoning default (RTV_LLM_KIMI_MODEL_REASONING).",
+    )
+    debrief_auto: str = Field(
+        default="auto",
+        description="Write a debrief automatically when a session segment's journal run "
+        "closes: 'true', 'false', or 'auto' (on whenever RTV_PITWALL_AGENTS is on). With "
+        "no Kimi key the automatic debrief is the deterministic half only.",
+    )
+    debrief_sessions: str = Field(
+        default="race",
+        description="Comma-separated session types (practice, qualify, race) the automatic "
+        "debrief runs for.",
+    )
     pitwall_max_calls_per_session: int = Field(
         default=400,
         ge=0,

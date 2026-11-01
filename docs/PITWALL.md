@@ -29,7 +29,8 @@ frames (live poller 60 Hz | ReplayDriver)
   -> /ws/pitwall, TTS, live view, desktop app
 engine.bus -> SegmentJournal (services.py): one journal run per session segment
 engine.bus + activity + radio -> SessionRecorder journal (data/sessions/<id>/runs/*.jsonl)
-closed run -> AppServices.on_session_end (worker thread): <run_id>.summary.json, notifier
+closed run -> AppServices.on_session_end (worker thread): <run_id>.summary.json, notifier,
+       then DebriefService (race runs): <run_id>.debrief.json + a debrief journal record
 engine.bus -> LiveVisionWorker -> visual_observation events back onto engine.bus
 ```
 
@@ -394,6 +395,51 @@ writes `<run_id>.summary.json` (the `/summary` shape plus `session_num`, `sessio
 then the notifier from `RTV_PITWALL_SESSION_END_NOTIFIER` (`none` default, or `file`: one
 log line and `<run_id>.notice.txt`). Nothing on the default path touches the network.
 
+**Post-race debrief** (`rtv.debrief`, appendix "Stage 09 part B"). Not a radio agent: it
+never speaks, has no trigger or cooldown, is not in `AGENT_REGISTRY` and does not count
+against the session's call budget (the session is over). `DebriefService` runs once per
+race segment as the last `on_session_end` callback, over that segment's journal run, and on
+demand. *Inputs* (`debrief/inputs.py`, no raw telemetry): the run's race events (state
+snapshots left out, `plan_revised` kept apart), each with its lap and `payload.place` corner;
+the radio with its air outcome (`aired | late | expired | superseded | refused`); agent run
+outcomes per agent; plan revisions (`from`/`to` element values) and rejected proposals (lap,
+agent, changed element names and reason, never the rejected numbers, and the reason is kept
+out of the FactSet); the final state; one fuel and one tyre row per lap boundary (the
+projection as it stood); the stored `<run_id>.summary.json`; the run's laps
+(`journal.laps_for_run`; `recorded_laps` = the valid ones); and the Layer-1 findings of every
+clean lap against the best one (`CoachingService.lap_findings`, unchanged), compacted to the
+top losing corners per lap, per-corner totals over the race (`recurring`), and per corner the
+full `CornerFinding` of the lap that lost most there. *The call*: `KimiProvider(thinking=True)`,
+`structured_call` with the `DebriefAnswer` contract through the forced respond tool, model
+`RTV_DEBRIEF_MODEL` else `RTV_LLM_KIMI_MODEL_REASONING`, `max_tokens` 16 000. *Contract*
+(`debrief/contract.py`): `summary`, `plan`, `time_lost[]` and `recurring[]` (`{text, corner,
+laps}`), `tyres_fuel`, `priorities[]` (`{text, basis, corner}`, at most five). *Checks*
+(`debrief/checks.py`), per section: every figure against the typed FactSet over the inputs
+(A1; "the right number, wrong fact" fails on its unit family); structured laps must be
+recorded, prose lap numbers recorded or named by the plan; a structured corner through
+`resolve_corner` (label and name); the prose through A2's `check_prose(mode="lap")` against the
+Layer-1 corners, keeping its corner-label and brake-direction issues (its per-corner figure
+rule is replaced by the FactSet over all inputs); a priority must rest on a kept, non-empty
+section and name a corner that section discusses. A failing section gets one repair call
+(the issues named); a section still failing is `refused` with its reason; kept sections are
+`ok` or `repaired`. With no key, no `ai` extra, an exception or no valid answer, every section
+is `unavailable` and `note` says so: the deterministic half is always there.
+*Document* `<run_id>.debrief.json`: `schema, session_id, run_id, session_type, generated_at,
+trigger (session_end | manual), model, model_calls, analysis {available, reason}, note,
+kept_sections, sections[{name, title, status, text | items, reason, issues, first_issues}],
+deterministic {result, laps, stints, fuel, tyres_by_lap, plan, reference_lap, time_lost,
+recurring, events, radio, notes}, references {laps, corners, reference_lap}, inputs`; each
+write also appends a `debrief` record (`journal.append_record`) to the closed run.
+`GET /api/v1/sessions/{id}/debrief?run=` returns it plus a live `can_analyse` (404 when
+none); `POST` regenerates it from the recorded journal (409 for a run still recording) and
+never re-runs the agents. The notifier gets `notify_debrief` (`file`: one more line in
+`<run_id>.notice.txt`). Settings: `RTV_DEBRIEF_AUTO` (`auto` = on whenever
+`RTV_PITWALL_AGENTS` is on, or `true`/`false`), `RTV_DEBRIEF_SESSIONS` (`race`),
+`RTV_DEBRIEF_MODEL`. In RTV Desktop the review has a Debrief panel under the summary
+(`rtv.desktop.model.debrief`, `widgets/debrief.py`): the selected run's debrief, its laps and
+corners as links that open the lap in the lap analysis against the debrief's reference lap
+and highlight the corner, and a Regenerate button whose dialog says it calls Kimi first.
+
 **Vision live worker** (`rtv.vision.live_worker`, details in `docs/VISION.md`). With
 `RTV_VISION_MODE=live`, events in `RTV_VISION_LIVE_TRIGGERS` become moments; the worker
 grabs frames from the running capture or a synced recording, runs the grounded
@@ -468,22 +514,29 @@ rtv.pitwall.callers: RACE_CONTROL_TEMPLATES, race_control_caller(settings)
 rtv.pitwall.agents.race_control: RACE_CONTROL, RaceControlCall, race_control_policy
 evals.pitwall_checks: race_control_check(result, state, event), race_control_consequences
 evals.pitwall_cases: RACE_CONTROL_SCENARIO, race_control_degraded_cases()
+services.debrief: DebriefService(settings, repo, coaching, provider=None, notifier=None)
+    .generate(session_id, run_id, trigger=) -> doc; .load(...); .on_session_end(ended)
+    .resolve_provider() -> (provider | None, reason); .can_analyse(); .model(); .auto()
+rtv.debrief.inputs.build_inputs(session_id=, path=, repo=, coaching=) -> dict
+rtv.debrief.checks: fact_set(inputs), known_corners(inputs), check_section, check_priorities
+journal.debrief_path(path); journal.append_record(path, kind, data)   # closed runs only
+evals.debrief_cases: faithful_answer(inputs), debrief_cases(inputs), scripted_handler(case)
+evals.synthetic_debrief: seed_debrief_session(writer), debrief_source()   # tests only
 ```
 
 The HTTP and WebSocket surface: `/api/v1/racestate` (and `/events`), `/api/v1/replay/*`,
 `/api/v1/pitwall/{status,health,radio,activity,tts,enabled,reset,driver-message}`,
-`WS /ws/pitwall` (state, event, radio and activity frames), the journal endpoints above
-and `/vision/live`. FastAPI's `/docs` lists them all.
+`WS /ws/pitwall` (state, event, radio and activity frames), the journal endpoints above,
+`GET/POST /sessions/{id}/debrief` and `/vision/live`. FastAPI's `/docs` lists them all.
 
 ### Pending stages
 
 Prompts in `prompts/` (done ones in `prompts/done/`), revised by plan task D0. Stages 07
 (session lifecycle and autonomy) and 08 (race plan and projections) are done, and so is
-stage 09 part A (race control, D6a); the prompt stays in `prompts/` until part B is done.
+stage 09 (race control, D6a, and the post-race debrief, D6b); the run order is 10.
 
 | Stage | Prompt | Goal |
 |---|---|---|
-| 09 part B | `09-race-control-debrief.md` | The debrief analyst after the race (D6b; needs A2) |
 | 10 | `10-director-scheduler.md` | Implement the race director behind the stage-5 seam |
 
 ---
@@ -3792,4 +3845,43 @@ Deviations:
 - The frozen web pages keep their four-agent `AGENTS` list: their activity model creates
   an unseen agent on its first record, so race control's records do not break them (it has
   no lane there). The golden view file is unchanged.
+
+## Stage 09 part B — the post-race debrief (plan task D6b)
+
+Built from PART B of `prompts/done/09-race-control-debrief.md`; the current-architecture page has
+the interfaces ("Post-race debrief"). Part A (race control, D6a, PR #52) merged first, so this PR
+moves the prompt to `prompts/done/`.
+
+- **Not an agent in the registry.** The debrief has no trigger, cooldown, state slice or radio
+  subject, so it is a service (`rtv.debrief`) on `AppServices`, not an `AgentSpec`: the radio
+  and the orchestrator are untouched, and part A's registry edits cannot collide with it.
+- **One call, no tools.** Everything the model may cite is in one INPUTS document (about 13 KB
+  on the synthetic race), so there is no tool loop; `structured_call` already re-asks once
+  for an invalid payload. The repair is a second `structured_call` with the previous answer
+  and the issues; per section the first passing version wins.
+- **Figures against all inputs, prose rules from A2.** `check_prose` in `lap` mode checks
+  every figure against one corner's finding, but a debrief quotes race totals (a corner's loss
+  summed over the laps it lost on) that no single corner holds, so its figure rule is replaced
+  by the typed FactSet over the whole input; its corner-label and brake-direction rules are
+  kept (a brake claim is held to the finding of the lap that lost most at that corner). A4's
+  name checks will flow through when they land as a new `ProseReport` kind.
+- **Swapped facts.** The FactSet is typed, so a figure of the wrong unit family fails (the
+  hermetic case says a litres figure as seconds). Two figures of the same family (best and
+  median lap time) are not told apart, as in the pitwall validator.
+- **Spec deviations.** DB5 says "driven by ScriptedModel": `ScriptedModel` drives the LangGraph
+  coach; the debrief calls the pitwall provider interface, so the cases use its scripted twin
+  `ScriptedProvider`. DB4 asks for a "tab": the desktop review is one scrolling page of panels,
+  so the debrief is a panel under the race summary. `RTV_DEBRIEF_AUTO` is a string
+  (`auto|true|false`) because an empty value for an optional bool does not parse from `.env`.
+  `evals.synthetic_race.seed_scenario_session` gains an optional `frames` argument (default
+  unchanged) so the store and the replay can hold the same race-phase stream.
+- **Offline evidence.** `tests/test_debrief.py` (no-key session-end path, API, settings,
+  notifier, inputs, nine hermetic cases from `evals/debrief_cases.py`, a failed call, the
+  autonomy-on session end with the scripted model, the Kimi request shape through a fake
+  client: `thinking: adaptive`, `tool_choice: any`, only the respond tool),
+  `tests/test_desktop_debrief.py` (view model and panel) and, on the real Spa fixture,
+  `test_the_no_key_debrief_of_the_real_race_references_only_recorded_laps` in
+  `tests/test_real_ibt.py`. The `spa_run` real-eval baseline is unchanged: no validator or
+  check the pitwall agents use was touched.
+- **Kimi.** A debrief of the recorded Spa run on Kimi, read by the user, is owed (kimi-queue).
 

@@ -411,3 +411,32 @@ def test_stage09_race_control_on_the_real_race(client):
     # A clean, unlimited race: the race-control agent is never woken.
     runtime = AgentRuntime(RACE_CONTROL, provider=None)
     assert [e.key for e in history if runtime.match(e, state)] == []
+
+
+def test_the_no_key_debrief_of_the_real_race_references_only_recorded_laps(client, monkeypatch):
+    """Stage 09 part B on real telemetry: the agents-off replay, debriefed with no key."""
+    import rtv.llm
+    from rtv.debrief.service import DebriefService
+
+    run = _journal_run(client)
+    services = client.app.state.services
+    monkeypatch.setattr(rtv.llm, "is_configured", lambda _s=None: False)
+    service = DebriefService(services.settings, services.repo, services.coaching)
+    doc = service.generate(client.session_id, run["run_id"])
+    assert doc["analysis"]["available"] is False and doc["note"]
+    assert {s["status"] for s in doc["sections"]} == {"unavailable"}
+    recorded = set(doc["references"]["laps"])
+    assert IN_LAP in recorded and OUT_LAP in recorded
+    det = doc["deterministic"]
+    named = {r["lap"] for r in det["laps"]} | {r["lap"] for r in det["time_lost"]}
+    named |= {lap for r in det["recurring"] for lap in r["laps"]} | {
+        r["worst_lap"] for r in det["recurring"]
+    }
+    named.discard(None)
+    unfinished = {r["lap"] for r in det["laps"] if r["lap_time_s"] is None}
+    assert named - unfinished <= recorded
+    assert det["reference_lap"] in recorded
+    assert det["result"]["best_time"] == pytest.approx(140.618, abs=0.01)
+    # Spa's corners carry their names into the debrief, as in the review.
+    assert "La Source" in doc["references"]["corners"].values()
+    assert det["recurring"], "19 laps of Spa repeat some losses"

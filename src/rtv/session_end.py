@@ -17,7 +17,8 @@ Built in:
   network; a webhook or e-mail notifier would have to be import-guarded and
   off by default.
 
-Stage 09's debrief subscribes here (see ``docs/PITWALL.md``).
+Stage 09's debrief (:mod:`rtv.debrief`) subscribes here after the summary, and hands
+its result to the same notifier (``notify_debrief``); see ``docs/PITWALL.md``.
 """
 
 from __future__ import annotations
@@ -153,11 +154,17 @@ def store_run_summary(repo: Any) -> SessionEndCallback:
 class Notifier(Protocol):
     def notify(self, ended: SessionEnded, summary: dict[str, Any]) -> None: ...
 
+    #: Stage 09 part B: called once the run's debrief is stored.
+    def notify_debrief(self, ended: SessionEnded, debrief: dict[str, Any]) -> None: ...
+
 
 class NullNotifier:
     """The default: nothing leaves the process."""
 
     def notify(self, ended: SessionEnded, summary: dict[str, Any]) -> None:
+        return None
+
+    def notify_debrief(self, ended: SessionEnded, debrief: dict[str, Any]) -> None:
         return None
 
 
@@ -169,6 +176,16 @@ class FileNotifier:
         log.info("Session ended: %s", text)
         path = ended.journal_path.with_name(f"{ended.run_id}.notice.txt")
         path.write_text(text + "\n", encoding="utf-8")
+
+    def notify_debrief(self, ended: SessionEnded, debrief: dict[str, Any]) -> None:
+        """Adds the debrief's line to ``<run_id>.notice.txt``."""
+        from rtv.debrief.service import debrief_line
+
+        text = debrief_line(debrief)
+        log.info("%s", text)
+        path = ended.journal_path.with_name(f"{ended.run_id}.notice.txt")
+        with path.open("a", encoding="utf-8") as fh:
+            fh.write(text + "\n")
 
 
 def notice_text(ended: SessionEnded, summary: dict[str, Any]) -> str:
