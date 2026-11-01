@@ -46,6 +46,7 @@ from rtv.pitwall import agent_input, validity
 from rtv.pitwall.activity import ActivityLog, safe_trace
 from rtv.pitwall.callers import DeterministicCaller, build_callers
 from rtv.pitwall.framework import (
+    ANSWER_MAX_AGE_S,
     AgentRuntime,
     AgentSpec,
     EventRef,
@@ -692,7 +693,8 @@ class PitwallOrchestrator:
                 runtime.spec,
                 state,
                 event,
-                max_age_s=self.max_age_s.get(name),
+                # An answer the driver is waiting on gets its own age limit.
+                max_age_s=ANSWER_MAX_AGE_S if is_question(event) else self.max_age_s.get(name),
                 pit_entry_pct=getattr(self.engine, "pit_entry_pct", None),
             )
             if is_question(event):

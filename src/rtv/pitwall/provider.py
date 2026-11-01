@@ -43,6 +43,11 @@ class ProviderResponse:
     assistant_content: Any = field(default_factory=list)
     #: Token counts reported by the backend (``rtv.llm.usage_of``), when it sent them.
     usage: dict[str, int] | None = None
+    #: The model called the respond tool but its payload failed the contract: why, in
+    #: one line, so the runtime can ask once more (``None`` when nothing was invalid).
+    invalid_output: str | None = None
+    #: The backend's stop reason ("end_turn", "tool_use", "max_tokens"), for the trace.
+    stop_reason: str | None = None
     #: Why the turn was thrown away as malformed (Kimi tool-call markup in an argument or
     #: the text, see :func:`rtv.llm.find_markup`), else ``None``. A malformed turn has no
     #: output and no tool calls; callers ask once more, then give up.
@@ -168,6 +173,7 @@ class KimiProvider:
 
         usage = record_usage(agent, model, response)
         parsed = None
+        invalid: str | None = None
         malformed: str | None = None
 
         content = getattr(response, "content", []) or []
@@ -188,7 +194,8 @@ class KimiProvider:
             if name == RESPOND_TOOL:
                 try:
                     parsed = output_model.model_validate(payload)
-                except Exception:
+                except Exception as exc:
+                    invalid = _contract_error(exc, payload)
                     # Leave parsed as None: the runtime's grounded-refusal path is
                     # the right answer for a contract the model could not satisfy,
                     # and it is already tested. Log loudly -- a backend that never
@@ -213,7 +220,9 @@ class KimiProvider:
             # One bad block spoils the turn: the other blocks were cut from the same
             # garbled stream, and half a tool exchange cannot be continued.
             log.warning("%s: discarded a malformed Kimi turn (%s)", agent, malformed)
-            return ProviderResponse(usage=usage, malformed=malformed)
+            return ProviderResponse(
+                usage=usage, malformed=malformed, stop_reason=getattr(response, "stop_reason", None)
+            )
         if parsed is not None:
             # A model that answered *and* called tools has answered. Servicing the
             # calls anyway would append an assistant turn carrying a tool_use with
@@ -225,7 +234,27 @@ class KimiProvider:
             text=text,
             assistant_content=content,
             usage=usage,
+            invalid_output=invalid if parsed is None else None,
+            stop_reason=getattr(response, "stop_reason", None),
         )
+
+
+def _contract_error(exc: Exception, payload: dict[str, Any]) -> str:
+    """One line on why a respond payload failed the contract, for the retry turn."""
+    if not payload:
+        return "the respond call was empty"
+    errors = getattr(exc, "errors", None)
+    if callable(errors):
+        try:
+            parts = [
+                f"{'.'.join(str(p) for p in e.get('loc', ())) or 'payload'}: {e.get('msg')}"
+                for e in errors()[:4]
+            ]
+            if parts:
+                return "; ".join(parts)
+        except Exception:  # pragma: no cover - defensive
+            pass
+    return type(exc).__name__
 
 
 class ScriptedProvider:

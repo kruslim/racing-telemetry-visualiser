@@ -306,7 +306,8 @@ _FILLER = r"(?:(?:more|full|extra|clear|clean|green|whole|racing)\s+)?"
 #: Units written after a figure. Single letters are case-sensitive (C, V, L, g, x); words are not.
 _SUFFIX_RE = re.compile(
     r"\s?" + _FILLER + r"(?:"
-    r"(?P<laps>(?i:laps?)\b)"
+    # "slip 0.23 lap 13": a "lap" followed by a number is that number's prefix.
+    r"(?P<laps>(?i:laps?)\b(?!\s?\d))"
     r"|(?P<tenth>(?i:tenths?)\b)"
     r"|(?P<s>(?i:seconds?|secs?)\b|s\b)"
     r"|(?P<kmh>(?i:km/h|kph|kmh)\b)"

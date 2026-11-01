@@ -38,6 +38,7 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 
 from rtv.director.overlay import injected_caution, pending_mandatory_stop
+from rtv.pitwall.agents.spotter import SPOTTER_WORD_LIMIT as _SPOTTER_WORD_LIMIT
 from rtv.pitwall.validator import FactSet, name_issues, validate_output
 from rtv.racestate import plan as race_plan
 from rtv.racestate import projection as pj
@@ -381,8 +382,9 @@ COACH_THEMES: dict[str, set[str]] = {
     },
 }
 
-#: A spotter call is shorter than radio generally: ten words is already long.
-SPOTTER_WORD_LIMIT = 14
+#: A spotter call is shorter than radio generally: ten words is already long. The live
+#: validator holds the spotter to the same limit (``AgentSpec.spoken_word_limit``).
+SPOTTER_WORD_LIMIT = _SPOTTER_WORD_LIMIT
 
 
 def _base_checks(result: dict, facts: FactSet | None, state: RaceState) -> tuple[dict, list]:

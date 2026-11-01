@@ -25,6 +25,7 @@ def test_counts_runs_calls_and_outcomes():
     assert s["calls_without_answer"] == 2
     # The engineer's unanswered call asked for a tool; only the spotter's was malformed.
     assert s["malformed_respond"] == 1
+    assert s["tool_turns"] == 1
     assert s["agents"]["vehicle_engineer"]["refusals"] == 1
     assert s["agents"]["spotter"]["errored_runs"] == 1
 
