@@ -90,12 +90,22 @@ def _merged_findings(state: CoachState) -> dict:
     corners: list[dict] = []
     sectors: list[dict] = []
     chiefs: list[dict] = []
+    places: list[dict] = []
+    venue = None
     for findings in state.findings_by_key.values():
         corners.extend(findings.get("corners", []))
         sectors.extend(findings.get("sectors", []))
+        places.extend(findings.get("places") or [])
+        venue = venue or findings.get("venue")
         if findings.get("chief"):
             chiefs.append(findings["chief"])
-    return {"corners": corners, "sectors": sectors, "chiefs": chiefs}
+    return {
+        "corners": corners,
+        "sectors": sectors,
+        "chiefs": chiefs,
+        "places": places,
+        "venue": venue,
+    }
 
 
 def build_graph(model: Any, executor: CoachToolExecutor):

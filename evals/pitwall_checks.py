@@ -36,7 +36,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from rtv.pitwall.validator import FactSet, validate_output
+from rtv.pitwall.validator import FactSet, name_issues, validate_output
 from rtv.racestate import plan as race_plan
 from rtv.racestate import projection as pj
 from rtv.racestate.models import FlagPhase, RaceState
@@ -190,11 +190,13 @@ def cross_check(
             simulate_pit_outcome(state, pit_lane_loss_s=pit_lane_loss_s).to_tool(),
         )
     report = validate_output(spoken, detail, facts)
-    grounding_ok = not report.unsupported
-    if not grounding_ok:
+    names = name_issues(spoken, detail, facts, data)
+    grounding_ok = not report.unsupported and not names
+    if report.unsupported:
         issues.append(
             "ungrounded figures: " + ", ".join(report.unsupported) + " (not in the race state)"
         )
+    issues.extend(f"corner name: {n}" for n in names)
 
     # --- radio discipline --------------------------------------------------
     radio_ok = not report.over_word_limit
@@ -365,13 +367,16 @@ def _base_checks(result: dict, facts: FactSet | None, state: RaceState) -> tuple
         issues.append(
             "ungrounded figures: " + ", ".join(report.unsupported) + " (not in the race state)"
         )
+    # Task A4: a corner name is a fact too; a wrong or untraceable one fails grounding.
+    names = name_issues(spoken, detail, facts, result.get("data") or {})
+    issues.extend(f"corner name: {n}" for n in names)
     if report.over_word_limit:
         issues.append(f"spoken_text is {report.word_count} words; radio limit is 25")
     projection_ok, projection_issues = projection_check(result, state)
     issues.extend(projection_issues)
     return (
         {
-            "grounding_ok": not report.unsupported,
+            "grounding_ok": not report.unsupported and not names,
             "radio_ok": not report.over_word_limit,
             "projection_ok": projection_ok,
             "_report": report,

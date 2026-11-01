@@ -20,6 +20,11 @@ finds against the corner the text is about:
   finding, "N m late"/"early" (a description) must match it, and "from A m to B m" must move
   the right way.
 - **corner labels**: a ``T<n>`` the findings don't have is hallucinated.
+- **corner names** (task A4): a circuit name must be the corner the text is about. "T7 La
+  Source" where the map says T7 is Campus, "La Source" in T7's advice, a name next to a label
+  the venue leaves unnamed (trace-numbered circuits) or another circuit's name are all
+  wrong; names are resolved through the findings' corner names and named ``places``
+  (:mod:`rtv.grounding.corner_names`).
 
 Each figure is a claim; :func:`check_prose` returns how many it checked and the ones it could
 not ground. Tolerances live in :mod:`rtv.coaching.agent.validation` with the others.
@@ -50,6 +55,7 @@ from rtv.coaching.agent.validation import (
     corner_map,
     split_corner,
 )
+from rtv.grounding.corner_names import CornerNames
 from rtv.grounding.units import G_RE as _G_RE
 from rtv.grounding.units import GEAR_PROSE_RE as _GEAR_PROSE_RE
 from rtv.grounding.units import KMH_RE as _KMH_RE
@@ -190,8 +196,9 @@ class ProseReport:
     supported: int = 0
     issues: list[str] = field(default_factory=list)
     corners: list[str] = field(default_factory=list)  # the corner each issue is about
-    #: What each issue is: ``"corner"`` (a label the findings lack), ``"brake"`` (a brake
-    #: direction the findings contradict or lack) or ``"figure"`` (a number they don't hold).
+    #: What each issue is: ``"corner"`` (a label the findings lack), ``"name"`` (a corner
+    #: name that is not the corner discussed), ``"brake"`` (a brake direction the findings
+    #: contradict or lack) or ``"figure"`` (a number they don't hold).
     kinds: list[str] = field(default_factory=list)
 
     def ok(self) -> None:
@@ -354,11 +361,15 @@ def check_prose(
     """
     facts = {label: corner_facts(c) for label, c in corner_map(findings).items()}
     lap_seconds = _lap_seconds(findings)
+    names = CornerNames.from_findings(findings) if mode == "lap" else None
     rep = ProseReport()
     for where, owner, text in texts:
         for sentence in _SENTENCE_RE.split(text or ""):
             if sentence.strip():
                 _check_sentence(sentence, owner, facts, lap_seconds, where, rep, mode)
+        if names is not None:
+            for issue in names.check(text or "", [split_corner(owner)[0]], where):
+                rep.bad(issue.message, issue.corner, "name")
     return rep
 
 

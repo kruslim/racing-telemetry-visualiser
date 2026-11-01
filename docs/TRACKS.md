@@ -53,6 +53,32 @@ In RTV Desktop's review, the findings table and top opportunities show
 `T1 La Source` where a name is mapped, the track map letters each named corner
 beside the line, and a line under the map gives the header facts.
 
+## Names are checked facts
+
+A coach that says "La Source" about T7 is wrong even when every number it quotes is
+T7's, so corner names are checked like figures (`rtv.grounding.corner_names`, no LLM).
+The lap findings carry `venue` (the reference key) and `places`: every named stretch
+of the venue located on the main lap in metres, with the detected corner whose
+`entry_m`-`exit_m` window holds it (`None` for a straight such as Kemmel or a flat-out
+curve such as Eau Rouge). The rules, for the coaches' prose check
+(`check_prose`, lap mode) and the pitwall validator (every agent, once it was shown the
+live corner map):
+
+- a name next to a label (`T7 Campus`, `T8 (Chicane)`) must be that label's name; at a
+  trace-numbered venue the labels have no names, so any name there is invented;
+- a name on its own must belong to the corner the text is about (an advice's corner,
+  a call's `corner` field or event place, or a label in the same sentence). On the
+  pitwall the operator-facing `detail_text` and `rationale` may discuss other corners,
+  so there a name is only held to the label it is written next to;
+- another circuit's name is not a corner of this session. Generic words several
+  circuits use ("the Esses", "Hairpin", "Club", "Turn 5") never count as another
+  circuit's name, and corner types ("T8 Hairpin") are not names.
+
+A wrong name is a `name` issue in the prose report and a `contradictions` entry in the
+pitwall's grounding report, with the same repair turn and refusal as an invented figure.
+The swapped-name golden cases are `evals.pitwall_cases.swapped_name_cases` (Spa and a
+trace-numbered map) and the coach eval case `seed_named_corner`.
+
 ## Verified on real telemetry
 
 - Spa (Audi R8 GT3 race, the CI fixture): all 13 named corners and Kemmel found

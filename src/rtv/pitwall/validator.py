@@ -29,6 +29,15 @@ corner, and ``validate_output(..., prose_check=True)`` runs
 wrote about that corner. A brake direction the corner analysis contradicts ("brake later"
 where the driver already brakes late) is a :attr:`GroundingReport.contradictions` entry and
 goes through the same repair and refusal path as an invented figure.
+
+Corner names are facts too (task A4), for every agent: the ``{label, name}`` places of the
+live corner map the agent was shown (state slice, event, tool results) are the only names it
+can ground. A name next to a label must be that label's ("T7 Campus"), a name on its own must
+be the corner the call is about (its ``corner`` field, the event's place, or a label in the
+sentence), and a name of no corner it was shown ("La Source" before the map exists, or
+another circuit's corner) is not traceable. These land in
+:attr:`GroundingReport.contradictions` with the same repair and refusal path
+(:mod:`rtv.grounding.corner_names`).
 """
 
 from __future__ import annotations
@@ -96,11 +105,23 @@ class FactSet:
         #: Layer-1 corner findings a tool returned, by label, in the shape the prose check
         #: reads (:func:`layer1_corner`).
         self.corners: dict[str, dict[str, Any]] = {}
+        #: Corner label -> mapped name (or None) for every ``{label, name}`` place the agent
+        #: was shown: the live corner map, event places, tool results.
+        self.places: dict[str, str | None] = {}
+        #: The corner the triggering event happened at, when its place is on the map.
+        self.event_corner: str | None = None
 
     def add(self, source: str, payload: Any) -> None:
         corner = layer1_corner(payload)
         if corner is not None:
             self.corners.setdefault(corner["label"], corner)
+        for label, name in _walk_places(payload):
+            if name or label not in self.places:
+                self.places[label] = name
+        if source == "event" and isinstance(payload, dict):
+            place = payload.get("place")
+            if isinstance(place, dict) and not place.get("provisional") and place.get("label"):
+                self.event_corner = str(place["label"])
         for value in _walk_numbers(payload):
             self._raw.setdefault(value, source)
             for variant in _variants(value):
@@ -458,6 +479,74 @@ def _render(value: float) -> str:
     return str(int(value)) if float(value).is_integer() else f"{value:g}"
 
 
+_MAP_LABEL_RE = re.compile(r"T\d{1,2}")
+
+
+def _walk_places(payload: Any) -> list[tuple[str, str | None]]:
+    """Every ``{label: "T7", name: ...}`` place in ``payload`` (corner map rows, event places)."""
+    out: list[tuple[str, str | None]] = []
+    stack: list[Any] = [payload]
+    while stack:
+        item = stack.pop()
+        if isinstance(item, BaseModel):
+            item = item.model_dump(mode="json")
+        if isinstance(item, dict):
+            label = item.get("label")
+            if (
+                isinstance(label, str)
+                and _MAP_LABEL_RE.fullmatch(label)
+                and "name" in item
+                and (item["name"] is None or isinstance(item["name"], str))
+                and not item.get("provisional")
+            ):
+                out.append((label, item["name"] or None))
+            stack.extend(item.values())
+        elif isinstance(item, (list, tuple)):
+            stack.extend(item)
+    return out
+
+
+def name_issues(
+    spoken_text: str, detail_text: str, facts: FactSet, payload: Any | None = None
+) -> list[str]:
+    """Corner names in the answer that are not the corner it is about (task A4).
+
+    Only once the agent was shown the session's corner map (any ``{label, name}`` place):
+    before that there is no map to hold a name to. The corner a call is about binds what the
+    driver hears (``spoken_text`` and the cue fields); the operator-facing ``detail_text`` and
+    ``rationale`` may discuss other corners ("Speaker's Corner already has three calls"), so
+    there a name only has to be the label it is written next to and a corner of the map.
+    """
+    if not facts.places:
+        return []
+    from rtv.coaching.agent.validation import split_corner
+    from rtv.grounding.corner_names import CornerNames
+
+    if isinstance(payload, BaseModel):
+        payload = payload.model_dump(mode="json")
+    data = payload if isinstance(payload, dict) else {}
+    cited = data.get("corner")
+    about = [split_corner(cited)[0] if isinstance(cited, str) and cited.strip() else None]
+    about.append(facts.event_corner)
+    names = CornerNames.build(facts.places)
+    texts = [("spoken_text", spoken_text or "", True), ("detail_text", detail_text or "", False)]
+    for key, value in data.items():
+        if isinstance(value, str) and key not in _NOT_PROSE and key not in _BASE_TEXT:
+            texts.append((key, value, key not in _CONTEXT_FIELDS))
+    if isinstance(cited, str) and cited.strip():
+        texts.append(("corner", cited, True))
+    issues: list[str] = []
+    for where, text, bound in texts:
+        issues += [i.message for i in names.check(text, about if bound else (), where)]
+    return list(dict.fromkeys(issues))
+
+
+#: The answer's own text fields, passed separately (a flat answer dict carries them too).
+_BASE_TEXT = frozenset({"spoken_text", "detail_text"})
+#: Payload prose for the operator, which may discuss corners other than the call's.
+_CONTEXT_FIELDS = frozenset({"rationale", "setup_note"})
+
+
 def _payload_numbers(payload: Any, prefix: str = "") -> list[tuple[str, float]]:
     """Numeric leaves of a structured output, with dotted field names."""
     out: list[tuple[str, float]] = []
@@ -604,6 +693,7 @@ def validate_output(
     contradictions = (
         prose_contradictions(spoken_text, detail_text, facts, payload) if prose_check else []
     )
+    contradictions += name_issues(spoken_text, detail_text, facts, payload)
 
     words = len((spoken_text or "").split())
     over = words > MAX_SPOKEN_WORDS
