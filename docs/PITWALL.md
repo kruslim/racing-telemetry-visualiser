@@ -3465,3 +3465,32 @@ because every run started from the state slice and the recent radio only.
   and `spec_drift` do not move. The strategist has one subject (`pit_stop`), so it is
   shown one line.
 
+## A3 — derived numbers and readable audit values (2026-10-31)
+
+On the A1 Spa replay most refusals were arithmetic or units, not inventions. Changes:
+
+- **Speeds in km/h.** Detectors keep the sim's m/s, but what an agent is shown (its trigger
+  event, and every row of `get_recent_detector_events` / `get_corner_detail`) goes through
+  `rtv.racestate.derived.agent_payload`: `speed`, `mean_speed`, `wheel_speed` become
+  `speed_kmh`, `mean_speed_kmh`, `wheel_speed_kmh`. Three of A1's four refusals were 27.7 m/s
+  said as "27.7 km/h". The FactSet holds the same view (`framework._invoke`).
+- **Derived fields to copy.** Recurring issues carry `consecutive_laps`, `laps_spanned`,
+  `laps_with_issue`; `get_corner_detail.live` carries `laps_with_events`, `consecutive_laps`.
+  `TyreState` gains `{temp,pressure}_change_since_stint_start` and `_vs_previous_lap`
+  (engine, per completed lap); `get_tyre_trend` returns them as `since_stint_start` /
+  `vs_previous_lap` plus `axles` (front-minus-rear, left-minus-right, spread).
+  `get_stint_history.current_stint_laps` has lap-time deltas vs the previous lap, the stint's
+  first lap and the best, and `green_streak_laps`; fuel projection and stint history carry
+  `race_total_laps`.
+- **Validator.** `FactSet.supports_difference`: an unmatched figure is grounded when it is
+  the difference of two grounded figures said in the same sentence, in its unit family.
+  A spelled-out laps count ("three laps running") also matches a count fact
+  (`occurrences`, `count`), never a digit laps quantity. `explain()` names a same-family
+  fact in another unit ("27.74 is race_state.player.speed in m/s, which is 99.86 km/h").
+  `tools._target_pct` no longer recurses on an unmatched corner label.
+- **Audit.** `validate` records carry `unsupported_detail`; the desktop and web view models
+  round long decimals (`roundFigures` / `round_figures` in the activity model) and expose
+  `reasons` (desktop live run detail lines, review audit tooltip). Golden cases added.
+- `evals/real/spa_run` baseline rebuilt: F3's two coach false positives pass again.
+- Kimi Spa replay deferred: the Kimi Code quota was blocked when A3 merged, so it merged on
+  the offline checks; one combined Spa replay later measures A3 against `spa-kimi-run-A1/`.

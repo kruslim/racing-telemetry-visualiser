@@ -1194,6 +1194,10 @@ class RaceStateEngine:
             self._state.tyres.stint_laps = 0
             self._state.tyres.temp_trend = {}
             self._state.tyres.pressure_trend = {}
+            self._state.tyres.temp_change_since_stint_start = {}
+            self._state.tyres.pressure_change_since_stint_start = {}
+            self._state.tyres.temp_change_vs_previous_lap = {}
+            self._state.tyres.pressure_change_vs_previous_lap = {}
             self._tyre_latched = None  # a new set is a new band question
             # A refuel re-arms the fuel warnings.
             self._fuel_critical_announced = False
@@ -1532,6 +1536,10 @@ class RaceStateEngine:
         t.stint_laps = len(self._stint_temp_laps) or len(self._stint_press_laps)
         t.temp_trend = _corner_trends(self._stint_temp_laps)
         t.pressure_trend = _corner_trends(self._stint_press_laps)
+        t.temp_change_since_stint_start = _corner_change(self._stint_temp_laps, 0)
+        t.pressure_change_since_stint_start = _corner_change(self._stint_press_laps, 0)
+        t.temp_change_vs_previous_lap = _corner_change(self._stint_temp_laps, -2)
+        t.pressure_change_vs_previous_lap = _corner_change(self._stint_press_laps, -2)
 
     # ---- helpers ---------------------------------------------------------
     def _event(
@@ -1545,6 +1553,14 @@ class RaceStateEngine:
             severity=severity,
             payload=payload,
         )
+
+
+def _corner_change(samples: list[tuple[int, dict[str, float]]], ref: int) -> dict[str, float]:
+    """Per corner, the last lap mean minus the lap mean at index ``ref`` (0 or -2)."""
+    if len(samples) < 2:
+        return {}
+    last, then = samples[-1][1], samples[ref][1]
+    return {c: round(v - then[c], 2) for c, v in last.items() if c in then}
 
 
 def _corner_trends(samples: list[tuple[int, dict[str, float]]]) -> dict[str, float]:

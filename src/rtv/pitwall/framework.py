@@ -36,6 +36,7 @@ from rtv.pitwall.activity import Tracer, safe_trace, summarize
 from rtv.pitwall.agent_input import SPOKEN_WORD_LIMIT
 from rtv.pitwall.agent_input import as_text as _as_text
 from rtv.pitwall.validator import FactSet, GroundingReport, validate_output
+from rtv.racestate.derived import agent_payload
 from rtv.racestate.models import EventType, RaceEvent, RaceState
 
 log = get_logger("pitwall.framework")
@@ -552,6 +553,9 @@ class AgentRuntime:
         spec = self.spec
         slice_ = spec.state_slice(state)
 
+        # The agent sees the event with its speeds in km/h and its streak counts
+        # derived (rtv.racestate.derived); the FactSet holds exactly that view.
+        event = event.model_copy(update={"payload": agent_payload(event.payload)})
         facts = FactSet()
         facts.add("race_state", slice_)
         facts.add("event", event.payload)
@@ -969,6 +973,8 @@ class AgentRuntime:
             ok=report.ok and policy is None,
             policy=policy,
             unsupported=list(report.unsupported),
+            # Why each figure failed, for the audit (rendered there with rounded values).
+            unsupported_detail=list(report.unsupported_detail),
             word_count=report.word_count,
             over_word_limit=report.over_word_limit,
             repaired=repaired,

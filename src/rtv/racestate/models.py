@@ -282,6 +282,13 @@ class TyreState(BaseModel):
     temp_trend: dict[str, float] = Field(default_factory=dict)
     pressure_trend: dict[str, float] = Field(default_factory=dict)
     stint_laps: int = 0
+    #: Per corner, the last completed lap's mean minus the stint's first lap mean
+    #: (``*_since_stint_start``) and minus the lap before it (``*_vs_previous_lap``).
+    #: Derived once here so an agent copies the change instead of computing it.
+    temp_change_since_stint_start: dict[str, float] = Field(default_factory=dict)
+    pressure_change_since_stint_start: dict[str, float] = Field(default_factory=dict)
+    temp_change_vs_previous_lap: dict[str, float] = Field(default_factory=dict)
+    pressure_change_vs_previous_lap: dict[str, float] = Field(default_factory=dict)
 
 
 class CarHealthState(BaseModel):
