@@ -350,57 +350,6 @@ def lap_rows(laps: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return out
 
 
-#: How far (lap fraction) a lap's apex may sit from a session corner and still be it.
-#: Spa's closest pair (Bruxelles, Speaker's Corner) is 0.029 apart.
-MATCH_PCT = 0.014
-
-
-def _canonical(corners: list[dict[str, Any]], lap_length: float | None) -> list[dict]:
-    """A lap pair's corners as a corner map: ``[{label, name, lap_dist_pct}]``."""
-    if not lap_length:
-        return []
-    return [
-        {"label": c["label"], "name": c.get("name"), "lap_dist_pct": c["distance"] / lap_length}
-        for c in corners
-        if c.get("label") and isinstance(c.get("distance"), int | float)
-    ]
-
-
-def _relabel(
-    corners: list[dict[str, Any]], lap_length: float | None, canon: list[dict[str, Any]]
-) -> tuple[list[dict[str, Any]], int]:
-    """Put the session's corner labels on one lap pair's corners, by apex position.
-
-    Layer-1 numbers the apexes it finds on each lap pair T1..Tn, so the same label can be
-    a different corner on another pair (on Spa, T3 is Les Combes on one lap and Bruxelles
-    on the next). Counting "the same corner" across laps needs one numbering: the session
-    corner map the live events use (``RaceState.track``, the review's labels). A corner
-    with no session corner near its apex is left out of the per-corner counts.
-    """
-    if not canon or not lap_length:
-        return corners, 0
-    out, dropped = [], 0
-    for c in corners:
-        d = c.get("distance")
-        if not isinstance(d, int | float):
-            dropped += 1
-            continue
-        pct = d / lap_length
-        best = min(canon, key=lambda k: abs(k["lap_dist_pct"] - pct))
-        if abs(best["lap_dist_pct"] - pct) > MATCH_PCT:
-            dropped += 1
-            continue
-        out.append(
-            {**c, "label": best["label"], "name": best.get("name"), "pair_label": c["label"]}
-        )
-    # Two apexes on one session corner (a chicane's two halves): keep the bigger loss.
-    keep: dict[str, dict[str, Any]] = {}
-    for c in out:
-        if c["label"] not in keep or (c.get("net_dt") or 0) > (keep[c["label"]].get("net_dt") or 0):
-            keep[c["label"]] = c
-    return list(keep.values()), dropped
-
-
 def findings_digest(
     coaching: Any,
     session_id: str,
@@ -411,8 +360,10 @@ def findings_digest(
 
     The analysis itself is :meth:`CoachingService.lap_findings`, unchanged; this only
     counts what it found per corner across the race (DB1: reuse, do not re-implement).
-    Corners are relabelled onto ``corner_map`` (the session's corner map; else the first
-    analysed pair's corners) so a label means one corner on every lap. ``corners`` holds,
+    Layer 1 labels every pair from the session corner map, so a label is one corner on every
+    lap; an apex off that map (``off_map``) is left out of the per-corner counts, and
+    ``corner_map`` (the live map the run ended with) is only checked against, never
+    relabelled onto. ``corners`` holds,
     per corner label, the full Layer-1 finding of the lap that lost most there: the prose
     check holds a corner claim to it.
     """
@@ -432,8 +383,7 @@ def findings_digest(
     losing: dict[str, list[tuple[int, float]]] = defaultdict(list)
     reasons: dict[str, Counter[str]] = defaultdict(Counter)
     names: dict[str, str | None] = {}
-    canon = list(corner_map or [])
-    canon_source = "session corner map" if canon else None
+    map_laps: set[int] = set()
     dropped_total = 0
     for lap in clean:
         if lap["lap"] == ref:
@@ -443,12 +393,10 @@ def findings_digest(
         except (KeyError, FileNotFoundError, ValueError) as exc:
             notes.append(f"Lap {lap['lap']}: no findings ({exc}).")
             continue
-        corners = found.get("corners") or []
-        if not canon:
-            canon = _canonical(corners, found.get("lap_length_m"))
-            canon_source = f"the corners of lap {lap['lap']} against lap {ref}"
-        corners, dropped = _relabel(corners, found.get("lap_length_m"), canon)
-        dropped_total += dropped
+        if found.get("corner_map_lap") is not None:
+            map_laps.add(found["corner_map_lap"])
+        corners = [c for c in found.get("corners") or [] if not c.get("off_map")]
+        dropped_total += len(found.get("corners") or []) - len(corners)
         top = sorted(
             (c for c in corners if (c.get("net_dt") or 0) >= LOSS_MIN_S),
             key=lambda c: -(c.get("net_dt") or 0),
@@ -503,13 +451,20 @@ def findings_digest(
             }
         )
     by_corner.sort(key=lambda r: -(r["total_loss_s"] or 0))
-    if canon_source:
-        notes.append(f"Corner labels follow {canon_source}.")
+    if map_laps:
+        built = ", ".join(str(n) for n in sorted(map_laps))
+        notes.append(f"Corner labels follow the session corner map (built on lap {built}).")
     if dropped_total:
         notes.append(
             f"{dropped_total} lap-pair corner(s) matched no corner of that map and are left "
             "out of the per-corner counts."
         )
+    for k in corner_map or []:
+        if k["label"] in names and names[k["label"]] != k.get("name"):
+            notes.append(
+                f"The live corner map calls {k['label']} {k.get('name') or 'unnamed'}; "
+                f"the lap findings call it {names[k['label']] or 'unnamed'}."
+            )
     corners_full = []
     for _label, (_dt, lap_no, c) in sorted(worst.items(), key=lambda kv: _label_key(kv[0])):
         corners_full.append(

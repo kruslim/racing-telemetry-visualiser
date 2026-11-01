@@ -72,12 +72,13 @@ _SESSION_FIELDS = (
 class RepositoryFindingsProvider:
     """The live provider — reuses ``CoachingService``/``Repository`` with no changes.
 
-    ``CoachingService`` is instantiated per call (it is a thin stateless wrapper over the
-    repository), so a single provider can serve any session.
+    One ``CoachingService`` serves every session; it keeps only each session's corner map
+    (the corner labels), so repeated findings calls do not rebuild it.
     """
 
     def __init__(self, repo: Repository, vision: Any | None = None) -> None:
         self._repo = repo
+        self._coaching = CoachingService(repo)
         #: ``rtv.vision.service.VisionService``, for ``get_visual_notes``; optional.
         self._vision = vision
 
@@ -91,7 +92,7 @@ class RepositoryFindingsProvider:
         return self._repo.get_laps(session_id)
 
     def lap_findings(self, session_id: str, main_lap: int, ref_lap: int) -> dict:
-        return CoachingService(self._repo).lap_findings(session_id, main_lap, ref_lap).to_dict()
+        return self._coaching.lap_findings(session_id, main_lap, ref_lap).to_dict()
 
     def available_channels(self, session_id: str) -> list[str]:
         if self._repo.get_session(session_id) is None:

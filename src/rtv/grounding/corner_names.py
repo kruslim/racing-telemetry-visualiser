@@ -178,9 +178,11 @@ class CornerNames:
     venue: str | None = None
     #: name_key -> owning label, for names of this circuit placed on the lap.
     owners: dict[str, str | None] = field(default_factory=dict)
-    #: label -> other map labels it may also stand for. Layer 1 numbers corners per lap
-    #: pair, so a ``T3`` from another lap pair (a tool result, a second retrieved pair) can be
-    #: the map's ``T2``; a name is then held to either. Filled by :meth:`alias`.
+    #: label -> other map labels it may also stand for. Layer 1 used to number corners per
+    #: lap pair, so a ``T3`` from another pair could be the map's ``T2``; since R3 every pair
+    #: uses the session corner map and this stays empty, except for journals recorded before
+    #: it (``evals/real``), whose tool results still carry per-pair labels. Filled by
+    #: :meth:`alias`.
     aliases: dict[str, set[str]] = field(default_factory=dict)
     _compiled: tuple[re.Pattern[str] | None, dict[str, _Known]] | None = field(
         default=None, repr=False, compare=False

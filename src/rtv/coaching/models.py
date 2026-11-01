@@ -46,7 +46,7 @@ class Diagnostic:
 @dataclass
 class CornerFinding:
     index: int
-    label: str  # "T1", "T2", ...
+    label: str  # "T1", "T2", ...: the session corner map's label, the same on every lap
     distance: float  # apex distance (m)
     sector: int  # 1, 2 or 3
     type: str  # Hairpin / Slow corner / Medium corner / Fast corner
@@ -57,6 +57,9 @@ class CornerFinding:
     entry_m: float = 0.0  # start of the window net_dt is measured over (m)
     exit_m: float = 0.0  # end of that window (m)
     name: str | None = None  # the circuit's own name ("Eau Rouge") from rtv.tracks, if mapped
+    # True for an apex the session corner map has no corner for, numbered after the map's
+    # last corner: its label holds for this lap pair only, so cross-lap counts skip it
+    off_map: bool = False
 
 
 @dataclass
@@ -141,6 +144,8 @@ class LapFindings:
     agent_stats: dict[str, AgentStat] = field(default_factory=dict)  # keyed by roster id
     venue: str | None = None  # the venue reference key ("spa"), when the session matched one
     places: list[NamedPlace] = field(default_factory=list)  # the venue's names on this lap
+    # the lap the session corner map (the corner labels) was built on; None: own numbering
+    corner_map_lap: int | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

@@ -73,3 +73,70 @@ def session_track(repo, session_id: str, lap: int | None = None) -> dict[str, An
     out["trace_lap"] = lap
     out["corners"] = corner_map(ref, *trace)
     return out
+
+
+def _clean_laps(repo, session_id: str) -> list[dict[str, Any]]:
+    """Full timed laps on the racing line, in lap order (no pit laps, no partial segments)."""
+    return sorted(
+        (
+            r for r in repo.get_laps(session_id)
+            if r.get("lap_time") and r.get("is_valid")
+            and not r.get("is_in_lap") and not r.get("is_out_lap")
+        ),
+        key=lambda r: r["lap"],
+    )
+
+
+def session_corner_map(repo, session_id: str) -> dict[str, Any]:
+    """The session's one corner numbering, built from its stored laps as the live engine builds it.
+
+    Layer 1 detects apexes on each lap afresh, so on its own ``T3`` is whatever the third dip
+    of that lap was: Les Combes on most Spa laps, Bruxelles on lap 8, which misses Les
+    Combes' neighbour. This runs the live map's own procedure (:class:`LiveCornerMap`) over
+    the stored clean laps in lap order: the first two laps whose apexes agree fix the list,
+    so the labels are the ones the live events used. With no agreeing pair the fastest clean
+    lap's corners are used (``agreed`` False). Returns
+    ``{"lap", "agreed", "corners": [{label, name, lap_dist_pct}]}``; ``corners`` is empty
+    without two usable channels (``Speed``, ``LapDist``) or a clean lap.
+    """
+    from rtv.tracks.live import GRID, LiveCornerMap
+    from rtv.tracks.live import _fill as _interp
+
+    out: dict[str, Any] = {"lap": None, "agreed": False, "corners": []}
+    clean = _clean_laps(repo, session_id)
+    cols = repo.valid_columns(session_id)
+    if not clean or not {"Speed", "LapDist", "LapDistPct"} <= set(cols):
+        return out
+    laps = [r["lap"] for r in clean]
+
+    def series(name: str) -> dict[str, list]:
+        if name not in cols:
+            return {}
+        return repo.compare(session_id, name, laps, grid=GRID)["laps"]
+
+    speed, dist, lat, lon = (series(c) for c in ("Speed", "LapDist", "Lat", "Lon"))
+    built = LiveCornerMap(session_reference(repo, session_id), grid=GRID)
+
+    def arrays(lap: int):
+        sp, d = speed.get(str(lap)), dist.get(str(lap))
+        if not sp or not d:
+            return None
+        la, lo = lat.get(str(lap)), lon.get(str(lap))
+        return {
+            "speed": _interp(_fill(sp)),
+            "dist": _interp(_fill(d)),
+            "lat": _fill(la) if la else None,
+            "lon": _fill(lo) if lo else None,
+        }
+
+    for lap in laps:
+        lap_arrays = arrays(lap)
+        if lap_arrays is not None and built.offer(lap, **lap_arrays):
+            out.update(lap=lap, agreed=True, corners=list(built.corners))
+            return out
+    fastest = min(clean, key=lambda r: r["lap_time"])["lap"]
+    lap_arrays = arrays(fastest)
+    if lap_arrays is not None and built.build(fastest, **lap_arrays):
+        out.update(lap=fastest, corners=list(built.corners))
+    return out
+

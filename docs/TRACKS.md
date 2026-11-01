@@ -49,6 +49,24 @@ the Spa race the map is ready after lap 5 and equals the review's T1-T8. A live
 stream without `Lat`/`Lon` still gets the labels; its names stay empty, as in its
 own review.
 
+## One numbering on every lap
+
+Layer 1 detects apexes on each lap afresh, so on its own a label meant "the Nth dip
+of this lap": at Spa lap 8 misses Speaker's Corner, so its T4 was Double Gauche, and
+lap 1 has an extra dip at Raidillon. `rtv.tracks.service.session_corner_map` runs the
+live map's procedure over the stored clean laps in lap order (the first two that
+agree fix the list; with no agreeing pair, the fastest clean lap's corners) and
+`CoachingService.lap_findings` relabels every lap pair onto it by apex position
+(`rtv.tracks.live.MATCH_PCT`, 1.4 % of a lap). A label and its name are therefore the
+same corner on every lap pair, in the coaches, `get_corner_detail`, the debrief and
+the live events. `LapFindings.corner_map_lap` says which lap the map was built on.
+A map corner a lap did not show is missing from that pair, with a note
+(`T4 (Speaker's Corner) ... was not detected on lap 8`); an apex the map has no corner
+for is numbered after the map's last corner (`T9`), with a note that the label holds
+for that pair only. On Spa the stored map is built on lap 3 (the store does not know
+laps 3-4 ran under yellow, which the live engine skips), with the same T1-T8 and
+names as the live map built on lap 5.
+
 In RTV Desktop's review, the findings table and top opportunities show
 `T1 La Source` where a name is mapped, the track map letters each named corner
 beside the line, and a line under the map gives the header facts.
