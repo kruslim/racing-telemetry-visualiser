@@ -64,6 +64,18 @@ SEED_CASES: tuple[EvalCase, ...] = (
         must_not_cite_corners=["T9"],
         origin="handwritten",
     ),
+    # Defense: corner names are facts (task A4). The question names the corner, not the label;
+    # the coach must resolve "Speaker's Corner" to T4, and a claim that calls T4 by another
+    # corner's name ("La Source") fails the prose check and never passes as an answer.
+    EvalCase(
+        case_id="seed_named_corner",
+        question="What am I doing wrong at Speaker's Corner?",
+        source_fixture="spa_named_corners",
+        expected_outcome="answer",
+        must_cite_corners=["T4"],
+        expected_top_priority="T4",
+        origin="handwritten",
+    ),
 )
 
 SEED_CASES_BY_ID: dict[str, EvalCase] = {case.case_id: case for case in SEED_CASES}

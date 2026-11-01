@@ -430,8 +430,8 @@ why calls are checked again at air time, and why there is a late tag at all.
   between runs are within noise.
 - **Latency.** Model calls take 8-18 s, so agent advice is minutes-scale strategy and
   coaching, not instant reactions.
-- **Pending build stages.** Stage 09 (race control and debrief agents) is planned in
-  `prompts/` and recorded in [PITWALL.md](PITWALL.md) as it lands. The race director
+- **Pending build stages.** None: stages 08 (race plan), 09 (race control and the post-race
+  debrief) and 10 are built and recorded in [PITWALL.md](PITWALL.md). The race director
   (stage 10) runs only from evals (`evals/run_director.py`), never in the app, and has
   not yet been rehearsed against Kimi.
 

@@ -9,11 +9,16 @@ is the command line; tests call :func:`rehearse` directly.
 How a rehearsal runs. Frames go into a :class:`RaceStateEngine` one at a time and, after
 each, a :class:`~rtv.director.ScriptedDirector` is polled through the orchestrator's own
 ``poll_director`` (so an injected event goes onto the race bus like a detected one).
-Every event on the bus is then dispatched and the agents it wakes are run **inline**:
-the race clock waits for them. That makes a rehearsal deterministic (the same script over
-the same race gives a byte-identical event log) and independent of replay speed:
-``speed`` only paces frames against the wall clock, and every trigger is in session
-seconds. The radio is advanced on the session clock (``RadioFeed.pump``).
+Every event on the bus is then routed the way the app's pump routes it
+(``orch.dispatch``): template calls go on the channel at once and the agents it wakes go
+to their one-slot inboxes (latest wins, a critical event or a question holds its slot).
+The radio is pumped on the session clock (``RadioFeed.pump``) *before* the agents run,
+so a template airs on its own tick as it does in the app, where the model calls are
+still in flight; it never queues behind a model answer to the same tick and goes stale.
+The agents then run **inline** (``orch.drain_inboxes``): the race clock waits for them.
+That makes a rehearsal deterministic (the same script over the same race gives a
+byte-identical event log) and independent of replay speed and model latency: ``speed``
+only paces frames against the wall clock, and every trigger is in session seconds.
 
 Offline the agents answer from :func:`rehearsal_answer`, a scripted provider that reads
 the trigger and the injected overlay and answers like a careful agent would (the
@@ -437,7 +442,8 @@ async def rehearse(
     ``out_dir`` gets the journal (``<out_dir>/<session_id>/runs/*-eval.jsonl``), refused
     under the app's ``data/sessions``. ``speed`` > 0 paces frames at that multiple of
     real time with ``sleep`` / ``clock`` (injectable for tests); 0 runs flat out. Either
-    way agents run inline and every trigger is in session seconds. ``on_fire`` is told
+    way agents run inline after the tick's templates have aired, and every trigger is in
+    session seconds. ``on_fire`` is told
     each injected event and the ``clock`` reading when it fired.
     """
     if live and provider is None:
@@ -451,6 +457,7 @@ async def rehearse(
         script, provider=provider, agents=agents, activity=activity
     )
     activity._clock = lambda: (engine.state.session_time, engine.state.tick)  # noqa: SLF001
+    orch.open_inboxes()
 
     events: list[RaceEvent] = []
     pending: list[RaceEvent] = []
@@ -526,20 +533,22 @@ async def rehearse(
                 on_fire(event, clock())
         i = 0
         while i < len(pending):
-            event = pending[i]
-            i += 1
-            before = len(dispatches)
-            await orch.handle_event(event, engine.snapshot())
-            if is_injected(event):
-                report = reports[str(event.payload.get(DIRECTOR_ID_KEY))]
-                for record in dispatches[before:]:
-                    data = record.get("data") or {}
-                    if record.get("event_key") == event.key and record.get("tick") == event.tick:
-                        report.woke = list(data.get("accepted") or [])
-                        report.templated = list(data.get("templated") or [])
-                        report.skipped = dict(data.get("skipped") or {})
-                        report.blocked = data.get("blocked")
-                        break
+            # As the app's pump does: route everything queued so far. Template calls go
+            # on the channel now; agent runs go to the agents' one-slot inboxes.
+            while i < len(pending):
+                event = pending[i]
+                i += 1
+                before = len(dispatches)
+                orch.dispatch(event, engine.snapshot())
+                if is_injected(event):
+                    _fill_dispatch(reports, event, dispatches[before:])
+            # The channel airs what it can before any model answers: in the app the
+            # calls are still in flight, so a same-tick template never waits on one.
+            orch.feed.pump(state.session_time)
+            # Then the agents, inline (the race clock waits for them: deterministic).
+            # Their answers queue behind what already aired; any event they cause
+            # (a plan revision) is routed on the next pass of this loop.
+            await orch.drain_inboxes()
         pending.clear()
         orch.feed.pump(state.session_time)
     orch.feed.flush()
@@ -562,6 +571,20 @@ async def rehearse(
     )
     _score(rehearsal, script, fired_at, events, max_gap)
     return rehearsal
+
+
+def _fill_dispatch(
+    reports: Mapping[str, InjectionReport], event: RaceEvent, records: Sequence[Mapping[str, Any]]
+) -> None:
+    report = reports[str(event.payload.get(DIRECTOR_ID_KEY))]
+    for record in records:
+        data = record.get("data") or {}
+        if record.get("event_key") == event.key and record.get("tick") == event.tick:
+            report.woke = list(data.get("accepted") or [])
+            report.templated = list(data.get("templated") or [])
+            report.skipped = dict(data.get("skipped") or {})
+            report.blocked = data.get("blocked")
+            return
 
 
 def _fill_fired(

@@ -29,7 +29,8 @@ frames (live poller 60 Hz | ReplayDriver)
   -> /ws/pitwall, TTS, live view, desktop app
 engine.bus -> SegmentJournal (services.py): one journal run per session segment
 engine.bus + activity + radio -> SessionRecorder journal (data/sessions/<id>/runs/*.jsonl)
-closed run -> AppServices.on_session_end (worker thread): <run_id>.summary.json, notifier
+closed run -> AppServices.on_session_end (worker thread): <run_id>.summary.json, notifier,
+       then DebriefService (race runs): <run_id>.debrief.json + a debrief journal record
 engine.bus -> LiveVisionWorker -> visual_observation events back onto engine.bus
 
 eval path only (evals/run_director.py, never the app):
@@ -400,6 +401,51 @@ writes `<run_id>.summary.json` (the `/summary` shape plus `session_num`, `sessio
 then the notifier from `RTV_PITWALL_SESSION_END_NOTIFIER` (`none` default, or `file`: one
 log line and `<run_id>.notice.txt`). Nothing on the default path touches the network.
 
+**Post-race debrief** (`rtv.debrief`, appendix "Stage 09 part B"). Not a radio agent: it
+never speaks, has no trigger or cooldown, is not in `AGENT_REGISTRY` and does not count
+against the session's call budget (the session is over). `DebriefService` runs once per
+race segment as the last `on_session_end` callback, over that segment's journal run, and on
+demand. *Inputs* (`debrief/inputs.py`, no raw telemetry): the run's race events (state
+snapshots left out, `plan_revised` kept apart), each with its lap and `payload.place` corner;
+the radio with its air outcome (`aired | late | expired | superseded | refused`); agent run
+outcomes per agent; plan revisions (`from`/`to` element values) and rejected proposals (lap,
+agent, changed element names and reason, never the rejected numbers, and the reason is kept
+out of the FactSet); the final state; one fuel and one tyre row per lap boundary (the
+projection as it stood); the stored `<run_id>.summary.json`; the run's laps
+(`journal.laps_for_run`; `recorded_laps` = the valid ones); and the Layer-1 findings of every
+clean lap against the best one (`CoachingService.lap_findings`, unchanged), compacted to the
+top losing corners per lap, per-corner totals over the race (`recurring`), and per corner the
+full `CornerFinding` of the lap that lost most there. *The call*: `KimiProvider(thinking=True)`,
+`structured_call` with the `DebriefAnswer` contract through the forced respond tool, model
+`RTV_DEBRIEF_MODEL` else `RTV_LLM_KIMI_MODEL_REASONING`, `max_tokens` 16 000. *Contract*
+(`debrief/contract.py`): `summary`, `plan`, `time_lost[]` and `recurring[]` (`{text, corner,
+laps}`), `tyres_fuel`, `priorities[]` (`{text, basis, corner}`, at most five). *Checks*
+(`debrief/checks.py`), per section: every figure against the typed FactSet over the inputs
+(A1; "the right number, wrong fact" fails on its unit family); structured laps must be
+recorded, prose lap numbers recorded or named by the plan; a structured corner through
+`resolve_corner` (label and name); the prose through A2's `check_prose(mode="lap")` against the
+Layer-1 corners, keeping its corner-label and brake-direction issues (its per-corner figure
+rule is replaced by the FactSet over all inputs); a priority must rest on a kept, non-empty
+section and name a corner that section discusses. A failing section gets one repair call
+(the issues named); a section still failing is `refused` with its reason; kept sections are
+`ok` or `repaired`. With no key, no `ai` extra, an exception or no valid answer, every section
+is `unavailable` and `note` says so: the deterministic half is always there.
+*Document* `<run_id>.debrief.json`: `schema, session_id, run_id, session_type, generated_at,
+trigger (session_end | manual), model, model_calls, analysis {available, reason}, note,
+kept_sections, sections[{name, title, status, text | items, reason, issues, first_issues}],
+deterministic {result, laps, stints, fuel, tyres_by_lap, plan, reference_lap, time_lost,
+recurring, events, radio, notes}, references {laps, corners, reference_lap}, inputs`; each
+write also appends a `debrief` record (`journal.append_record`) to the closed run.
+`GET /api/v1/sessions/{id}/debrief?run=` returns it plus a live `can_analyse` (404 when
+none); `POST` regenerates it from the recorded journal (409 for a run still recording) and
+never re-runs the agents. The notifier gets `notify_debrief` (`file`: one more line in
+`<run_id>.notice.txt`). Settings: `RTV_DEBRIEF_AUTO` (`auto` = on whenever
+`RTV_PITWALL_AGENTS` is on, or `true`/`false`), `RTV_DEBRIEF_SESSIONS` (`race`),
+`RTV_DEBRIEF_MODEL`. In RTV Desktop the review has a Debrief panel under the summary
+(`rtv.desktop.model.debrief`, `widgets/debrief.py`): the selected run's debrief, its laps and
+corners as links that open the lap in the lap analysis against the debrief's reference lap
+and highlight the corner, and a Regenerate button whose dialog says it calls Kimi first.
+
 **Vision live worker** (`rtv.vision.live_worker`, details in `docs/VISION.md`). With
 `RTV_VISION_MODE=live`, events in `RTV_VISION_LIVE_TRIGGERS` become moments; the worker
 grabs frames from the running capture or a synced recording, runs the grounded
@@ -465,10 +511,14 @@ keeps `NoopDirector`; `RTV_PITWALL_DIRECTOR_SCRIPT` only loads and validates a s
   forecast.
 - *Runner.* `rehearse(script, source=None, out_dir=, live=False, speed=0)`: frames go into
   the engine one at a time, the director is polled through `orch.poll_director` after
-  each, every bus event is dispatched and the woken agents run **inline** (the race clock
-  waits for them), and the radio advances on the session clock. So a rehearsal is
+  each, and every bus event is routed as the app's pump routes it (`orch.dispatch`:
+  template calls on the channel at once, woken agents into their one-slot inboxes, latest
+  wins). The radio is pumped on the session clock *before* the agents run, so a template
+  airs on its own tick as in the app (where the model calls are still in flight) instead
+  of queueing behind a model answer to the same tick and going stale; then the agents run
+  **inline** (`orch.drain_inboxes()`; the race clock waits for them). So a rehearsal is
   deterministic (the same script over the same race gives a byte-identical event log)
-  and speed-independent (`speed` only paces frames). Offline the agents answer from the
+  and independent of speed and model latency (`speed` only paces frames). Offline the agents answer from the
   scripted `rehearsal_answer`; `--live` uses Kimi. The journal goes to
   `<out>/<session_id>/runs/*-eval.jsonl` (source `eval`, `scenario` on the start record),
   refused under `data/sessions`. The report (`report.json`, `REPORT.md`, `events.jsonl`,
@@ -494,7 +544,8 @@ orch.mode / .standby / .standby_reason / .observe_lifecycle(event) / .last_auton
 journal.list_runs(...)[i]: session_num, session_type, segment, end_reason, calls_used
 journal.summary_path(path); journal.laps_for_run(laps, records); session_end.run_summary
 engine.bus.subscribe(...) / .subscribe_callback(fn) / .history(limit)
-orch.handle_event(event, state)       # route + run inline (tests, evals)
+orch.handle_event(event, state)       # route + run inline (tests, smoke)
+orch.open_inboxes(); orch.dispatch(e); await orch.drain_inboxes()  # app inboxes, inline (evals)
 PitwallOrchestrator(..., callers=None)  # None = build_callers(); [] = no template calls
 rtv.pitwall.callers: TemplateCall(spoken_text, detail_text, priority=, subject=, data=,
     expires_after_s=, subject_car_idx=, valid_until_lap=, max_age_s=, cooldown_s=)
@@ -542,23 +593,27 @@ rtv.pitwall.callers: RACE_CONTROL_TEMPLATES, race_control_caller(settings)
 rtv.pitwall.agents.race_control: RACE_CONTROL, RaceControlCall, race_control_policy
 evals.pitwall_checks: race_control_check(result, state, event), race_control_consequences
 evals.pitwall_cases: RACE_CONTROL_SCENARIO, race_control_degraded_cases()
+services.debrief: DebriefService(settings, repo, coaching, provider=None, notifier=None)
+    .generate(session_id, run_id, trigger=) -> doc; .load(...); .on_session_end(ended)
+    .resolve_provider() -> (provider | None, reason); .can_analyse(); .model(); .auto()
+rtv.debrief.inputs.build_inputs(session_id=, path=, repo=, coaching=) -> dict
+rtv.debrief.checks: fact_set(inputs), known_corners(inputs), check_section, check_priorities
+journal.debrief_path(path); journal.append_record(path, kind, data)   # closed runs only
+evals.debrief_cases: faithful_answer(inputs), debrief_cases(inputs), scripted_handler(case)
+evals.synthetic_debrief: seed_debrief_session(writer), debrief_source()   # tests only
 ```
 
 The HTTP and WebSocket surface: `/api/v1/racestate` (and `/events`), `/api/v1/replay/*`,
 `/api/v1/pitwall/{status,health,radio,activity,tts,enabled,reset,driver-message}`,
-`WS /ws/pitwall` (state, event, radio and activity frames), the journal endpoints above
-and `/vision/live`. FastAPI's `/docs` lists them all.
+`WS /ws/pitwall` (state, event, radio and activity frames), the journal endpoints above,
+`GET/POST /sessions/{id}/debrief` and `/vision/live`. FastAPI's `/docs` lists them all.
 
 ### Pending stages
 
 Prompts in `prompts/` (done ones in `prompts/done/`), revised by plan task D0. Stages 07
-(session lifecycle and autonomy), 08 (race plan and projections) and 10 (the race
-director scheduler, evals only) are done, and so is stage 09 part A (race control, D6a);
-the 09 prompt stays in `prompts/` until part B is done.
-
-| Stage | Prompt | Goal |
-|---|---|---|
-| 09 part B | `09-race-control-debrief.md` | The debrief analyst after the race (D6b; needs A2) |
+(session lifecycle and autonomy), 08 (race plan and projections), 09 (race control, D6a,
+and the post-race debrief, D6b) and 10 (the race director scheduler, evals only) are done;
+no stage prompt is pending.
 
 ---
 
@@ -3150,6 +3205,23 @@ Layer-3a orchestrator and the eval judge now use. Both previously called
 `CoachOrchestrator(provider, model=...)` replaces `CoachOrchestrator(client=...)`.
 Agent default model ids are `kimi-k3`.
 
+**Kimi tool-call markup is a malformed turn (R2).** Kimi sometimes fails to parse its
+own tool call and returns the raw template tokens (`<|close|>`, `<|sep|>`,
+`<|oopen|>argument key=...`) inside an argument; on the A2 coach eval a whole second
+respond call sat in the orchestrator's `corner` field in 2 of 5 cases, and the schema
+accepted it. `rtv.llm.find_markup` detects them; `KimiProvider` then discards the whole
+turn and returns `ProviderResponse(malformed=...)` with no output and no tool calls.
+`structured_call` asks once more (and takes a `check=` callable for contracts beyond the
+schema), the pitwall `AgentRuntime` retries a malformed turn once per run (counted in
+`stats()["malformed"]` and the journal's `llm_call_end.malformed`), and the graph coach
+bounces it through its validation feedback, then its grounded refusal. The orchestrator
+also requires each specialist's `corner` to be the corner it was asked about (the prompt
+read `corner None` before: top3 entries carry `label`) and every plan priority to be a
+label in the findings; with no valid plan it returns `plan=None` with a message. The
+Spa journals (`spa-kimi-run-combined`, `spa-kimi-run-B2`) hold no markup, but they do
+not record a discarded payload, so their 3 and 2 calls without a structured answer
+cannot be attributed; the new `malformed` field records that from now on.
+
 **Coaching in one place.** `LapFindings` gained `kpis` (`main`/`ref`
 `DriverKPIs`: trail-brake %, average throttle %, throttle smoothness, steering
 corrections, coasting %), `agent_stats` (count and attributed seconds per roster
@@ -3401,6 +3473,9 @@ review does.
   Speaker's Corner, so one lap can renumber everything. The map is adopted when two clean
   laps have the same apexes (each within 2 % of a lap); on Spa that is laps 2 and 5 (3-4
   ran under yellow), and the result equals the review's corners for its default laps.
+  Since R3 Layer 1 itself labels every lap pair from the same procedure run on the stored
+  laps (`rtv.tracks.service.session_corner_map`, `docs/TRACKS.md`), so `get_corner_detail`'s
+  `telemetry.corner.label` (now with `name`) is the live map's label on any lap.
 - `RaceState.track = {corner_map_lap, provisional, corners: [{label, name, lap_dist_pct}]}`,
   a new state section (`get_race_state_slice` lists it), in the coach's and the vehicle
   engineer's slices.
@@ -3908,7 +3983,8 @@ Deviations:
 - Runner: a separate `evals/run_director.py` rather than a `--scenario` mode of
   `run_pitwall.py`, whose cases are single (state, event) pairs; a rehearsal is a whole
   replay. Agents run inline after each frame (the race clock waits), which is what makes a
-  rehearsal deterministic and speed-independent; it is not a model of live latency.
+  rehearsal deterministic and speed-independent; it is not a model of live latency. Since
+  R4 the tick's template calls air before those inline runs (see *Runner*).
 - `at_lap` holds on that lap *or later* (and `at_lap_dist_pct` alone at or past the
   fraction), so a poll that misses the exact frame fires late, stamped from the state it
   saw, instead of never. `while_flag` reads the effective flag (an injected flag wins).
@@ -3940,6 +4016,71 @@ Deviations:
   over the synthetic race with `--live`, and over the recorded Spa session) are queued in
   `project-review/waves/kimi-queue.md`.
 
+## Stage 09 part B — the post-race debrief (plan task D6b)
+
+Built from PART B of `prompts/done/09-race-control-debrief.md`; the current-architecture page has
+the interfaces ("Post-race debrief"). Part A (race control, D6a, PR #52) merged first, so this PR
+moves the prompt to `prompts/done/`.
+
+- **Not an agent in the registry.** The debrief has no trigger, cooldown, state slice or radio
+  subject, so it is a service (`rtv.debrief`) on `AppServices`, not an `AgentSpec`: the radio
+  and the orchestrator are untouched, and part A's registry edits cannot collide with it.
+- **One call, no tools.** Everything the model may cite is in one INPUTS document (about 13 KB
+  on the synthetic race), so there is no tool loop; `structured_call` already re-asks once
+  for an invalid payload. The repair is a second `structured_call` with the previous answer
+  and the issues; per section the first passing version wins.
+- **Figures against all inputs, prose rules from A2.** `check_prose` in `lap` mode checks
+  every figure against one corner's finding, but a debrief quotes race totals (a corner's loss
+  summed over the laps it lost on) that no single corner holds, so its figure rule is replaced
+  by the typed FactSet over the whole input; its corner-label and brake-direction rules are
+  kept (a brake claim is held to the finding of the lap that lost most at that corner). A4's
+  name checks will flow through when they land as a new `ProseReport` kind.
+- **Swapped facts.** The FactSet is typed, so a figure of the wrong unit family fails (the
+  hermetic case says a litres figure as seconds). Two figures of the same family (best and
+  median lap time) are not told apart, as in the pitwall validator.
+- **Spec deviations.** DB5 says "driven by ScriptedModel": `ScriptedModel` drives the LangGraph
+  coach; the debrief calls the pitwall provider interface, so the cases use its scripted twin
+  `ScriptedProvider`. DB4 asks for a "tab": the desktop review is one scrolling page of panels,
+  so the debrief is a panel under the race summary. `RTV_DEBRIEF_AUTO` is a string
+  (`auto|true|false`) because an empty value for an optional bool does not parse from `.env`.
+  `evals.synthetic_race.seed_scenario_session` gains an optional `frames` argument (default
+  unchanged) so the store and the replay can hold the same race-phase stream.
+- **Offline evidence.** `tests/test_debrief.py` (no-key session-end path, API, settings,
+  notifier, inputs, nine hermetic cases from `evals/debrief_cases.py`, a failed call, the
+  autonomy-on session end with the scripted model, the Kimi request shape through a fake
+  client: `thinking: adaptive`, `tool_choice: any`, only the respond tool),
+  `tests/test_desktop_debrief.py` (view model and panel) and, on the real Spa fixture,
+  `test_the_no_key_debrief_of_the_real_race_references_only_recorded_laps` in
+  `tests/test_real_ibt.py`. The `spa_run` real-eval baseline is unchanged: no validator or
+  check the pitwall agents use was touched.
+- **One corner numbering.** Layer-1 numbers the apexes of each lap pair T1..Tn afresh, so on
+  Spa "T3" is Les Combes on one pair and Bruxelles on the next (the first Kimi debrief mixed
+  the two and called Speaker's Corner T4 while the findings' T4 was Bruxelles). The digest
+  relabels every pair's corners onto the session corner map the live events use
+  (`RaceState.track` of the final state; else the first analysed pair's corners) by apex
+  position (within 0.014 of a lap), keeps the pair's own label as `pair_label`, takes the
+  bigger loss when two apexes land on one corner, and notes how many matched none.
+- **Kimi (2026-11-01).** The combined Spa replay journal (project files
+  `spa-kimi-run-combined/`), `kimi-k3` with thinking: 2 calls, 116 s, 6/6 sections kept.
+  The summary, plan, time lost and tyres/fuel passed first time; recurring and priorities
+  were repaired once (one quoted an unrecorded "lap 42"). The output is in
+  `spa-kimi-run-combined/debrief-D6b/`, with the run made before the relabelling kept next to it.
+
+### R4: director rehearsal schedules agents like the app
+
+D5's Kimi run over the Spa .ibt failed `debris_hazard` `radio_ok`: the rehearsal ran each
+event's agents inline before pumping the radio, so the strategist's answer to the restart
+queued ahead of the spotter's same-tick hazard template (equal priority, earlier
+sequence), held the channel for its airtime and the 3 s template expired; the synthetic
+`incident_limit` read-out aired as "Late call:" behind race control's critical answer the
+same way. The app never does this: templates go on air at dispatch while the model calls
+are in flight. `rehearse()` now routes each pass with `orch.dispatch`, pumps the radio,
+then runs the agents through `orch.open_inboxes()` / `orch.drain_inboxes()` (the app's
+one-slot inboxes, so two events for one agent on one tick also resolve latest-wins, a
+critical event or question holding its slot). Eval path only: the app never calls the two
+new methods, and they refuse to run while the workers are started. Offline test:
+`test_a_same_tick_template_airs_on_time_behind_a_slow_model_call` (fails on the old loop).
+
 ## R1 — fixes from the combined Spa replay (2026-11-01)
 
 The combined Kimi replay (project files `spa-kimi-run-combined/`) regressed against B2.
@@ -3959,10 +4100,16 @@ Each cause was reproduced from `evals/real/spa_run` first (`tests/test_pitwall_r
   retry (tools withdrawn, 1.5x max_tokens) with the reason; a second one ends the run.
 - `compare_runs` adds "of which tool-use turns": the combined run's 8 "calls without a
   structured answer" were 5 tool turns (3 strategist `propose_plan_revision`) and 3 misses.
-- Driver questions: `AgentSpec.tool_iterations(event)` is 0 for `driver_question` runs
-  (one forced answer from the prefetched results); the input record holds
-  `max_tool_iterations: 0` and `model_input` rebuilds it with no tools. An agent's answer
-  airs late after `framework.ANSWER_MAX_AGE_S` (30 s), not the agent's call limit.
+- Driver questions: `AgentSpec.tool_iterations(event)` is 1 for `driver_question` runs
+  (`framework.QUESTION_TOOL_ITERATIONS`): one tool round at most, then a forced answer. The
+  first build used 0 (one forced call, no tools); on the R1 replay kimi-k3's forced answer
+  ran to max_tokens on 2 of 4 questions, so the first call keeps the "any tool" choice. A
+  record with `max_tool_iterations: 0` still rebuilds with no tools. An agent's answer airs
+  late after `framework.ANSWER_MAX_AGE_S` (30 s), not the agent's call limit. A turn cut
+  off at max_tokens with no answer gets the same one retry as an invalid payload.
+- `agent_input.previous_facts(previous)`: the lap and late-by seconds of the agent's own
+  recalled calls go into the fact set ("my lap-2 call aired 41 s late" was refused three
+  times on the R1 replay); the words of those calls never do.
 - `AgentSpec.spoken_word_limit` (default 25; spotter 14, shared with the eval). Recorded
   in the input as `spoken_word_limit` only when it is not 25.
 - Tokens: agent-visible floats are cut to `agent_input.SHOWN_DECIMALS` (4) by

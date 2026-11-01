@@ -481,6 +481,8 @@ class AgentRuntime:
         self.refusals = 0
         self.errors = 0
         self.retries = 0
+        #: Model turns thrown away as malformed (Kimi tool-call markup instead of a call).
+        self.malformed = 0
         #: Provider completions, i.e. actual billable model calls -- one
         #: invocation is several of these when the model uses its tools. This is
         #: the number the session cost guard counts.
@@ -774,6 +776,7 @@ class AgentRuntime:
                     latency_ms=round(elapsed, 2),
                     tool_calls=[c.name for c in tool_calls],
                     answered=getattr(response, "output", None) is not None,
+                    malformed=getattr(response, "malformed", None),
                     **_call_diagnostics(response),
                     input_tokens=usage.get("input_tokens"),
                     output_tokens=usage.get("output_tokens"),
@@ -790,10 +793,11 @@ class AgentRuntime:
     ) -> AgentOutput | None:
         spec = self.spec
         iterations = spec.tool_iterations(ctx.event)
+        malformed_retry = True
         for iteration in range(iterations + 1):
             # On the last pass the tools are withdrawn, so the model must answer.
             offer_tools = iteration < iterations
-            response = await self._complete(
+            call_kwargs = dict(
                 agent=spec.name,
                 model=spec.model,
                 system=system,
@@ -802,6 +806,19 @@ class AgentRuntime:
                 output_model=spec.output_model,
                 max_tokens=spec.max_tokens,
             )
+            response = await self._complete(**call_kwargs)
+            if getattr(response, "malformed", None) and malformed_retry:
+                # Kimi returned its raw tool-call markup instead of a call. Nothing
+                # of that turn is kept; the same question is asked once more, and a
+                # second broken turn ends the run with no output (the caller's
+                # "no structured output" path), never with the markup as content.
+                malformed_retry = False
+                self.malformed += 1
+                log.warning(
+                    "Agent %s: malformed model turn (%s), asking once more",
+                    spec.name, response.malformed,
+                )
+                response = await self._complete(**call_kwargs)
             if response.output is not None and not response.tool_calls:
                 return response.output
             if not response.tool_calls and getattr(response, "invalid_output", None):
@@ -974,7 +991,7 @@ class AgentRuntime:
             )
         if report.contradictions:
             problems.append(
-                "These statements contradict the corner analysis you were given: "
+                "These statements contradict the corner analysis or corner map you were given: "
                 f"{'; '.join(report.contradictions)}."
             )
         if report.over_word_limit:
@@ -1158,7 +1175,7 @@ class AgentRuntime:
             priority = RadioPriority.INFO
             spoken = REFUSAL_SPOKEN
             detail = (
-                "Withheld: the call contradicts the corner analysis "
+                "Withheld: the call contradicts the corner analysis or corner map "
                 f"({'; '.join(report.contradictions)}). Original text: " + output.spoken_text
             )
         elif report.over_word_limit:
@@ -1202,6 +1219,7 @@ class AgentRuntime:
             "refusals": self.refusals,
             "errors": self.errors,
             "retries": self.retries,
+            "malformed": self.malformed,
             "last_latency_ms": self.last_latency_ms,
             "avg_latency_ms": self.avg_latency_ms,
             "input_tokens": self.tokens["input_tokens"],

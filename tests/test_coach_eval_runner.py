@@ -57,7 +57,19 @@ def _good_scripts(ai) -> dict[str, list]:
             ai("get_lap_findings", FIND_ARGS),
             ai("submit_coaching", _answer("T4", 0.30, t4)),
         ],
+        "seed_named_corner": [
+            ai("get_lap_findings", FIND_ARGS),
+            ai("submit_coaching", _named_answer("Speaker's Corner")),
+        ],
     }
+
+
+def _named_answer(name: str) -> dict:
+    """The T4 answer of the named-corner case, calling T4 by ``name`` in its prose."""
+    answer = _answer("T4", 0.30, ["T1", "T4", "T7"])
+    answer["headline"] = f"T4 {name} is your biggest opportunity."
+    answer["claims"][0]["statement"] = f"{name} loses time vs the reference."
+    return answer
 
 
 def test_seed_cases_all_pass_a_well_behaved_coach(make_model, ai):
@@ -99,3 +111,13 @@ def test_newly_fixed_is_reported(make_model, ai):
         lambda case: make_model(scripts[case.case_id]),
     )
     assert report.newly_fixed(baseline) == ["seed_t4_brake_priority"]
+
+
+def test_a_coach_that_calls_t4_by_another_corners_name_fails(make_model, ai):
+    """Task A4's swapped-name coach case: same figures, wrong name, never an answer."""
+    case = SEED_CASES_BY_ID["seed_named_corner"]
+    wrong = [ai("get_lap_findings", FIND_ARGS)] + [
+        ai("submit_coaching", _named_answer("La Source")) for _ in range(4)
+    ]
+    report = run_regression([case], lambda _case: make_model(wrong))
+    assert report.n_passed == 0, report.render()

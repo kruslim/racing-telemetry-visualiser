@@ -341,6 +341,7 @@ def _layer1_corner(ctx: ToolContext, pct: float | None) -> dict[str, Any]:
         "lap_length_m": length,
         "corner": {
             "label": corner.label,
+            "name": corner.name,
             "type": corner.type,
             "distance_m": round(corner.distance, 1),
             "lap_dist_pct": round(corner.distance / length, 4) if length else None,

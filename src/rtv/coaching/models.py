@@ -46,7 +46,7 @@ class Diagnostic:
 @dataclass
 class CornerFinding:
     index: int
-    label: str  # "T1", "T2", ...
+    label: str  # "T1", "T2", ...: the session corner map's label, the same on every lap
     distance: float  # apex distance (m)
     sector: int  # 1, 2 or 3
     type: str  # Hairpin / Slow corner / Medium corner / Fast corner
@@ -57,6 +57,9 @@ class CornerFinding:
     entry_m: float = 0.0  # start of the window net_dt is measured over (m)
     exit_m: float = 0.0  # end of that window (m)
     name: str | None = None  # the circuit's own name ("Eau Rouge") from rtv.tracks, if mapped
+    # True for an apex the session corner map has no corner for, numbered after the map's
+    # last corner: its label holds for this lap pair only, so cross-lap counts skip it
+    off_map: bool = False
 
 
 @dataclass
@@ -100,6 +103,23 @@ class DriverKPIs:
 
 
 @dataclass
+class NamedPlace:
+    """One of the circuit's named stretches, located on the main lap (task A4).
+
+    The venue reference's names placed by this lap's own Lat/Lon trace, so a coach's
+    "Eau Rouge" or "Speaker's Corner" can be checked against the corner it is said about.
+    ``corner`` is the detected corner whose window holds it; ``None`` for a straight or a
+    flat-out curve no apex was detected in.
+    """
+
+    name: str
+    kind: str  # "corner" | "straight"
+    start_m: float
+    end_m: float
+    corner: str | None = None
+
+
+@dataclass
 class AgentStat:
     count: int  # findings this analyst produced
     time: float  # seconds of loss attributed to them
@@ -122,6 +142,10 @@ class LapFindings:
     notes: list[str] = field(default_factory=list)  # caveats, e.g. skipped diagnostics
     kpis: dict[str, DriverKPIs] = field(default_factory=dict)  # "main" / "ref"
     agent_stats: dict[str, AgentStat] = field(default_factory=dict)  # keyed by roster id
+    venue: str | None = None  # the venue reference key ("spa"), when the session matched one
+    places: list[NamedPlace] = field(default_factory=list)  # the venue's names on this lap
+    # the lap the session corner map (the corner labels) was built on; None: own numbering
+    corner_map_lap: int | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

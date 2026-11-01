@@ -170,6 +170,24 @@ def _build(name: str) -> SyntheticFindingsProvider:
             _findings([_corner(0, "T1", 0.1)]), channels=[], session_exists=False
         )
 
+    if name == "spa_named_corners":
+        # Task A4: the corners carry the venue's names (the real Spa replay's map), so the
+        # coach may say "Speaker's Corner" for T4 and must not say "La Source" about it.
+        corners = [
+            {**_corner(0, "T1", 0.05), "name": "La Source"},
+            {**_corner(1, "T4", 0.30, diags=[_BRAKE_DIAG]), "name": "Speaker's Corner"},
+            {**_corner(2, "T7", 0.08), "name": "Campus"},
+        ]
+        findings = _findings(corners)
+        findings["venue"] = "spa"
+        findings["places"] = [
+            {"name": c["name"], "kind": "corner", "start_m": c["distance"] - 40.0,
+             "end_m": c["distance"] + 40.0, "corner": c["label"]}
+            for c in corners
+        ] + [{"name": "Eau Rouge", "kind": "corner", "start_m": 300.0, "end_m": 340.0,
+              "corner": None}]
+        return SyntheticFindingsProvider(findings, channels=_ROAD_CHANNELS)
+
     raise KeyError(f"Unknown fixture {name!r}. Known: {', '.join(FIXTURES)}.")
 
 
@@ -179,6 +197,7 @@ FIXTURES: tuple[str, ...] = (
     "multi_corner",
     "no_tyre_temp",
     "missing_session",
+    "spa_named_corners",
 )
 
 

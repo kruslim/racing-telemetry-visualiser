@@ -27,12 +27,15 @@ from rtv.coaching.models import (
     Diagnostic,
     DriverKPIs,
     LapFindings,
+    NamedPlace,
     Priority,
     SectorDelta,
 )
 from rtv.logging import get_logger
 from rtv.store.repository import Repository
-from rtv.tracks.service import lap_trace, session_reference
+from rtv.tracks.live import MATCH_PCT
+from rtv.tracks.service import lap_trace, session_corner_map, session_reference
+from rtv.tracks.session import corner_map as locate_names
 
 log = get_logger("coaching.features")
 
@@ -104,6 +107,8 @@ class CoachingService:
     def __init__(self, repo: Repository, *, grid: int = _GRID) -> None:
         self._repo = repo
         self._grid = grid
+        # session id -> (the laps it was built from, the session corner map)
+        self._corner_maps: dict[str, tuple[tuple, dict[str, Any]]] = {}
 
     # ------------------------------------------------------------------ public
     def lap_findings(self, session_id: str, main_lap: int, ref_lap: int) -> LapFindings:
@@ -157,7 +162,10 @@ class CoachingService:
             for idx, ax in enumerate(apexes)
         ]
 
-        self._name_corners(session_id, main_lap, apexes, corners, n)
+        on_map, map_lap = self._session_labels(session_id, main_lap, corners, lap_length, notes)
+        venue, places = self._name_corners(
+            session_id, main_lap, apexes, corners, n, lap_length, skip=on_map
+        )
         self._consistency(session_id, corners, di, step, notes)
         sectors = self._sectors(sp_main, sp_ref, dist, lap_length, laps, main_lap, ref_lap)
         chief = self._chief(corners, delta, laps)
@@ -180,6 +188,9 @@ class CoachingService:
             notes=notes,
             kpis=kpis,
             agent_stats=_agent_stats(corners, sectors),
+            venue=venue,
+            places=places,
+            corner_map_lap=map_lap,
         )
 
     def delta_trace(
@@ -413,23 +424,117 @@ class CoachingService:
         )
 
     # ------------------------------------------------------------------ corner names
-    def _name_corners(self, session_id: str, lap: int, apexes, corners, grid: int) -> None:
+    def corner_map(self, session_id: str) -> dict[str, Any]:
+        """The session corner map (:func:`rtv.tracks.service.session_corner_map`), cached.
+
+        Rebuilt only when the session's laps change (a live session still recording); once
+        two laps agreed it no longer changes, as live.
+        """
+        laps = tuple(
+            (r["lap"], r.get("lap_time"), r.get("is_valid"), r.get("is_in_lap"),
+             r.get("is_out_lap"))
+            for r in self._repo.get_laps(session_id)
+        )
+        hit = self._corner_maps.get(session_id)
+        if hit is not None and (hit[1]["agreed"] or hit[0] == laps):
+            return hit[1]
+        built = session_corner_map(self._repo, session_id)
+        self._corner_maps[session_id] = (laps, built)
+        return built
+
+    def _session_labels(
+        self,
+        session_id: str,
+        main_lap: int,
+        corners: list[CornerFinding],
+        lap_length: float,
+        notes: list[str],
+    ) -> tuple[set[int], int | None]:
+        """Relabel this lap pair's corners onto the session corner map, by apex position.
+
+        Each detected apex takes the label and name of the session corner within
+        ``MATCH_PCT`` of it (nearest first, one apex per corner), so ``T3`` is the same
+        corner on every lap pair and in the live events. An apex the map has no corner for
+        (lap 1's extra dip at Raidillon at Spa) is numbered after the map's last corner and
+        marked ``off_map``, and
+        a map corner not detected on this lap is said so in ``notes``. Returns the indices of
+        the corners that matched, and the lap the map was built on.
+        """
+        smap = self.corner_map(session_id)
+        canon = smap["corners"]
+        if not canon or not corners or lap_length <= 0:
+            return set(), None
+        pairs = []
+        for i, c in enumerate(corners):
+            pct = (c.distance / lap_length) % 1.0
+            for j, k in enumerate(canon):
+                d = abs(float(k["lap_dist_pct"]) - pct)
+                d = min(d, 1.0 - d)
+                if d <= MATCH_PCT:
+                    pairs.append((d, i, j))
+        taken_c: dict[int, int] = {}
+        taken_k: set[int] = set()
+        for _d, i, j in sorted(pairs):
+            if i not in taken_c and j not in taken_k:
+                taken_c[i] = j
+                taken_k.add(j)
+        last = max(_label_number(k["label"]) for k in canon)
+        for i, c in enumerate(corners):
+            if i in taken_c:
+                k = canon[taken_c[i]]
+                c.label, c.name = k["label"], k.get("name")
+            else:
+                last += 1
+                c.label, c.off_map = f"T{last}", True
+        lap = smap["lap"]
+        source = f"the session corner map (lap {lap})"
+        for i, c in enumerate(corners):
+            if i not in taken_c:
+                notes.append(
+                    f"{c.label} (apex {c.distance:.0f} m) is not on {source}: that label "
+                    "holds for this lap pair only."
+                )
+        for j, k in enumerate(canon):
+            if j not in taken_k:
+                named = f"{k['label']} ({k['name']})" if k.get("name") else k["label"]
+                notes.append(f"{named} of {source} was not detected on lap {main_lap}.")
+        return set(taken_c), lap
+
+    def _name_corners(
+        self,
+        session_id: str,
+        lap: int,
+        apexes,
+        corners,
+        grid: int,
+        lap_length: float,
+        *,
+        skip=frozenset(),
+    ) -> tuple[str | None, list[NamedPlace]]:
         """Put the circuit's own name on each apex that sits on a mapped corner.
 
         The apex position comes from this lap's own Lat/Lon on the same grid; the
         names come from the venue reference (OpenStreetMap). Unmapped stays ``None``.
+        Returns the venue key and every named stretch located on the lap, each with the
+        corner whose window holds it, so prose names can be checked (task A4). Corners in
+        ``skip`` (indices) carry the session corner map's name already.
         """
         ref = session_reference(self._repo, session_id)
-        if ref is None or not ref.corners or not corners:
-            return
+        if ref is None:
+            return None, []
+        if not ref.segments or not corners:
+            return ref.key, []
         trace = lap_trace(self._repo, session_id, lap, grid=grid)
         if trace is None:
-            return
-        lat, lon, _ = trace
-        for ax, corner in zip(apexes, corners, strict=True):
+            return ref.key, []
+        lat, lon, pct = trace
+        for i, (ax, corner) in enumerate(zip(apexes, corners, strict=True)):
+            if i in skip:
+                continue
             if np.isfinite(lat[ax]) and np.isfinite(lon[ax]):
                 seg = ref.name_at(float(lat[ax]), float(lon[ax]))
                 corner.name = seg.name if seg else None
+        return ref.key, _places_on_lap(locate_names(ref, lat, lon, pct), corners, lap_length)
 
     # ------------------------------------------------------------------ stint consistency
     def _consistency(self, session_id: str, corners, di, step: float, notes: list[str]) -> None:
@@ -560,6 +665,12 @@ class CoachingService:
         return 3
 
 
+def _label_number(label: str) -> int:
+    """``"T7"`` -> 7; anything else 0."""
+    tail = str(label)[1:]
+    return int(tail) if tail.isdigit() else 0
+
+
 def _top_reason(corner: CornerFinding) -> str:
     losses = [d for d in corner.diags if not d.variance]
     if losses:
@@ -625,3 +736,30 @@ def _agent_stats(
 
 # Keep the AGENTS tuple importable from here too (used by orchestrator/evals).
 __all__ = ["AGENTS", "AGENT_ROSTER", "CoachingService"]
+
+
+def _places_on_lap(
+    mapped: list[dict[str, Any]], corners: list[CornerFinding], lap_length: float
+) -> list[NamedPlace]:
+    """The venue's named stretches in metres, each owned by the corner whose window holds it.
+
+    The corner an apex was named after owns that name; any other stretch belongs to the
+    detected corner whose ``entry_m``-``exit_m`` window holds its middle, else to none.
+    """
+    out: list[NamedPlace] = []
+    named = {c.name: c.label for c in corners if c.name}
+    for m in mapped:
+        mid = float(m["mid_pct"]) * lap_length
+        owner = named.get(m["name"])
+        if owner is None and m["kind"] == "corner":
+            owner = next((c.label for c in corners if c.entry_m <= mid <= c.exit_m), None)
+        out.append(
+            NamedPlace(
+                name=m["name"],
+                kind=m["kind"],
+                start_m=round(float(m["start_pct"]) * lap_length, 1),
+                end_m=round(float(m["end_pct"]) * lap_length, 1),
+                corner=owner,
+            )
+        )
+    return out

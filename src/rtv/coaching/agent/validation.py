@@ -14,8 +14,9 @@ place — they can never disagree.
 from __future__ import annotations
 
 import re
-import unicodedata
 from typing import Any
+
+from rtv.grounding.corner_names import name_key
 
 GAIN_TOL = 0.05  # seconds; how close a claimed time gain must be to the finding
 SPEED_TOL = 0.5  # km/h; tolerance for a cited minimum-speed figure
@@ -42,13 +43,6 @@ def corner_map(findings: dict[str, Any]) -> dict[str, dict]:
 
 #: ``T7``, ``T7 La Source``, ``T7 — Campus``, ``T7: Pouhon``, ``Turn 7 (Eau Rouge)``.
 _CITED_RE = re.compile(r"^\s*(?:T|Turn\s*)(\d+)\b[\s\-\u2013\u2014:,(]*(.*?)[\s)]*$", re.I)
-
-
-def name_key(name: str | None) -> str:
-    """A corner name folded for comparison: case, accents and punctuation do not count."""
-    text = unicodedata.normalize("NFKD", name or "")
-    text = "".join(ch for ch in text if not unicodedata.combining(ch))
-    return " ".join(re.sub(r"[^0-9a-z]+", " ", text.casefold()).split())
 
 
 def split_corner(cited: str | None) -> tuple[str | None, str | None]:

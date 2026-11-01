@@ -30,7 +30,16 @@ wrote about that corner. A brake direction the corner analysis contradicts ("bra
 where the driver already brakes late) is a :attr:`GroundingReport.contradictions` entry and
 goes through the same repair and refusal path as an invented figure.
 
-One check is about words, not numbers: a call that says rain or a wet track
+Corner names are facts too (task A4), for every agent: the ``{label, name}`` places of the
+live corner map the agent was shown (state slice, event, tool results) are the only names it
+can ground. A name next to a label must be that label's ("T7 Campus"), a name on its own must
+be the corner the call is about (its ``corner`` field, the event's place, or a label in the
+sentence), and a name of no corner it was shown ("La Source" before the map exists, or
+another circuit's corner) is not traceable. These land in
+:attr:`GroundingReport.contradictions` with the same repair and refusal path
+(:mod:`rtv.grounding.corner_names`).
+
+Another check is about words, not numbers: a call that says rain or a wet track
 (:data:`WEATHER_CLAIM_RE`) needs a weather fact -- a ``weather_change`` event or the
 race director's injected weather condition (eval rehearsals), or a wet
 ``track_wetness`` reading. Nothing in a live session announces rain that has not
@@ -117,6 +126,13 @@ class FactSet:
         #: Figures other agents said on the radio this run was shown: (agent, Figure).
         #: Never grounding (a radio line is not data), only a better repair hint.
         self._heard: list[tuple[str, Figure]] = []
+        #: Corner label -> mapped name (or None) for every ``{label, name}`` place the agent
+        #: was shown: the live corner map, event places, tool results.
+        self.places: dict[str, str | None] = {}
+        #: Where each map label's apex is (lap fraction), to line up Layer-1 labels.
+        self.place_pct: dict[str, float] = {}
+        #: The corner the triggering event happened at, when its place is on the map.
+        self.event_corner: str | None = None
         #: Sources that announce rain or a wet track (see :meth:`has_weather`).
         self.weather_sources: list[str] = []
 
@@ -131,6 +147,15 @@ class FactSet:
         corner = layer1_corner(payload)
         if corner is not None:
             self.corners.setdefault(corner["label"], corner)
+        for label, name, pct in _walk_places(payload):
+            if name or label not in self.places:
+                self.places[label] = name
+            if pct is not None:
+                self.place_pct.setdefault(label, pct)
+        if source == "event" and isinstance(payload, dict):
+            place = payload.get("place")
+            if isinstance(place, dict) and not place.get("provisional") and place.get("label"):
+                self.event_corner = str(place["label"])
         for value in _walk_numbers(payload):
             self._raw.setdefault(value, source)
             for variant in _variants(value):
@@ -548,6 +573,103 @@ def _render(value: float) -> str:
     return str(int(value)) if float(value).is_integer() else f"{value:g}"
 
 
+_MAP_LABEL_RE = re.compile(r"T\d{1,2}")
+
+
+def _walk_places(payload: Any) -> list[tuple[str, str | None, float | None]]:
+    """Every ``{label: "T7", name: ...}`` place in ``payload`` (corner map rows, event places),
+    with its lap fraction when it has one."""
+    out: list[tuple[str, str | None, float | None]] = []
+    stack: list[Any] = [payload]
+    while stack:
+        item = stack.pop()
+        if isinstance(item, BaseModel):
+            item = item.model_dump(mode="json")
+        if isinstance(item, dict):
+            label = item.get("label")
+            if (
+                isinstance(label, str)
+                and _MAP_LABEL_RE.fullmatch(label)
+                and "name" in item
+                and (item["name"] is None or isinstance(item["name"], str))
+                and not item.get("provisional")
+            ):
+                pct = item.get("lap_dist_pct")
+                pct = float(pct) if _is_number(pct) else None
+                out.append((label, item["name"] or None, pct))
+            stack.extend(item.values())
+        elif isinstance(item, (list, tuple)):
+            stack.extend(item)
+    return out
+
+
+def name_issues(
+    spoken_text: str, detail_text: str, facts: FactSet, payload: Any | None = None
+) -> list[str]:
+    """Corner names in the answer that are not the corner it is about (task A4).
+
+    Only once the agent was shown the session's corner map (any ``{label, name}`` place):
+    before that there is no map to hold a name to. The corner a call is about binds what the
+    driver hears (``spoken_text`` and the cue fields); the operator-facing ``detail_text`` and
+    ``rationale`` may discuss other corners ("Speaker's Corner already has three calls"), so
+    there a name only has to be the label it is written next to and a corner of the map.
+    """
+    if not facts.places:
+        return []
+    from rtv.coaching.agent.validation import split_corner
+    from rtv.grounding.corner_names import CornerNames
+
+    if isinstance(payload, BaseModel):
+        payload = payload.model_dump(mode="json")
+    data = payload if isinstance(payload, dict) else {}
+    cited = data.get("corner")
+    about = [split_corner(cited)[0] if isinstance(cited, str) and cited.strip() else None]
+    about.append(facts.event_corner)
+    names = CornerNames.build(facts.places)
+    for label, other in _layer1_aliases(facts).items():
+        names.alias(label, other)
+    texts = [("spoken_text", spoken_text or "", True), ("detail_text", detail_text or "", False)]
+    for key, value in data.items():
+        if isinstance(value, str) and key not in _NOT_PROSE and key not in _BASE_TEXT:
+            texts.append((key, value, key not in _CONTEXT_FIELDS))
+    if isinstance(cited, str) and cited.strip():
+        texts.append(("corner", cited, True))
+    issues: list[str] = []
+    for where, text, bound in texts:
+        issues += [i.message for i in names.check(text, about if bound else (), where)]
+    return list(dict.fromkeys(issues))
+
+
+def _layer1_aliases(facts: FactSet) -> dict[str, str]:
+    """Layer-1 labels a tool returned that the live map numbers differently, by position.
+
+    Since R3 Layer 1 labels every lap pair from the session corner map, so this is empty
+    unless the stored map and the live one disagree. Journals recorded before R3 carry
+    ``get_corner_detail`` results numbered per lap pair (its ``T3`` could be the map's
+    ``T2``); for those the map corner nearest the Layer-1 apex is the one it means.
+    """
+    out: dict[str, str] = {}
+    if not facts.place_pct:
+        return out
+    for label, corner in facts.corners.items():
+        pct = corner.get("lap_dist_pct")
+        if not _is_number(pct):
+            continue
+        nearest = min(
+            facts.place_pct,
+            key=lambda lb: min(abs(facts.place_pct[lb] - pct), 1 - abs(facts.place_pct[lb] - pct)),
+        )
+        if nearest != label:
+            out[label] = nearest
+    return out
+
+
+#: The answer's own text fields, passed separately (a flat answer dict carries them too).
+_BASE_TEXT = frozenset({"spoken_text", "detail_text"})
+#: Payload prose for the operator, which may discuss corners other than the call's.
+_CONTEXT_FIELDS = frozenset({"rationale", "setup_note"})
+
+
 def _payload_numbers(payload: Any, prefix: str = "") -> list[tuple[str, float]]:
     """Numeric leaves of a structured output, with dotted field names."""
     out: list[tuple[str, float]] = []
@@ -586,6 +708,7 @@ def layer1_corner(payload: Any) -> dict[str, Any] | None:
     return {
         "label": str(corner["label"]),
         "distance": corner.get("distance_m"),
+        "lap_dist_pct": corner.get("lap_dist_pct"),
         "min_main": corner.get("min_speed_kmh"),
         "min_ref": corner.get("ref_min_speed_kmh"),
         "net_dt": corner.get("time_delta_s"),
@@ -709,6 +832,7 @@ def validate_output(
     contradictions = (
         prose_contradictions(spoken_text, detail_text, facts, payload) if prose_check else []
     )
+    contradictions += name_issues(spoken_text, detail_text, facts, payload)
 
     words = len((spoken_text or "").split())
     over = words > word_limit

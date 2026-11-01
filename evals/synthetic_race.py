@@ -453,9 +453,13 @@ def scenario_frames(spec: ScenarioSpec | None = None) -> Iterator[Frame]:
 # store seeding (so the scenario can also be replayed from DuckDB/Parquet)
 # --------------------------------------------------------------------------
 def seed_scenario_session(
-    writer, session_id: str, spec: ScenarioSpec | None = None
+    writer, session_id: str, spec: ScenarioSpec | None = None, frames=None
 ) -> str:
-    """Write the scripted race into the real store, exactly as an import would."""
+    """Write the scripted race into the real store, exactly as an import would.
+
+    ``frames`` replaces ``scenario_frames(spec)`` (a stream with race phases, as
+    ``evals/synthetic_debrief.py`` uses); ``spec`` still describes its catalog.
+    """
     from rtv.domain.models import Session, SessionInfoSnapshot, SessionKind
     from rtv.ingest.frame import FrameBuffer
     from rtv.ingest.normalize import LapTracker
@@ -489,7 +493,7 @@ def seed_scenario_session(
     buf = FrameBuffer(catalog)
     n = 0
     last_tick = 0
-    for frame in scenario_frames(spec):
+    for frame in frames if frames is not None else scenario_frames(spec):
         tracker.update(frame.values, tick=frame.tick, session_time=frame.session_time)
         buf.append(
             frame.values,
