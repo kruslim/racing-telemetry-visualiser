@@ -101,8 +101,13 @@ def instruction(
     event: Mapping[str, Any],
     radio: Sequence[Mapping[str, Any]] = (),
     prefetched: Sequence[Mapping[str, Any]] = (),
+    superseded: Sequence[Mapping[str, Any]] = (),
 ) -> str:
-    """The run's first user message, from the event, the radio and prefetched results."""
+    """The run's first user message, from the event, the radio and prefetched results.
+
+    ``superseded`` (at most one entry) is this agent's last call that another
+    agent's call kept off the air: one line, so the agent does not repeat it.
+    """
     lap = event.get("lap")
     parts = [
         f"TRIGGER: {event['key']} (severity {event['severity']}) at "
@@ -115,6 +120,8 @@ def instruction(
             f"- [{m['agent']}/{m['priority']}] {m['spoken_text']}" for m in radio
         )
         parts.append("RECENT RADIO (do not repeat a call that still stands):\n" + recent)
+    for note in list(superseded)[-1:]:
+        parts.append(superseded_line(note))
     if prefetched:
         parts.append(
             "TOOL RESULTS (already called for you, as if you had called them):\n"
@@ -138,6 +145,14 @@ def instruction(
     return "\n\n".join(parts)
 
 
+def superseded_line(note: Mapping[str, Any]) -> str:
+    """The one line an agent is shown about its call that did not air."""
+    return (
+        f'NOT AIRED: your call "{note.get("spoken_text")}" was dropped, {note.get("reason")}: '
+        f'"{note.get("by_spoken_text")}". Do not repeat it unless the situation has changed.'
+    )
+
+
 def tools_sha(tools: Sequence[Any]) -> str:
     """Hash of the tool definitions offered (name, description, schema)."""
     defs = [t.to_api() if hasattr(t, "to_api") else t for t in tools]
@@ -158,10 +173,15 @@ def build_input(
     radio_history: Sequence[Any] = (),
     prefetched: Sequence[tuple[str, Mapping[str, Any], Any]] = (),
     provider: Mapping[str, Any] | None = None,
+    superseded: Sequence[Mapping[str, Any]] = (),
 ) -> dict[str, Any]:
-    """The ``run_start`` input record of one run of ``spec`` (an ``AgentSpec``)."""
+    """The ``run_start`` input record of one run of ``spec`` (an ``AgentSpec``).
+
+    ``superseded`` is recorded only when there is one, so a run without it keeps
+    the record (and the model input) it always had.
+    """
     shown = list(radio_history)[-RADIO_SHOWN:] if RADIO_SHOWN else []
-    return {
+    record = {
         "v": INPUT_VERSION,
         "agent": spec.name,
         "model": spec.model,
@@ -190,6 +210,9 @@ def build_input(
         "output_contract": spec.output_model.__name__,
         "output_schema_sha": output_schema_sha(spec.output_model),
     }
+    if superseded:
+        record["superseded"] = [jsonable(dict(n)) for n in list(superseded)[-1:]]
+    return record
 
 
 def input_of(record: Mapping[str, Any]) -> dict[str, Any] | None:
@@ -227,7 +250,12 @@ def model_input(record: Mapping[str, Any]) -> dict[str, Any]:
         "messages": [
             {
                 "role": "user",
-                "content": instruction(data["event"], data["radio"], data["prefetched"]),
+                "content": instruction(
+                    data["event"],
+                    data["radio"],
+                    data["prefetched"],
+                    data.get("superseded") or (),
+                ),
             }
         ],
     }

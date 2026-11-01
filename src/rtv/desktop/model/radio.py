@@ -46,7 +46,12 @@ def thread_feed(messages: list[dict]) -> list[dict]:
 def latest_strategist(messages: list[dict]) -> dict | None:
     """The newest strategist call that aired, for the recommendation card."""
     for message in reversed(messages):
-        if message and message.get("agent") == "strategist" and not message.get("expired"):
+        if (
+            message
+            and message.get("agent") == "strategist"
+            and not message.get("expired")
+            and not message.get("superseded")
+        ):
             return message
     return None
 

@@ -7,6 +7,12 @@ so the pitwall has one channel, and that channel needs discipline:
 * **Supersede.** Two advisories about the same subject (two pit-window updates,
   two fuel calls) are not two messages -- the newer one replaces the older one
   while it is still queued. Saying a stale pit lap out loud is worse than silence.
+* **One answer per decision.** Some subjects of *different* agents are one
+  decision (:mod:`rtv.pitwall.decisions`: the strategist's pit calls and the
+  engineer's "box now"). Inside such a group the newer call replaces a queued one
+  from any agent, a critical one replaces a queued advisory, and a call that
+  contradicts a higher-priority one still standing is dropped. Every loser is
+  handed to consumers marked ``superseded`` with the reason, never aired.
 * **Airtime.** A message occupies the channel for roughly as long as it takes to
   say. That is what makes superseding meaningful, and it is the hook stage 4's
   TTS layer will hang off.
@@ -30,7 +36,7 @@ from collections.abc import Callable, Iterator
 from typing import Any
 
 from rtv.logging import get_logger
-from rtv.pitwall import validity
+from rtv.pitwall import decisions, validity
 from rtv.pitwall.activity import Tracer, safe_trace
 from rtv.pitwall.framework import LATE_PREFIX, PRIORITY_RANK, RadioMessage, RadioPriority
 from rtv.racestate.models import RaceState
@@ -155,6 +161,10 @@ class RadioFeed:
         self.superseded = 0
         self.late = 0
         self.expired = 0
+        #: Calls dropped for contradicting a higher-priority call on their decision.
+        self.conflicts = 0
+        #: agent -> its last call another agent's call superseded (see take_superseded).
+        self._notes: dict[str, dict[str, Any]] = {}
         self._wake: asyncio.Event | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
 
@@ -183,13 +193,41 @@ class RadioFeed:
 
     # ---- publishing ------------------------------------------------------
     def publish(self, message: RadioMessage) -> RadioMessage | None:
-        """Queue a message. Returns the message it superseded, if any."""
-        replaced: RadioMessage | None = None
+        """Queue a message. Returns the queued message it superseded, if any.
+
+        Outside a decision group the rule is per agent and subject, as it always
+        was. Inside one (:mod:`rtv.pitwall.decisions`) the group is the key, across
+        agents: a newer call replaces a queued one of the same or lower priority
+        from any agent, and a call that contradicts a higher-priority call still
+        standing (queued, or aired inside the conflict window) is dropped itself.
+        Either way the call that loses is handed to consumers marked
+        ``superseded``, and an agent that lost to another agent is told on its next
+        run (:meth:`take_superseded`).
+        """
+        losers: list[tuple[RadioMessage, RadioMessage, str, str]] = []
+        dropped = False
         with self._lock:
             self._seq += 1
             message.seq = self._seq
             self.published += 1
-            if message.priority is not RadioPriority.CRITICAL and message.subject:
+            group = decisions.group_of(message)
+            if group is not None:
+                blocker = self._conflict_locked(message, group)
+                if blocker is not None:
+                    standing, where = blocker
+                    dropped = True
+                    losers.append(
+                        (
+                            message,
+                            standing,
+                            "conflict",
+                            f"contradicts the {_who(standing)} {standing.priority.value} "
+                            f"{group} call ({where})",
+                        )
+                    )
+                else:
+                    losers.extend(self._take_group_locked(message, group))
+            elif message.priority is not RadioPriority.CRITICAL and message.subject:
                 for i, queued in enumerate(self._pending):
                     same_subject = (
                         queued.agent == message.agent
@@ -197,20 +235,150 @@ class RadioFeed:
                         and queued.priority is not RadioPriority.CRITICAL
                     )
                     if same_subject:
-                        replaced = self._pending.pop(i)
-                        self.superseded += 1
+                        losers.append(
+                            (
+                                self._pending.pop(i),
+                                message,
+                                "same_agent",
+                                f"replaced by a newer {message.agent} call on {message.subject}",
+                            )
+                        )
                         break
-            self._pending.append(message)
-            self._pending.sort(key=_order_key)
-        if replaced is not None:
-            log.debug(
-                "Radio: %s/%s superseded (seq %d -> %d)",
-                message.agent, message.subject, replaced.seq, message.seq,
-            )
-            self._trace("radio_superseded", replaced, by=message.message_id)
-        self._trace("radio_queued", message)
-        self._signal()
-        return replaced
+            if not dropped:
+                self._pending.append(message)
+                self._pending.sort(key=_order_key)
+        for loser, winner, rule, reason in losers:
+            self._supersede(loser, winner, rule, reason, group=decisions.group_of(loser))
+        if not dropped:
+            self._trace("radio_queued", message)
+            self._signal()
+        replaced = [loser for loser, *_ in losers if loser is not message]
+        return replaced[0] if replaced else None
+
+    def _conflict_locked(
+        self, message: RadioMessage, group: str
+    ) -> tuple[RadioMessage, str] | None:
+        """A higher-priority call from another agent that ``message`` contradicts.
+
+        Looked for in the queue and in what aired inside
+        :data:`~rtv.pitwall.decisions.CONFLICT_WINDOW_S`. Equal priority is not a
+        conflict: the newer call is the current answer.
+        """
+        action = decisions.action_of(message)
+        if action is None:
+            return None
+        rank = PRIORITY_RANK[message.priority]
+        window = decisions.CONFLICT_WINDOW_S
+        candidates = [(m, "still queued") for m in self._pending]
+        candidates += [(m, "aired") for m in reversed(self._history)]
+        for other, where in candidates:
+            if (
+                other.agent == message.agent
+                or decisions.group_of(other) != group
+                or PRIORITY_RANK[other.priority] >= rank
+                or abs(message.session_time - other.session_time) > window
+                or not decisions.opposed(action, decisions.action_of(other))
+            ):
+                continue
+            if where == "aired":
+                where = f"aired {abs(message.session_time - other.session_time):.0f} s before"
+            return other, where
+        return None
+
+    def _take_group_locked(
+        self, message: RadioMessage, group: str
+    ) -> list[tuple[RadioMessage, RadioMessage, str, str]]:
+        """Pull the queued calls in ``group`` that ``message`` replaces."""
+        out = []
+        rank = PRIORITY_RANK[message.priority]
+        critical = message.priority is RadioPriority.CRITICAL
+        for queued in list(self._pending):
+            if queued.priority is RadioPriority.CRITICAL or decisions.group_of(queued) != group:
+                continue
+            if queued.agent == message.agent:
+                if critical:
+                    continue  # one agent's own calls: the old rule, critical replaces nothing
+                rule = "same_agent"
+                reason = f"replaced by a newer {message.agent} call on {group}"
+            elif PRIORITY_RANK[queued.priority] < rank:
+                continue  # a lower-priority call never displaces a higher one
+            elif critical:
+                rule = "critical"
+                reason = f"replaced by the {_who(message)} critical {group} call"
+            else:
+                rule = "group"
+                reason = f"replaced by the {_who(message)} newer {group} call"
+            self._pending.remove(queued)
+            out.append((queued, message, rule, reason))
+        return out
+
+    def _supersede(
+        self,
+        message: RadioMessage,
+        by: RadioMessage,
+        rule: str,
+        reason: str,
+        *,
+        group: str | None,
+    ) -> None:
+        """Mark ``message`` as never aired because of ``by``, and tell everyone.
+
+        Like :meth:`expire`: it never reaches the history, but subscribers and
+        callbacks get it with ``speak=False`` so the journal and the review show
+        what was not said and why.
+        """
+        state = self._air_state()
+        message.superseded = True
+        message.superseded_by = by.message_id
+        message.superseded_reason = reason
+        message.speak = False
+        message.air_session_time = (
+            state.session_time if state is not None else max(message.session_time, by.session_time)
+        )
+        with self._lock:
+            self.superseded += 1
+            if rule == "conflict":
+                self.conflicts += 1
+            if by.agent != message.agent:
+                self._notes[message.agent] = {
+                    "message_id": message.message_id,
+                    "spoken_text": message.spoken_text,
+                    "by_message_id": by.message_id,
+                    "by_agent": by.agent,
+                    "by_priority": by.priority.value,
+                    "by_spoken_text": by.spoken_text,
+                    "reason": reason,
+                }
+            subs = list(self._subs)
+            callbacks = list(self._callbacks)
+        log.debug(
+            "Radio: %s/%s superseded by %s/%s (%s)",
+            message.agent, message.subject, by.agent, by.subject, rule,
+        )
+        self._trace(
+            "radio_superseded",
+            message,
+            session_time=message.air_session_time,
+            by_message_id=by.message_id,
+            by_agent=by.agent,
+            by_priority=by.priority.value,
+            rule=rule,
+            group=group,
+            reason=reason,
+            spoken_text=message.spoken_text,
+        )
+        self._deliver(message, subs, callbacks)
+
+    def take_superseded(self, agent: str) -> list[dict[str, Any]]:
+        """The agent's last call that another agent's call kept off the air.
+
+        Handed out once: the agent's next run is shown it (one line), so it does
+        not repeat a call the pitwall already decided against. Empty when there is
+        nothing new.
+        """
+        with self._lock:
+            note = self._notes.pop(agent, None)
+        return [note] if note is not None else []
 
     def _signal(self) -> None:
         loop, wake = self._loop, self._wake
@@ -423,6 +591,7 @@ class RadioFeed:
         with self._lock:
             self._pending.clear()
             self._history.clear()
+            self._notes.clear()
             self._busy_until = float("-inf")
 
     def __iter__(self) -> Iterator[RadioMessage]:
@@ -436,11 +605,17 @@ class RadioFeed:
                 "superseded": self.superseded,
                 "late": self.late,
                 "expired": self.expired,
+                "conflicts": self.conflicts,
                 "pending": len(self._pending),
                 "history": len(self._history),
                 "subscribers": len(self._subs) + len(self._callbacks),
                 "dropped": sum(s.dropped for s in self._subs),
             }
+
+
+def _who(message: RadioMessage) -> str:
+    """``"vehicle_engineer's"``: the possessive used in supersede reasons."""
+    return f"{message.agent}'s"
 
 
 def _order_key(message: RadioMessage) -> tuple[int, int]:

@@ -23,7 +23,7 @@ from PySide6.QtWidgets import (
 from ..model.activity import AGENTS
 from ..model.format import agent_badge, clock, is_num
 from ..model.radio import thread_feed
-from ..model.review import air_badge
+from ..model.review import NOT_AIRED, air_badge
 from ..theme import tokens as t
 from .common import clear_layout, label, severity_tag, tag
 
@@ -41,7 +41,7 @@ def _when(message: dict, aired: dict[str, float]) -> str:
         event_t = message.get("session_time")
     text = (f"L{lap} · " if lap is not None else "") + clock(event_t)
     aired_t = aired.get(message.get("message_id") or "")
-    if message.get("expired"):
+    if message.get("expired") or message.get("superseded"):
         dropped_t = message.get("air_session_time")
         return text + (f" → dropped {clock(dropped_t)}" if is_num(dropped_t) else " → dropped")
     if is_num(aired_t) and is_num(event_t) and aired_t - event_t >= 1:
@@ -99,7 +99,7 @@ class RadioEntry(QFrame):
         head.addWidget(label(_when(message, aired), "muted", mono=True))
         head.addStretch(1)
         layout.addLayout(head)
-        expired = badge is not None and badge["kind"] == "expired"
+        expired = badge is not None and badge["kind"] in NOT_AIRED
         spoken = label(
             message.get("spoken_text") or "",
             "radio",

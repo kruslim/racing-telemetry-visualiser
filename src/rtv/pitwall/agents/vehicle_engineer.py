@@ -21,7 +21,8 @@ from typing import Literal
 from pydantic import Field
 
 from rtv.pitwall import tools as T
-from rtv.pitwall.framework import AgentOutput, AgentSpec, RadioPriority, Trigger
+from rtv.pitwall.framework import AgentOutput, AgentSpec, RadioMessage, RadioPriority, Trigger
+from rtv.pitwall.validity import box_call_rules
 from rtv.racestate.models import EventType, RaceEvent, RaceState
 
 AGENT_NAME = "vehicle_engineer"
@@ -30,8 +31,15 @@ VEHICLE_ENGINEER_PROMPT = """\
 You are the VEHICLE ENGINEER on a sim-racing pit wall. You own the condition of
 the car: tyres, brakes, traction, engine health, damage. You do not call pit
 strategy, you do not call traffic, and you do not coach lap time - other
-engineers own those. If the answer is "box now", say what the car needs and let
-the strategist decide when.
+engineers own those. If the car needs a stop, say what it needs and let the
+strategist decide when - unless it cannot safely run to the planned stop.
+
+pit_request is your one say in when the car stops:
+- box_now: the car cannot safely run to the planned stop (damage, a failing
+  tyre, a critical car warning). It overrides the strategist's plan, so use it
+  only for that, and set priority critical when continuing risks the car.
+- none: everything else, including "change the fronts at the next stop" (put
+  that in setup_note or detail_text).
 
 You are talking to a driver at racing speed. Lead with the part of the car, then
 the number, then at most one instruction. "Fronts are up twelve degrees over the
@@ -101,6 +109,10 @@ class EngineerCall(AgentOutput):
     setup_note: str | None = Field(
         default=None,
         description="For the next stop, only if get_setup_snapshot gave you the setup.",
+    )
+    pit_request: Literal["none", "box_now"] = Field(
+        default="none",
+        description="box_now only when the car cannot safely run to the planned stop.",
     )
     confidence: Literal["low", "medium", "high"] = Field(
         description="low when anything this rests on was missing or assumed."
@@ -181,8 +193,12 @@ def vehicle_engineer_subject(event: RaceEvent, output: AgentOutput) -> str:
 
     Two tyre-temperature advisories collapse into the newest one, but a tyre note
     and an oil-temperature note are different problems and must both be heard.
+    A request to box now is a pit-stop decision (``damage_stop`` or ``tyre_stop``,
+    in the strategist's decision group, :mod:`rtv.pitwall.decisions`).
     """
     finding = getattr(output, "finding", None) or event.event_type.value
+    if getattr(output, "pit_request", "none") == "box_now":
+        return "tyre_stop" if finding in ("tyre_temps", "tyre_pressures") else "damage_stop"
     if finding in ("tyre_temps", "tyre_pressures"):
         return "tyres"
     if finding in ("brake_lockup", "traction"):
@@ -190,6 +206,15 @@ def vehicle_engineer_subject(event: RaceEvent, output: AgentOutput) -> str:
     if finding in ("car_health", "damage"):
         return "car_health"
     return f"engineer:{finding}"
+
+
+def vehicle_engineer_validity(
+    message: RadioMessage, state: RaceState, event: RaceEvent, pit_entry_pct: float | None
+) -> dict:
+    """A "box now" stops being true once this lap's stop is missed or has happened."""
+    if (message.data or {}).get("pit_request") != "box_now":
+        return {}
+    return box_call_rules(state.player.lap, pit_entry_pct)
 
 
 VEHICLE_ENGINEER = AgentSpec(
@@ -220,6 +245,7 @@ VEHICLE_ENGINEER = AgentSpec(
     ),
     max_tool_iterations=3,
     max_age_s=20.0,
+    validity=vehicle_engineer_validity,
 )
 
 
