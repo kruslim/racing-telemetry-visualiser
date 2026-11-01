@@ -434,6 +434,27 @@ class Settings(BaseSettings):
         "are merged into it.",
     )
 
+    # --- push-to-talk voice questions (RTV Desktop, docs/DESKTOP.md) -------
+    # Speech-to-text runs on this PC (faster-whisper, the [voice] extra): no audio
+    # leaves it. The transcript goes to /pitwall/driver-message with source "voice".
+    voice_enabled: bool = Field(
+        default=False,
+        description="Push-to-talk questions in RTV Desktop. Off by default: the key is "
+        "watched system-wide (so it works while iRacing has focus).",
+    )
+    voice_key: str = Field(
+        default="ScrollLock",
+        description="The push-to-talk key: a key name (ScrollLock, Pause, F13, Space, "
+        "RCtrl, Numpad0, A...) or a wheel / button-box button as joy<device>:<button> "
+        "(joy1:5 = button 5 of the first game controller, numbered as in joy.cpl). "
+        "`python -m rtv.desktop.voice --find-button` prints the one you press.",
+    )
+    voice_model: str = Field(
+        default="base.en",
+        description="faster-whisper model (base.en, small.en, small, tiny.en...), run on "
+        "the CPU with int8. Downloaded on first use to <data dir>/models/whisper.",
+    )
+
     # --- server ----------------------------------------------------------
     host: str = "127.0.0.1"
     port: int = 8000

@@ -85,6 +85,8 @@ class RadioEntry(QFrame):
         head.setSpacing(8)
         head.addWidget(label(agent_badge(agent), color=t.agent_text(agent), bold=True, size=12))
         if is_driver:
+            if (message.get("data") or {}).get("source") == "voice":
+                head.addWidget(tag("voice", "#13233a", "#9cc8ff"))
             head.addWidget(tag("not spoken", "#1c222a", t.SOFT))
         else:
             if message.get("answer"):
@@ -203,6 +205,8 @@ class RadioFeed(QWidget):
     volume_changed = Signal(float)
     master_toggled = Signal(bool)
     mute_toggled = Signal(str, bool)
+    talk_pressed = Signal()
+    talk_released = Signal()
 
     def __init__(self, parent: QWidget | None = None, *, compact: bool = False):
         super().__init__(parent)
@@ -301,6 +305,24 @@ class RadioFeed(QWidget):
         self.send.setProperty("role", "primary")
         dl.addWidget(self.input, 1)
         dl.addWidget(self.send)
+        # Push-to-talk (C2): hidden unless RTV_VOICE_ENABLED; the button can be held
+        # with the mouse too, which is handy at the desk.
+        self.voice_row = QWidget()
+        self.voice_row.setObjectName("chromeTop")
+        vl = QHBoxLayout(self.voice_row)
+        vl.setContentsMargins(14, 6, 14, 6)
+        vl.setSpacing(10)
+        self.talk = QPushButton("Hold to talk")
+        self.talk.setAccessibleName("Hold to talk to the pitwall")
+        self.talk.pressed.connect(self.talk_pressed)
+        self.talk.released.connect(self.talk_released)
+        self.voice_status = label("", "muted", wrap=True, size=12)
+        self.voice_status.setMinimumWidth(10)
+        vl.addWidget(self.talk)
+        vl.addWidget(self.voice_status, 1)
+        self.voice_row.hide()
+        self.voice_key = ""
+        outer.addWidget(self.voice_row)
         outer.addWidget(driver)
         self.send.clicked.connect(self._send)
         self.input.returnPressed.connect(self._send)
@@ -311,6 +333,40 @@ class RadioFeed(QWidget):
         if text:
             self.send_text.emit(text)
             self.input.clear()
+
+    def set_voice(self, available: bool, key_label: str, reason: str = "") -> None:
+        """Show the push-to-talk row; with ``available`` false it says why instead."""
+        self.voice_row.show()
+        self.voice_key = key_label
+        self.talk.setEnabled(available)
+        if available:
+            self.talk.setText(f"Hold to talk · {key_label}" if key_label else "Hold to talk")
+            self.set_voice_state("idle", "")
+        else:
+            self.talk.setText("Voice off")
+            self.set_voice_state("off", reason)
+
+    def set_voice_state(self, state: str, detail: str) -> None:
+        """Push-to-talk progress; ``heard`` shows the words before the answer arrives."""
+        colors = {
+            "listening": "#8ff0c3",
+            "muted": "#ffd27a",
+            "error": "#ff9a9a",
+            "heard": t.INK,
+        }
+        if state == "heard":
+            text = f"Heard: \u201c{detail}\u201d \u2192 asking the pitwall"
+        elif state == "idle":
+            key = f" (or hold {self.voice_key})" if self.voice_key else ""
+            text = f"Hold the button{key} and ask: fuel, gaps, tyres, lap times."
+        else:
+            text = detail
+        self.voice_status.setText(text)
+        color = colors.get(state, t.SOFT)
+        self.voice_status.setStyleSheet(f"color: {color}; font-size: 12px;")
+        self.talk.setProperty("role", "primary" if state in ("listening", "muted") else "")
+        self.talk.style().unpolish(self.talk)
+        self.talk.style().polish(self.talk)
 
     def _mute(self, agent: str, on: bool) -> None:
         if on:
