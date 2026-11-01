@@ -25,9 +25,11 @@ Two things make it survive a long race rather than merely start one:
   agent and record why. A revoked API key would otherwise burn one doomed call
   per race event for the rest of the session.
 
-The race director (:mod:`rtv.director`, planned) plugs in here as well: whatever
-it returns from ``poll()`` is published onto the engine's own bus, so an injected
-event reaches the agents through exactly the same path a detected one does.
+The race director (:mod:`rtv.director`; a scripted one only in eval rehearsals)
+plugs in here as well: whatever it returns from ``poll()`` is published onto the
+engine's own bus, so an injected event reaches the agents through exactly the same
+path a detected one does, and its overlay of scripted conditions goes into each
+agent's state slice as ``injected``.
 """
 
 from __future__ import annotations
@@ -121,7 +123,7 @@ class PitwallOrchestrator:
         #: The activity trace (see :mod:`rtv.pitwall.activity`). Optional and
         #: passive: with ``None`` nothing is recorded and nothing else changes.
         self.activity: ActivityLog | None = None
-        #: The race director (planned -- see :mod:`rtv.director`). Never ``None``:
+        #: The race director (see :mod:`rtv.director`). Never ``None``:
         #: the default :class:`~rtv.director.engine.NoopDirector` returns nothing,
         #: which keeps the pump's hot path free of a null check.
         self.director: DirectorEngine = director or NoopDirector()
@@ -322,7 +324,7 @@ class PitwallOrchestrator:
             if message is not None:
                 self.publish(message)
 
-    # ---- the race director (planned; see rtv.director) --------------------
+    # ---- the race director (see rtv.director; scripted only in evals) -------
     def poll_director(self, state: RaceState | None = None) -> list[RaceEvent]:
         """Ask the director for injected events and put them on the **race** bus.
 
@@ -349,6 +351,23 @@ class PitwallOrchestrator:
             log.info("Director injected %s at t=%.1fs", event.key, event.session_time)
             self.engine.bus.publish(event)
         return events
+
+    def injected_overlay(self, state: RaceState | None = None) -> list[dict[str, Any]]:
+        """The director's scripted conditions in force (the state slice's ``injected``).
+
+        Only :class:`~rtv.director.scheduler.ScriptedDirector` keeps an overlay, and
+        only the eval runner builds one; the app's ``NoopDirector`` has none, so a live
+        agent's slice never carries the key. Like :meth:`poll_director`, a failure here
+        costs the overlay, not the run.
+        """
+        overlay = getattr(self.director, "overlay", None)
+        if overlay is None:
+            return []
+        try:
+            return list(overlay(state if state is not None else self.engine.snapshot()))
+        except Exception:
+            log.exception("Race director %r failed building its overlay", self.director.name)
+            return []
 
     # ---- the radio ------------------------------------------------------
     def publish(self, message: RadioMessage) -> RadioMessage:
@@ -653,17 +672,19 @@ class PitwallOrchestrator:
         # Its own last call per subject, minus the one that note already covers.
         skip = {n.get("message_id") for n in superseded}
         previous = [p for p in self.previous_calls(name) if p["message_id"] not in skip]
+        # The director's scripted conditions (eval rehearsals; empty in the app).
+        injected = self.injected_overlay(state)
         sem = self._sem
         if sem is None:  # inline use (tests, smoke) without start()
             message = await runtime.invoke(
                 event, state, events=events, radio_history=history, superseded=superseded,
-                previous_calls=previous,
+                previous_calls=previous, injected=injected,
             )
         else:
             async with sem:
                 message = await runtime.invoke(
                     event, state, events=events, radio_history=history,
-                    superseded=superseded, previous_calls=previous,
+                    superseded=superseded, previous_calls=previous, injected=injected,
                 )
         self._record_outcome(name, message is not None)
         if message is not None:

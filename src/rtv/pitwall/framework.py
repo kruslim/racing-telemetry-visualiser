@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import inspect
 import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
@@ -533,8 +534,14 @@ class AgentRuntime:
         radio_history: Sequence[RadioMessage] = (),
         superseded: Sequence[Mapping[str, Any]] = (),
         previous_calls: Sequence[Mapping[str, Any]] = (),
+        injected: Sequence[Mapping[str, Any]] = (),
     ) -> RadioMessage | None:
         """Run the agent once. Returns ``None`` only on an unrecoverable error.
+
+        ``injected`` is the race director's overlay of scripted conditions in force
+        (:meth:`rtv.director.ScriptedDirector.overlay`; eval rehearsals only). When
+        non-empty it goes into the state slice as ``injected``, so the agent is shown
+        it and the validator may cite it, and to a policy that takes ``injected``.
 
         ``superseded`` is this agent's last call that another agent's call kept off
         the air (:meth:`RadioFeed.take_superseded`), shown as one line so it does
@@ -548,7 +555,7 @@ class AgentRuntime:
         run = self._begin_trace(event, events, radio_history)
         try:
             message = await self._invoke(
-                event, state, events, radio_history, superseded, previous_calls
+                event, state, events, radio_history, superseded, previous_calls, injected
             )
         finally:
             # A run that failed before its input was built still gets a run_start.
@@ -580,11 +587,16 @@ class AgentRuntime:
         radio_history: Sequence[RadioMessage],
         superseded: Sequence[Mapping[str, Any]] = (),
         previous_calls: Sequence[Mapping[str, Any]] = (),
+        injected: Sequence[Mapping[str, Any]] = (),
     ) -> RadioMessage | None:
         spec = self.spec
         # What the agent is shown, floats cut to SHOWN_DECIMALS: the prompt, the
         # journal and the fact set all hold this one copy.
         slice_ = agent_input.compact(spec.state_slice(state))
+        if injected:
+            # The director's scripted conditions sit beside the telemetry, never in
+            # it: race_state.injected.* is their provenance for the validator.
+            slice_ = {**slice_, "injected": agent_input.jsonable(list(injected))}
 
         # The agent sees the event with its speeds in km/h and its streak counts
         # derived (rtv.racestate.derived); the FactSet holds exactly that view.
@@ -640,7 +652,7 @@ class AgentRuntime:
             return None
 
         report = self._validate(output, facts)
-        violation = self._check_policy(output, state, event)
+        violation = self._check_policy(output, state, event, injected)
         self._trace_validate(report, repaired=False, policy=violation, output=output)
         if (not report.ok or violation) and self._repair_attempts > 0:
             repaired = await self._repair(
@@ -649,17 +661,23 @@ class AgentRuntime:
             if repaired is not None:
                 output = repaired
                 report = self._validate(output, facts)
-                violation = self._check_policy(output, state, event)
+                violation = self._check_policy(output, state, event, injected)
                 self._trace_validate(report, repaired=True, policy=violation, output=output)
 
         return self._to_message(event, output, report, tools_used, violation)
 
     def _check_policy(
-        self, output: AgentOutput, state: RaceState, event: RaceEvent
+        self,
+        output: AgentOutput,
+        state: RaceState,
+        event: RaceEvent,
+        injected: Sequence[Mapping[str, Any]] = (),
     ) -> str | None:
         if self.spec.policy is None:
             return None
         try:
+            if injected and _takes_injected(self.spec.policy):
+                return self.spec.policy(output, state, event, injected=injected)
             return self.spec.policy(output, state, event)
         except Exception:
             log.exception("Policy check failed for %s", self.spec.name)
@@ -1189,6 +1207,14 @@ GROUNDING (absolute):
 - Anything a tool marks as an assumption is an assumption. Say so when it matters.
 - spoken_text is radio: short, calm, imperative. detail_text is for the pitwall
   screen and may be longer, but is held to the same grounding rule."""
+
+
+def _takes_injected(policy: Callable[..., Any]) -> bool:
+    """A policy that reads the director's overlay declares an ``injected`` keyword."""
+    try:
+        return "injected" in inspect.signature(policy).parameters
+    except (TypeError, ValueError):  # pragma: no cover - builtins, C callables
+        return False
 
 
 def _payload_of(output: AgentOutput) -> dict[str, Any]:

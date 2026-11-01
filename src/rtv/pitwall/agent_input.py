@@ -127,13 +127,27 @@ def sha(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
 
 
+#: Shown (after the race state) only when the slice carries the director's
+#: ``injected`` overlay, i.e. only in an eval rehearsal (``rtv.director``).
+INJECTED_RULE = """\
+SCRIPTED CONDITIONS: RACE STATE.injected lists conditions a race director has \
+scripted for this rehearsal (kind, payload, director_id, since). Treat each as in \
+force even where the telemetry fields say otherwise; the telemetry is not \
+rewritten. An injected full-course yellow is a caution. An injected regulation \
+binds: a mandatory_pit_stop requires a stop between its applies_from_lap and \
+applies_to_lap even when the fuel reaches the flag. An injected weather step is \
+the only basis for saying rain is coming: quote its figures from \
+race_state.injected, and never turn a temperature trend into a forecast."""
+
+
 def system_blocks(system_prompt: str, state_slice: Any) -> list[dict[str, Any]]:
     """Stable role prompt first (cached), volatile state after it.
 
     Ordering matters: prompt caching is a prefix match, so the part that never
-    changes has to come first or nothing caches (see the Layer-3b coach).
+    changes has to come first or nothing caches (see the Layer-3b coach). A slice
+    with an ``injected`` overlay (eval rehearsals only) adds :data:`INJECTED_RULE`.
     """
-    return [
+    blocks = [
         {
             "type": "text",
             "text": system_prompt,
@@ -141,6 +155,9 @@ def system_blocks(system_prompt: str, state_slice: Any) -> list[dict[str, Any]]:
         },
         {"type": "text", "text": "RACE STATE:\n" + as_text(state_slice)},
     ]
+    if isinstance(state_slice, Mapping) and state_slice.get("injected"):
+        blocks.append({"type": "text", "text": INJECTED_RULE})
+    return blocks
 
 
 def instruction(

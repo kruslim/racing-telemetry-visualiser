@@ -344,3 +344,14 @@ def test_the_agents_own_recalled_call_is_not_also_in_recent_radio():
     assert [m["agent"] for m in record["radio"]] == ["coach"]
     text = agent_input.model_input(record)["messages"][0]["content"]
     assert text.count("Plan to box lap 13.") == 1
+
+
+def test_an_incident_delta_is_an_incidents_figure():
+    """D5's director run: race control's "4x" was refused although the event had delta 4."""
+    facts = FactSet(typed=True)
+    facts.add("event", {"stage": "final", "incidents": 14, "incident_limit": 17, "delta": 4})
+    assert validate_output("That was a 4x, you're on 14 of 17.", "", facts).ok
+    assert not validate_output("That was a 5x.", "", facts).ok
+    other = FactSet(typed=True)
+    other.add("t", {"delta": 4})  # a delta with no incidents beside it is not one
+    assert not validate_output("That was a 4x.", "", other).ok

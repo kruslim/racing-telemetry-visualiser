@@ -1327,10 +1327,23 @@ class RaceStateEngine:
         state = self._state
         old = state.plan.version if state.plan is not None else None
         revision = race_plan.refresh_plan(
-            state, pit_exit=pit_exit, pit_lane_loss_s=self.pit_lane_loss_s
+            state,
+            pit_exit=pit_exit,
+            pit_lane_loss_s=self.pit_lane_loss_s,
+            # A scripted regulation (eval rehearsals only) is on the bus like any event.
+            events=self._regulation_events(),
         )
         if revision is not None:
             events.append(self._plan_event(revision, old))
+
+    def _regulation_events(self) -> list[RaceEvent]:
+        """The regulation changes and pit exits in the ring buffer, for the plan.
+
+        Only the race director emits ``regulation_change`` (``rtv.director``, eval
+        path), so on a live session this is the pit exits alone and changes nothing.
+        """
+        kinds = (EventType.REGULATION_CHANGE, EventType.PIT_EXIT)
+        return [e for e in self.bus.history() if e.event_type in kinds]
 
     def _plan_event(self, revision: Any, old_version: int | None) -> RaceEvent:
         return self._event(

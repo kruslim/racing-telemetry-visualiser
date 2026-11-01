@@ -20,6 +20,7 @@ from typing import Literal
 
 from pydantic import Field
 
+from rtv.director.overlay import is_rain
 from rtv.pitwall import tools as T
 from rtv.pitwall.framework import AgentOutput, AgentSpec, RadioMessage, RadioPriority, Trigger
 from rtv.pitwall.questions import question_trigger
@@ -148,6 +149,11 @@ def _tyres_are_readable(event: RaceEvent, state: RaceState) -> bool:
     return bool(state.capabilities.tyres and (state.tyres.temps or state.tyres.pressures))
 
 
+def _rain_arrives(event: RaceEvent, state: RaceState) -> bool:
+    """Water on the track is a grip and tyre-temperature question for the car."""
+    return is_rain(event.payload)
+
+
 VEHICLE_ENGINEER_TRIGGERS: tuple[Trigger, ...] = (
     Trigger(
         EventType.RECURRING_ISSUE.value,
@@ -172,6 +178,14 @@ VEHICLE_ENGINEER_TRIGGERS: tuple[Trigger, ...] = (
         predicate=_tyres_are_readable,
         label="stint end (post-stint tyre and brake review)",
         cooldown_s=0.0,
+    ),
+    # Director-only (eval rehearsals, rtv.director): a scripted weather step that
+    # brings water. Nothing in a live session emits weather_change.
+    Trigger(
+        EventType.WEATHER_CHANGE.value,
+        predicate=_rain_arrives,
+        label="rain arrives",
+        cooldown_s=60.0,
     ),
     # A question the driver asked that needs judgement (rtv.pitwall.questions).
     question_trigger(AGENT_NAME),
