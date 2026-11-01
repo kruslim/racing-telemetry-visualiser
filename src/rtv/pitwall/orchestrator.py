@@ -40,7 +40,7 @@ from typing import Any
 
 from rtv.director.engine import DirectorEngine, NoopDirector
 from rtv.logging import get_logger
-from rtv.pitwall import validity
+from rtv.pitwall import agent_input, validity
 from rtv.pitwall.activity import ActivityLog, safe_trace
 from rtv.pitwall.callers import DeterministicCaller, build_callers
 from rtv.pitwall.framework import (
@@ -182,6 +182,9 @@ class PitwallOrchestrator:
         #: session budget covers, by layer. See :meth:`record_call`.
         self._layer_calls: dict[str, int] = {}
         self._layer_lock = threading.Lock()
+        #: Each agent's newest model call per subject, newest subject last (D1).
+        self._own_calls: dict[str, dict[str, RadioMessage]] = {}
+        self._own_lock = threading.Lock()
         self._budget_announced = False
         #: Whether a live ``visual_observation`` may wake an agent. Off by
         #: default: a camera note arrives 25-40 s after the moment and is
@@ -643,15 +646,20 @@ class PitwallOrchestrator:
         history = self.feed.history(RADIO_CONTEXT)
         # Its last call another agent's call kept off the air, shown once.
         superseded = self.feed.take_superseded(name)
+        # Its own last call per subject, minus the one that note already covers.
+        skip = {n.get("message_id") for n in superseded}
+        previous = [p for p in self.previous_calls(name) if p["message_id"] not in skip]
         sem = self._sem
         if sem is None:  # inline use (tests, smoke) without start()
             message = await runtime.invoke(
-                event, state, events=events, radio_history=history, superseded=superseded
+                event, state, events=events, radio_history=history, superseded=superseded,
+                previous_calls=previous,
             )
         else:
             async with sem:
                 message = await runtime.invoke(
-                    event, state, events=events, radio_history=history, superseded=superseded
+                    event, state, events=events, radio_history=history,
+                    superseded=superseded, previous_calls=previous,
                 )
         self._record_outcome(name, message is not None)
         if message is not None:
@@ -671,7 +679,39 @@ class PitwallOrchestrator:
                 message.subject = f"answer:{qid}"
         elif is_question(event):
             self._reply_unanswered(event, "no_answer")
+        if message is not None:
+            self._remember_call(message)
         return message
+
+    # ---- each agent's own earlier calls (task D1) ---------------------------
+    def _remember_call(self, message: RadioMessage) -> None:
+        """Keep an agent's newest call per subject, so its next run can revise it.
+
+        The message object itself is kept: the radio sets ``late`` / ``expired`` on
+        it at air time, so the next run sees what actually happened to the call.
+        Refusals and withheld calls are not calls the agent made to the driver.
+        """
+        if message.refused or not message.subject or message.source != "model":
+            return
+        if message.in_reply_to is not None:
+            return  # an answer to the driver is not a standing call
+        with self._own_lock:
+            calls = self._own_calls.setdefault(message.agent, {})
+            calls.pop(message.subject, None)  # re-insert: newest subject last
+            calls[message.subject] = message
+
+    def previous_calls(self, name: str) -> list[dict[str, Any]]:
+        """Agent ``name``'s last call on each of its last few subjects, oldest first,
+        with what the radio did with each (the ``previous`` of its run input)."""
+        with self._own_lock:
+            mine = list(self._own_calls.get(name, {}).values())
+        mine = mine[-agent_input.PREVIOUS_SUBJECTS :] if agent_input.PREVIOUS_SUBJECTS else []
+        if not mine:
+            return []
+        aired = {m.message_id for m in self.feed.history()}
+        return [
+            agent_input.previous_call(m, queued=_not_aired_yet(m, aired)) for m in mine
+        ]
 
     # ---- degradation notices --------------------------------------------
     def _notice(
@@ -1029,6 +1069,8 @@ class PitwallOrchestrator:
         self.director.reset()
         for caller in self.callers:
             caller.reset()
+        with self._own_lock:
+            self._own_calls.clear()
         self.feed.clear()
 
     def healthy(self) -> bool:
@@ -1084,6 +1126,13 @@ class PitwallOrchestrator:
                 for name, runtime in self.runtimes.items()
             ],
         }
+
+
+def _not_aired_yet(message: RadioMessage, aired: set[str]) -> bool:
+    """Still waiting for the channel: neither aired nor dropped."""
+    if message.expired or message.air_session_time is not None:
+        return False
+    return message.message_id not in aired
 
 
 def _holds_slot(waiting: RaceEvent, incoming: RaceEvent) -> bool:

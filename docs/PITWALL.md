@@ -181,7 +181,8 @@ traffic summary when a car is within 5 s, at most every 300 s, and camera notes;
 instant calls are the templates above) and coach (repeated mistakes, pace). A spec is a role prompt, an output
 model, scoped tools, triggers, a state slice, a radio subject, an optional policy and a
 prefetch list; adding an agent is one module plus one `AGENT_REGISTRY` entry. Agents never
-call each other; each run is shown the recent radio. Model per agent: the spec names a
+call each other; each run is shown the recent radio and its own last call on each of its
+last two subjects, with what the radio did with it (D1). Model per agent: the spec names a
 tier (strategist `reasoning`, the rest `fast`) and `framework.agent_model()` resolves it
 from `RTV_PITWALL_<NAME>_MODEL`, else `RTV_LLM_KIMI_MODEL_REASONING` / `_FAST` (all
 `kimi-k3` today). All calls go through `KimiProvider` with a forced respond tool.
@@ -3429,3 +3430,38 @@ its latency.
 Changed tests, by design: `test_a_driver_message_joins_the_log_but_is_never_read_back`
 now finds the transcript among the messages (a reply is also queued), and the LLM
 spotter's trigger set includes `driver_question`. New: `tests/test_driver_questions.py`.
+
+---
+
+## D1 — each agent sees its own previous call (2026-10-31)
+
+REVIEW P2-1, third bullet: an agent restated its standing call instead of revising it,
+because every run started from the state slice and the recent radio only.
+
+- **Context**: the run's first user message gains, before `RECENT RADIO`, a block
+  `YOUR EARLIER CALLS (revise or confirm them; do not restate one that still stands word
+  for word, and say what changed if you change it)`, one line per subject, at most the
+  last two subjects (`agent_input.PREVIOUS_SUBJECTS`), oldest first:
+  `You said on lap 4: "Plan to box lap 13." (aired late by 9 s)`. Statuses come from the
+  B1 radio fields: `aired`, `late` (`late_by_s`), `expired` (`never aired, dropped:
+  <expired_reason>`) and `queued` (not aired yet). The spoken text is the agent's own,
+  without the `Late call: ` tag.
+- **Where**: `PitwallOrchestrator` keeps each agent's newest model call per subject
+  (`_remember_call`, after the validity stamp; refusals, withheld calls and non-model
+  sources are skipped) and `previous_calls(name)` turns them into entries with
+  `agent_input.previous_call(message, queued=)`. It holds the message objects, so the
+  status is what the radio did by the time the next run starts. `reset()` clears them.
+  `AgentRuntime.invoke(..., previous_calls=)` passes them on. `radio.py` is unchanged.
+- **Record**: `run_start.data.input.previous` (`message_id`, `subject`, `lap`,
+  `session_time`, `spoken_text`, `status`, `late_by_s`, `expired_reason`), written only
+  when the agent has an earlier call, like B3's `superseded`, so other runs' records and
+  rebuilds are unchanged and `v` stays 1. The first call is still built from the record,
+  so the rebuild stays byte-identical (`tests/test_agent_input.py`,
+  `tests/test_previous_calls.py`).
+- **With B3**: a call another agent's call replaced shows as `superseded` (`never aired,
+  replaced: <superseded_reason>`); the run that gets B3's one-off `NOT AIRED` line for it
+  does not list it again. Answers to driver questions (C1, `in_reply_to`) are not kept.
+- Prompt text only: role prompts and `GROUNDING_RULES` are unchanged, so `prompt_sha`
+  and `spec_drift` do not move. The strategist has one subject (`pit_stop`), so it is
+  shown one line.
+
