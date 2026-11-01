@@ -26,6 +26,85 @@ plus `--reduced-motion` (default: the Windows "show animations" setting) and
 and `KIMI_CODE_API_KEY` in the environment. Anything that makes them run asks first
 (the quota dialog), as the brief requires.
 
+## Push-to-talk questions
+
+Hold a key (or a wheel button), ask the pitwall a question, let go. The words go to
+`POST /pitwall/driver-message` with `source: "voice"`, the same route as the typed
+"ask the pitwall" box (C1): a lookup (fuel laps, gaps, lap times, position, laps to go,
+tyre temps) is answered from the engine at once, anything else wakes the owning agent.
+Speech-to-text runs **on this PC** with [faster-whisper](https://github.com/SYSTRAN/faster-whisper)
+on the CPU (int8): no audio leaves it, and no Kimi call is made to hear you.
+
+What you see: the radio column gets a **Hold to talk** row. While you hold the key it
+says *Listening…*; after you let go it shows **Heard: "…"** before the answer arrives,
+and your question joins the radio feed tagged **VOICE**. While the radio is speaking
+the microphone is muted (*Radio on air: mic muted*), so the pitwall's own voice from
+your speakers is never taken for yours. The journal records the question with
+`source: "voice"` (the driver radio record and the `driver_question` event).
+
+### Set it up (Windows)
+
+1. Install the extra into the venv (one time):
+
+   ```powershell
+   uv pip install --python .venv\Scripts\python.exe -e ".[desktop,voice]"
+   ```
+
+2. Add to `.env` (see `.env.example`):
+
+   ```
+   RTV_VOICE_ENABLED=true
+   RTV_VOICE_KEY=ScrollLock
+   RTV_VOICE_MODEL=base.en
+   ```
+
+3. Allow microphone access for desktop apps: **Settings > Privacy & security >
+   Microphone**, turn on *Microphone access* and *Let desktop apps access your
+   microphone*. RTV records the Windows **default** input device (Settings > System >
+   Sound > Input), so pick your headset mic there.
+4. Start the app (`.\run-desktop.ps1`). The **Hold to talk** button shows the key.
+5. First question: hold the button with the mouse (or the key), say *"How many laps
+   of fuel?"*, release. The first use downloads the model (base.en is about 150 MB)
+   to `<data dir>\models\whisper` and says *Loading the speech model…*; after that it
+   stays on the PC and is loaded in the background at start-up. On a desktop CPU,
+   base.en takes about a second for a short question.
+6. Start a replay (or drive live), alt-tab into iRacing and hold the key there: the
+   key is read system-wide, so it works while the sim has the focus.
+
+If something is missing the button says **Voice off** and the row says why: the extra
+is not installed, there is no microphone, or `RTV_VOICE_KEY` is not a key RTV knows.
+`RTV_VOICE_ENABLED=false` (the default) hides the row.
+
+### Choosing the key, or a wheel button
+
+`RTV_VOICE_KEY` takes a key name: `ScrollLock` (the default), `Pause`, `F1`-`F24`,
+`A`-`Z`, `0`-`9`, `Numpad0`-`Numpad9`, `Space`, `Insert`, `Home`, `End`, `PageUp`,
+`PageDown`, `CapsLock`, `LCtrl`/`RCtrl`, `LShift`/`RShift`, `LAlt`/`RAlt`. Pick one
+iRacing does not use, or the sim will act on it too.
+
+A wheel or button-box button can be used directly: `RTV_VOICE_KEY=joy<device>:<button>`,
+for example `joy1:5`. To find the numbers, run this and press the button:
+
+```powershell
+.venv\Scripts\python.exe -m rtv.desktop.voice --find-button
+# Controller 2, button 7: RTV_VOICE_KEY=joy2:7
+```
+
+Buttons are numbered as in Windows' *Set up USB game controllers* (`joy.cpl`); RTV
+reads them with `joyGetPosEx`, which sees the first 32 buttons of the first 16
+controllers. If your button is beyond that, or you'd rather map it in software, have
+the wheel's own software (Fanatec FanaLab, Simucube Tuner, Moza Pit House) or a
+mapper such as JoyToKey send a key that nothing else uses, such as `F13`, and set
+`RTV_VOICE_KEY=F13`. iRacing still sees the button as long as you don't also bind
+it there.
+
+`RTV_VOICE_MODEL=small.en` is more accurate on accents and noisy rigs (about 480 MB,
+roughly three times slower); `tiny.en` is the quickest. Off Windows the key only works
+while an RTV window has the focus; the button works everywhere.
+
+`RTV.exe` does not bundle the voice extra yet; run from source (`run-desktop.ps1`)
+for push-to-talk.
+
 ## Build `RTV.exe`
 
 ```powershell
@@ -61,6 +140,7 @@ src/rtv/desktop/
   views/             Hub (sockets, polls, radio), LiveView, ReviewView,
                      RadioWindow, MainWindow
   tts.py             QTextToSpeech speaker driven by the audio rules
+  voice.py           push-to-talk: key / wheel-button watcher, mic, faster-whisper
 ```
 
 The pure models keep the meaning of every number in one tested place, as the web
@@ -102,7 +182,9 @@ names match `frontend/css/pitwall.css`.
 
 ## Deviations from the brief
 
-- **No hold-to-talk mic.** Qt has no speech recognition; the driver message is
+- **Hold-to-talk mic via faster-whisper.** Qt has no speech recognition, so
+  push-to-talk uses faster-whisper locally (the optional `[voice]` extra, see
+  [Push-to-talk questions](#push-to-talk-questions)); without it the question is
   typed. Speech *output* uses the system voices (WinRT/SAPI) with the per-agent
   rate/pitch from `/pitwall/tts`.
 - **State is not in a URL.** The window keeps the review's place in memory
