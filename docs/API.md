@@ -33,6 +33,7 @@ short reference for the routes the UIs and the MCP server use. The vision routes
 | GET | `/pitwall/tts` · `/pitwall/audio/{message_id}` | Role voice table + synthesised radio audio |
 | POST | `/pitwall/driver-message` | Push-to-talk from the cockpit onto the channel |
 | GET | `/pitwall/health` | Engine, live poller, replay, agents and director in one payload |
+| GET · POST | `/sessions/{id}/debrief?run=` | The run's post-race debrief (404 when none); POST regenerates it from the journal (calls Kimi when a key is set; see PITWALL.md) |
 | GET | `/health` | Liveness |
 
 ### WebSocket `/ws/live`

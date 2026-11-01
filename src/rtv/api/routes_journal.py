@@ -148,3 +148,46 @@ def get_summary(
     if services.vision is not None:
         out["vision"] = services.vision.summary(session_id)
     return out
+
+
+def _debrief_service(services: AppServices):
+    if services.debrief is None:  # pragma: no cover - always built by build_services
+        raise HTTPException(503, "The debrief is not available in this server")
+    return services.debrief
+
+
+@router.get(
+    "/sessions/{session_id}/debrief",
+    summary="The stored post-race debrief of one run (404 when none was written)",
+)
+def get_debrief(
+    session_id: str,
+    run: str | None = Query(None, description="Run id; default: newest run with agents."),
+    services: AppServices = Depends(get_services),
+) -> dict:
+    run_id, _path = _run_file(services, session_id, run)
+    service = _debrief_service(services)
+    doc = service.load(session_id, run_id)
+    if doc is None:
+        raise HTTPException(404, f"No debrief for run {run_id} of session {session_id}")
+    # Whether a regenerate would call the model right now (the stored doc may be older).
+    return {**doc, "can_analyse": service.can_analyse()}
+
+
+@router.post(
+    "/sessions/{session_id}/debrief",
+    summary="Regenerate the debrief of one run from its recorded journal "
+    "(calls Kimi once or twice when a key is set; never re-runs the live agents)",
+)
+def regenerate_debrief(
+    session_id: str,
+    run: str | None = Query(None, description="Run id; default: newest run with agents."),
+    services: AppServices = Depends(get_services),
+) -> dict:
+    run_id, _path = _run_file(services, session_id, run)
+    active = services.recorder.active if services.recorder is not None else None
+    if active and active.get("session_id") == session_id and active.get("run_id") == run_id:
+        raise HTTPException(409, f"Run {run_id} is still recording; debrief it once it ends")
+    service = _debrief_service(services)
+    doc = service.generate(session_id, run_id, trigger="manual")
+    return {**doc, "can_analyse": service.can_analyse()}

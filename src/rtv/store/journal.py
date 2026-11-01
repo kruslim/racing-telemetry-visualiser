@@ -413,6 +413,49 @@ def laps_for_run(
     return out
 
 
+def debrief_path(journal_path: Path) -> Path:
+    """Where a run's post-race debrief lives: ``<run_id>.debrief.json`` beside it."""
+    journal_path = Path(journal_path)
+    return journal_path.with_name(f"{journal_path.stem}.debrief.json")
+
+
+def append_record(
+    path: Path,
+    kind: str,
+    data: dict[str, Any],
+    *,
+    wall_clock: Callable[[], float] = time.time,
+) -> dict[str, Any]:
+    """Append one record to a *closed* run, numbered after its last record.
+
+    For what is written about a run after it ended (the post-race debrief). The
+    session time is the run's last one, so the record sorts at the end of the race.
+    Never call it on the run the recorder has open: the two writers would race.
+    """
+    last_seq = 0
+    last_time: float | None = None
+    last_tick: int | None = None
+    for rec in iter_records(path):
+        last_seq = max(last_seq, int(rec.get("seq") or 0))
+        if rec.get("session_time") is not None:
+            last_time = rec["session_time"]
+            last_tick = rec.get("tick")
+    item = {
+        "seq": last_seq + 1,
+        "wall_ms": int(wall_clock() * 1000),
+        "session_time": last_time,
+        "tick": last_tick,
+        "kind": kind,
+        "agent": None,
+        "run_id": None,
+        "event_key": None,
+        "data": data,
+    }
+    with Path(path).open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps(item, separators=(",", ":"), default=str) + "\n")
+    return item
+
+
 def session_dir(root: Path, session_id: str) -> Path:
     return Path(root) / _check_id(session_id) / "runs"
 

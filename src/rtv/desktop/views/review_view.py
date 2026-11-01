@@ -26,6 +26,7 @@ from PySide6.QtWidgets import (
 )
 
 from ..model import activity, review, vision
+from ..model import debrief as debrief_model
 from ..model import plan as plan_model
 from ..model import view_model as vm
 from ..model.format import NA, clock, is_num, lap_time, thousands
@@ -33,6 +34,7 @@ from ..theme import tokens as t
 from ..widgets.agents import FlowGraph, RunsWaterfall
 from ..widgets.charts import LaneTimeline, TraceStack, TrackMap
 from ..widgets.common import Panel, label
+from ..widgets.debrief import DebriefPanel
 from ..widgets.dialogs import QuotaDialog, agents_will_run
 from ..widgets.live import Banner
 from ..widgets.review import (
@@ -91,6 +93,9 @@ class ReviewView(QWidget):
         self.vision_status: dict | None = None
         self._vision_corner: str | None = None
         self._analysis: str | None = None
+        self.debrief: dict | None = None
+        #: A corner a debrief link asked for, highlighted once that lap's findings arrive.
+        self._pending_corner: str | None = None
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
@@ -113,6 +118,7 @@ class ReviewView(QWidget):
         wl.addWidget(page, 100)
         wl.addStretch(1)
         scroll.setWidget(wrap)
+        self.scroll = scroll
 
         self.bar = SessionBar()
         body.addWidget(self.bar)
@@ -148,6 +154,10 @@ class ReviewView(QWidget):
 
         self.summary = SummaryPanel()
         cl.addWidget(self.summary)
+
+        # the post-race debrief of the selected run (stage 09 part B)
+        self.debrief_panel = DebriefPanel()
+        cl.addWidget(self.debrief_panel)
 
         # replay
         self.replay_panel = Panel("Replay")
@@ -262,6 +272,8 @@ class ReviewView(QWidget):
         self.ref_pick.currentIndexChanged.connect(lambda _i: self._laps_picked())
         self.lap_table.lap_picked.connect(self._lap_from_table)
         self.findings_panel.corner_picked.connect(self._corner)
+        self.debrief_panel.ref_clicked.connect(self.open_ref)
+        self.debrief_panel.regenerate_clicked.connect(self._regenerate_debrief)
         self.audit.filters_changed.connect(self._render_audit)
         self.onboard.add_clicked.connect(self._add_video)
         self.onboard.video_changed.connect(self._pick_video)
@@ -337,6 +349,7 @@ class ReviewView(QWidget):
                 )
                 self.summary.set_summary(None)
                 self._load_summary()
+                self._load_debrief()
                 self._render_replay()
                 self._render_audit()
 
@@ -348,6 +361,7 @@ class ReviewView(QWidget):
         self.run_id = run_id
         self.bar.set_progress("loading the race journal…", None)
         self._load_summary()
+        self._load_debrief()
 
         def ok(data):
             data = data or {}
@@ -385,6 +399,76 @@ class ReviewView(QWidget):
             err=lambda _s, d: self._error(d),
             key="review-summary",
         )
+
+    # ---- the debrief ----------------------------------------------------
+    def _load_debrief(self) -> None:
+        sid, run = self.session_id, self.run_id
+        self.debrief = None
+        self.debrief_panel.set_debrief(None, run)
+        if not sid or not run:
+            return
+
+        def ok(data):
+            if (sid, run) == (self.session_id, self.run_id):
+                self.debrief = data
+                self.debrief_panel.set_debrief(data, run)
+
+        def err(status, _detail):  # 404: none written for this run yet
+            if (sid, run) == (self.session_id, self.run_id):
+                self.debrief_panel.set_debrief(None, run)
+
+        self.api.get(
+            f"/sessions/{sid}/debrief", {"run": run}, ok=ok, err=err, key="review-debrief"
+        )
+
+    def _regenerate_debrief(self) -> None:
+        sid, run = self.session_id, self.run_id
+        if not sid or not run:
+            return
+        self.debrief_panel.set_busy("writing the debrief… (a Kimi call can take a minute)")
+
+        def ok(data):
+            if (sid, run) == (self.session_id, self.run_id):
+                self.debrief = data
+                self.debrief_panel.set_debrief(data, run)
+
+        def err(_status, detail):
+            self.debrief_panel.set_debrief(self.debrief, run)
+            self._error(detail)
+
+        self.api.post(f"/sessions/{sid}/debrief", None, {"run": run}, ok=ok, err=err)
+
+    def open_ref(self, ref: dict) -> None:
+        """A debrief link: open its lap in the lap analysis, highlight its corner there."""
+        lap = ref.get("lap")
+        corner = ref.get("corner")
+        ref_lap = debrief_model.reference_lap(self.debrief)
+        if lap is not None and self.main_pick.findData(lap) >= 0:
+            if ref_lap is not None and ref_lap != lap and self.ref_pick.findData(ref_lap) >= 0:
+                self.ref_pick.blockSignals(True)
+                self.ref_pick.setCurrentIndex(self.ref_pick.findData(ref_lap))
+                self.ref_pick.blockSignals(False)
+            self._pending_corner = corner
+            self.main_pick.setCurrentIndex(self.main_pick.findData(lap))
+            self._laps_picked()
+        elif corner:
+            self._pending_corner = corner
+        if self._pending_corner and self.findings and (
+            lap is None or (self.findings.get("main_lap") == self.main_lap)
+        ):
+            self._highlight_pending()
+        self.scroll.ensureWidgetVisible(self.lap_panel)
+
+    def _highlight_pending(self) -> None:
+        label_ = self._pending_corner
+        if not label_ or not self.findings:
+            return
+        corner = next(
+            (c for c in self.findings.get("corners") or [] if c.get("label") == label_), None
+        )
+        if corner is not None:
+            self._pending_corner = None
+            self._corner(corner)
 
     # ---- laps and analysis ---------------------------------------------
     def _on_laps(self, data) -> None:
@@ -533,6 +617,7 @@ class ReviewView(QWidget):
         if data and is_num(data.get("lap_length_m")):
             self.lap_length = data["lap_length_m"]
         self.findings_panel.set_findings(data)
+        self._highlight_pending()
 
     def _on_track(self, data) -> None:
         self.track.set_names(review.track_names(data))

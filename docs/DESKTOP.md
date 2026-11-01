@@ -134,6 +134,8 @@ src/rtv/desktop/
     audio_queue.py     ← js/audio-manager.js (radio discipline)
     radio.py           driver threading ("after your message", 45 s)
     vision.py          onboard video sync, visual-note rows, camera lane (docs/VISION.md)
+    plan.py            race plan card, revisions, plan lane (stage 08)
+    debrief.py         the review's Debrief panel: sections, lap/corner links (stage 09)
   client/            Api (QtNetwork REST) and JsonSocket (QtWebSockets, backoff)
   theme/             tokens.py (the palette) and qss.py (the stylesheet)
   widgets/           data-free panels and QPainter drawings
