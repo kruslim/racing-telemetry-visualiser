@@ -132,7 +132,30 @@ left.". The kill switch, `suspend()`, a stale state and the spotter's own enable
 silence template calls too; the model-call budget does not, since they cost nothing.
 `dispatch` traces each one as a `template_call` activity record and lists the caller in
 the dispatch record's `templated`; `status()` has `template_calls` and `callers`.
-Template calls need the agent layer to be mounted (today that means a Kimi key is set).
+With `RTV_PITWALL_AGENTS=true` and no Kimi key (or no `ai` extra), `build_pitwall`
+mounts a template-only orchestrator (`services.build_template_pitwall`: no agents, no
+provider, `status()["agents_mounted"]` false), so template calls and driver-question
+lookups run with no key (appendix C1).
+
+**Driver questions** (`pitwall/questions.py`, appendix C1). `orch.ask(text, source=
+"text"|"voice")` (and `driver_message`, which calls it) puts the transcript on the channel
+(`agent="driver"`, `speak=False`, `data.question` = the route) and publishes a
+`driver_question` RaceEvent on the race bus (`payload`: `text`, `source`, `question_id` =
+the transcript's `message_id`, `owner`, `intent`, `matched`, `answered_by`), so the journal
+records it. `route_question(text)` is a keyword table, no model: fuel, pit and strategy go
+to the strategist, tyres, temperatures and damage to the vehicle engineer, traffic and gaps
+to the spotter, driving and corners to the coach, anything else to the strategist with
+`matched=False`. A plain lookup (`fuel_laps`, `gap_ahead`, `gap_behind`, `last_lap`,
+`best_lap`, `position`, `laps_to_go`, `tyre_temps`) is answered by `QuestionCaller` (a
+`DeterministicCaller`, in the owner's name) from the engine state, or with an honest "No
+... data" answer when the state lacks the value. Anything else wakes the owner's
+`Trigger("driver_question")` (cooldown 0, its own questions only); the run's first message
+starts `THE DRIVER ASKED: "..."` and the answer goes through the validator as usual. Every
+answer has `in_reply_to` = the question id and subject `answer:<id>`. A question nobody can
+answer (no such agent, agent disabled, budget spent, no live telemetry, the run failed)
+gets a `pitwall` reply saying so, also `in_reply_to`; with the kill switch off that reply
+is shown, not spoken. A queued question is never displaced from an agent's inbox by a
+detector event short of critical.
 
 **Autonomy and standby** (`RTV_PITWALL_AUTONOMOUS`, default false). A third switch next
 to the kill switch and `suspended`. With autonomy on, the orchestrator starts in standby;
@@ -3377,3 +3400,32 @@ desktop live radio and review, and in the web review. The web live pages skip th
 expired calls. Golden cases: a test-only engineer box call superseded by the strategist's
 real critical yellow-flag call in `journal_air`, plus airBadge cases.
 
+
+## C1 — the driver asks, the pitwall answers (2026-10-31)
+
+Plan task C1 (REVIEW.md P1-4). Described under "Driver questions" above. Pieces:
+`EventType.DRIVER_QUESTION`; `RadioMessage.in_reply_to`; `rtv.pitwall.questions`
+(`route_question`, `Route`, `LOOKUPS`, `answer_lookup`, `QuestionCaller`,
+`question_trigger(agent)`); every agent spec gains `question_trigger(AGENT_NAME)`;
+`agent_input.instruction` adds the `THE DRIVER ASKED` block for a `driver_question` event
+only, so other runs' inputs (and their journal rebuilds) are unchanged.
+`PitwallOrchestrator.ask`, `_reply_unanswered`, `_holds_slot`; `status()` adds
+`questions` and `agents_mounted`; the orchestrator always appends a `QuestionCaller` to
+its callers. `services.build_template_pitwall` fixes B2's gap (template calls without a
+key). `POST /pitwall/driver-message` calls `ask` and also returns `question` (the route).
+
+Desktop: the radio box is now "Ask"; `hub.ask(text, source)` is the entry point for C2's
+voice input (`send_driver` calls it). `model.radio.thread_feed` nests a message whose
+`in_reply_to` matches a driver message under it as `answer`, wherever it lands;
+`question_status` shows "asked the coach · waiting for the answer" until it does. The
+quota dialog's `agents_will_run` is false for the template-only mount. The frozen web
+radio panel keeps its 45 s "after your message" rule.
+
+Evals: `evals.pitwall_cases.question_cases(agent)`, one `question-<agent>` case per agent
+(`QUESTIONS`); the strategist's sits before its degraded cases. `scripts/ask_during_replay.py`
+asks ten scripted questions at fixed laps of a running replay and records each answer and
+its latency.
+
+Changed tests, by design: `test_a_driver_message_joins_the_log_but_is_never_read_back`
+now finds the transcript among the messages (a reply is also queued), and the LLM
+spotter's trigger set includes `driver_question`. New: `tests/test_driver_questions.py`.

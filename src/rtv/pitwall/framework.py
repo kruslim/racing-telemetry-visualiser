@@ -173,6 +173,9 @@ class RadioMessage(BaseModel):
     superseded: bool = False
     superseded_by: str | None = None
     superseded_reason: str | None = None
+    #: The ``message_id`` of the driver transcript this answers (a driver
+    #: question, :mod:`rtv.pitwall.questions`); ``None`` for every other call.
+    in_reply_to: str | None = None
 
     @computed_field  # type: ignore[prop-decorator]
     @property
