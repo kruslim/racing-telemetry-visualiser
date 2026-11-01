@@ -14,7 +14,8 @@ Nothing in it is generated.
   [Apache License 2.0](https://www.apache.org/licenses/LICENSE-2.0). The data here is
   derived from that file (resampled channels, lap times, findings) and is redistributed
   under the same license with this attribution. No other driver's name or id is included.
-- Pitwall run: `20261031T043329Z-01-replay`, the file replayed at 2x through RTV's
-  race-state engine with all four agents on Kimi (`kimi-k3`), recorded on 2026-10-31.
+- Pitwall run: `20261101T185432Z-01-replay`, the file replayed at 2x through RTV's
+  race-state engine with every agent on Kimi (`kimi-k3`) and ten scripted driver questions,
+  recorded on 2026-11-01.
 
 Refresh it with the `publish-pages` skill (`.claude/skills/publish-pages/SKILL.md`).
