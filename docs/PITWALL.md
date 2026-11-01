@@ -18,6 +18,7 @@ measurements and "Deviations" sections, unchanged, for the reasoning behind a ch
 ```
 frames (live poller 60 Hz | ReplayDriver)
   -> RaceStateEngine.on_frame           racestate/engine.py   no LLM, ever
+       SessionLifecycle (segments)      racestate/lifecycle.py
        detectors -> RaceEvent -> engine.bus (EventBus)
   -> PitwallOrchestrator.dispatch       pitwall/orchestrator.py
        DeterministicCaller.call -> RadioFeed   template calls, no model (pitwall/callers.py)
@@ -26,7 +27,9 @@ frames (live poller 60 Hz | ReplayDriver)
        prefetch tools, model + scoped tools, validator, repair or refusal
   -> RadioFeed                          pitwall/radio.py      priority, supersede, airtime
   -> /ws/pitwall, TTS, live view, desktop app
+engine.bus -> SegmentJournal (services.py): one journal run per session segment
 engine.bus + activity + radio -> SessionRecorder journal (data/sessions/<id>/runs/*.jsonl)
+closed run -> AppServices.on_session_end (worker thread): <run_id>.summary.json, notifier
 engine.bus -> LiveVisionWorker -> visual_observation events back onto engine.bus
 ```
 
@@ -52,6 +55,50 @@ post-race review's corner labels (`T1 La Source`), from the session corner map i
 `RaceState.track` (`rtv.tracks.live`); before two clean laps agree it is the lap-distance
 bucket (`C08`) with `provisional: true`.
 
+**Session lifecycle** (`lifecycle.py`, appendix stage 07). `SessionLifecycle` is fed by
+the engine every frame from `SessionNum`, `SessionState`, the flag phase and `Lap`, and
+takes the session type from the session-info YAML (`Sessions[SessionNum].SessionType`,
+normalised to `practice` / `qualify` / `race`; "Warmup" and "Offline Testing" count as
+practice). States: `idle -> practice | qualify | race | unknown -> pre_green -> green ->
+checkered -> cool_down -> ended`. Green is SessionState `racing` plus the engine's own
+flag phase green (which treats `start_hidden` after the formation lap as green); on the
+real Spa `.ibt` that is t = 79.4 s at the line that starts lap 1. `checkered` follows
+SessionState (the leader's flag); `session_checkered` fires when the *player* takes the
+flag, the first lap crossing after that (lap 18 at Spa), or at cool_down if the player
+never crosses. A transition the catalog cannot back stays `unknown`: the `lifecycle`
+capability needs SessionNum, SessionState and SessionFlags, and `RaceState.lifecycle.notes`
+says what is missing (no SessionNum means no session type). `RaceState.lifecycle` carries
+`state, segment, session_num, session_type, session_type_raw, session_state, green_at,
+checkered_at, player_finished, ended_reason, notes`.
+
+| event | when | payload (all `info`) |
+|---|---|---|
+| `session_start` | first frame of a segment | `session_num, session_type, segment, from, to, reason` (`start`, `session_num_changed`, `clock_reset`) |
+| `session_state_change` | every SessionState transition | `session_num, session_type, segment, from, to` (iRacing labels) |
+| `session_green` | racing + flag phase green, once per segment | `session_num, session_type, segment, from, to` |
+| `session_checkered` | the player takes the flag | as above plus `player_finished`, `checkered_at` |
+| `session_end` | segment closed | as above plus `reason`, `player_finished`; `cause` on a boundary |
+
+No agent trigger matches them; they reach the journal, `/ws/pitwall`, both UIs and the
+orchestrator as ordinary `RaceEvent`s.
+
+**Segments: one clean engine, agent layer and journal run per session.** Practice,
+qualifying and race of one event share one live RTV session id (the poller keys on the
+subsession), so the engine cuts *segments*: a SessionNum change, the session clock going
+back more than 0.5 s, or a new RTV session id (`engine.set_session_id` with a different
+id) ends the open segment (`session_end`, reason `session_changed`) and starts the next.
+At the boundary `engine.reset_segment()` clears every accumulator (fuel model, laps,
+latches, stints, tyres, standings) but keeps the catalog binding, the session-info
+document, the session name and source, the lifecycle counter and the frame metrics.
+`engine.end_segment(reason)` closes a segment from outside (replay finished, shutdown).
+`services.SegmentJournal` sits between `engine.bus` and the recorder: on `session_start`
+it calls `pitwall.reset()` (cooldowns, breakers, radio, director, a fresh budget) and
+opens or names the journal run *before* the event is written; on `session_end` it writes
+the event and then closes the run with the segment's `calls_used`. `POST /replay/start`
+resets the agent layer too, so two replays in one server run share nothing. A live
+disconnect still closes the run without ending the segment (the race state keeps its
+fuel model across a gap); the reconnect opens a new run of the same segment.
+
 **Event bus** (`bus.py`). Thread-safe producer with bounded drop-oldest subscriptions
 (sync `drain()` and asyncio `next_events()`), sync callbacks on the producer thread, and
 `history(limit)` for late joiners. `ActivityLog` (`pitwall/activity.py`) is the same bus
@@ -61,7 +108,8 @@ carrying agent activity records.
 to the agents whose `Trigger`s match. Per agent: one worker and a one-slot latest-wins
 inbox (a queued critical event is never displaced by a lesser one) and a cooldown. Global:
 `RTV_PITWALL_MAX_INFLIGHT` model calls at once. `RTV_PITWALL_AGENTS` is the kill switch,
-`suspend()` / `resume()` follow the connection, and the race director seam
+`suspend()` / `resume()` follow the connection, *standby* follows the session (below),
+and the race director seam
 (`rtv.director`, `NoopDirector` today) injects scripted events onto the same bus.
 
 **Deterministic callers** (`pitwall/callers.py`, appendix B2). A call whose words are
@@ -86,6 +134,24 @@ silence template calls too; the model-call budget does not, since they cost noth
 the dispatch record's `templated`; `status()` has `template_calls` and `callers`.
 Template calls need the agent layer to be mounted (today that means a Kimi key is set).
 
+**Autonomy and standby** (`RTV_PITWALL_AUTONOMOUS`, default false). A third switch next
+to the kill switch and `suspended`. With autonomy on, the orchestrator starts in standby;
+`observe_lifecycle` (called at the top of `dispatch` for every event, before the kill
+switch is consulted) puts it in standby at `session_start`, arms it at `session_green`
+when the session type is in `RTV_PITWALL_AUTONOMOUS_SESSIONS` (default `race`; a practice
+or qualifying session arms only `RTV_PITWALL_ROSTER_PRACTICE` / `_QUALIFY`, empty by
+default, and an unknown type never arms), and stands it down at the player's
+`session_checkered` or at `session_end`, logging the calls used against the budget.
+While in standby `dispatch` still runs the deterministic template callers (they cost
+nothing) and records `blocked: "standby"` for the agents; agents off the armed roster are
+`skipped: "roster"`. Autonomy only writes the standby flag and the roster: the kill switch
+(`blocked: "disabled"`, checked first) and per-agent switches always win. Each decision is
+an `autonomy` activity record (`armed, reason, event, session_type, roster, calls_used,
+max_calls_per_session`) and `status()["last_autonomy"]`; `status()` also has `mode`
+(`off | suspended | standby | armed | on`), `autonomous`, `standby`, `standby_reason`,
+`armed_roster` and `session_type`. With autonomy off the dispatch decisions are exactly
+those before stage 07 (a test proves it on the synthetic race).
+
 **Agents** (`pitwall/agents/`). Four declarative `AgentSpec`s: strategist (fuel, stops,
 rivals), vehicle engineer (tyres, car health, recurring issues), spotter (a lap-line
 traffic summary when a car is within 5 s, at most every 300 s, and camera notes; its
@@ -99,8 +165,13 @@ from `RTV_PITWALL_<NAME>_MODEL`, else `RTV_LLM_KIMI_MODEL_REASONING` / `_FAST` (
 
 **Validator** (`pitwall/validator.py`). Every number in an answer must be in the
 `FactSet` built from what the run was shown: state slice, triggering event, prefetch and
-tool results. Spoken text is tolerant (±0.05 or 2 %, rounding, clock notation, a fraction
-as a percentage); structured payload fields are exact. Also the 25-word limit and the
+tool results. Facts are typed: each carries its unit family and path
+(`race_state.fuel.laps_remaining = 6.2 laps`), and a spoken figure with a unit ("6 laps",
+"P4", "28 psi", "three tenths") must match a fact of that family, converted into the unit
+spoken (`rtv.grounding.units`, shared with the Layer-3b prose check). A bare figure keeps
+the any-fact match, and 0-3 are free only when bare. `RTV_PITWALL_TYPED_GROUNDING=false`
+restores the old any-number check. Spoken text is tolerant (±0.05 or 2 %, rounding, clock
+notation, a fraction as a percentage); structured payload fields are exact. Also the 25-word limit and the
 spec's deterministic `policy`. On failure: one repair turn naming the figures, then a
 grounded refusal at `info` priority with the blocked text kept in `detail_text`.
 
@@ -124,12 +195,52 @@ optional server engine via `RTV_PITWALL_TTS` (`pitwall/tts.py`).
 
 **Journal** (`rtv.store.journal.SessionRecorder`). One JSON-lines file per run of a
 session (live or replay) holding lifecycle, race events, aired radio, every activity
-record and state snapshots every `RTV_JOURNAL_STATE_INTERVAL_S`. The post-race review
-and the desktop review read only the journal and never re-run the agents
-(`/sessions/{id}/pitwall-runs`, `/pitwall-log`, `/pitwall-log/state`, `/summary`).
-Schema version 2 (F1): each `run_start` holds the run's whole model input (`data.input`)
+record and state snapshots every `RTV_JOURNAL_STATE_INTERVAL_S`. A run records one
+session segment: its start record carries `session_num`, `session_type` and `segment`
+when they are known, or a `lifecycle` record with `phase: "segment"` names them once the
+first frame does; the end record carries `reason`, `calls_used`, `calls_by_layer` and
+`max_calls_per_session`. `list_runs` / `/pitwall-runs` report `session_num`,
+`session_type`, `segment`, `end_reason` and `calls_used` per run (`default_run` is
+unchanged). The post-race review and the desktop review read only the journal and never
+re-run the agents (`/sessions/{id}/pitwall-runs`, `/pitwall-log`, `/pitwall-log/state`,
+`/summary`). `/summary?run=` serves the stored `<run_id>.summary.json` when present and
+computes the same shape otherwise, from `journal.laps_for_run` (the lap rows the run's
+snapshots saw the player on, inside its session-time bounds), so practice laps never
+appear in the race summary. Schema version 2 (F1): each `run_start` holds the run's whole model input (`data.input`)
 and each `tool_call` its whole result (`data.result_full`); `rtv.pitwall.agent_input.
-model_input(record)` rebuilds the first model call. Version-1 journals read unchanged.
+model_input(record)` rebuilds the first model call. Schema version 3 (F3): `run_start`
+also holds `data.state_full` (the whole `RaceState` the run was given) and each `validate`
+record `data.output_full` (the model's structured answer before a refusal or truncation
+rewrote it). All four fields are journal-only (`activity.JOURNAL_ONLY_FIELDS`). Older
+journals read unchanged.
+
+**Real-journal evals** (`evals/real/`, F3). A schema-3 journal is an eval source:
+`scripts/build_real_evals.py --journal <run>.jsonl --out evals/real/<set>` cuts each agent
+run with an answer into a case (input, full state, context events, tool results, answers
+with their recorded verdicts, radio and air-time outcome). Offline,
+`evals.real.offline.score_case` re-scores the recorded answers with today's validator and
+policy, the role checks of `evals/pitwall_checks.py`, the corner map and the B1 validity
+rule; `tests/test_real_evals.py` compares the committed `spa_run` set with its
+`baseline.json` (rebuild with `--baseline spa_run`, preview with `--diff spa_run`). Live,
+`evals/run_pitwall.py --real spa_run` re-executes every input against today's prompt and
+model, with tools answering from the recording, reports `spec_drift` per case and scores
+the new answer with the same code; `--judge-provider gemini` adds an advisory judge score.
+
+**Weekly live eval** (F4, `docs/WEEKLY_EVAL.md`). `scripts/weekly_eval.py` runs one 2x Spa
+replay with agents on, the real-journal cases and golden sets live, and the coach eval with
+the Gemini judge, then diffs everything with the previous week under
+`/mnt/project-files/weekly-evals/` (`REPORT.md`, headlines first; `spec_drift`-style model
+and prompt hashes per agent). It stops cleanly on a Kimi 429; `--dry-run` calls no model. A
+Claude Code scheduled task runs it every Monday.
+
+**Session-end hook** (`rtv.session_end`). `AppServices.on_session_end` is a list of
+callbacks; each closed journal run fires them once, on a single worker thread (the frame
+path never waits), with a `SessionEnded(session_id, run_id, journal_path, source,
+session_num, session_type, reason, calls_used, calls_by_layer)`. A callback that raises is
+logged and counted (`.errors`) and the rest still run. Built in: `store_run_summary`
+writes `<run_id>.summary.json` (the `/summary` shape plus `session_num`, `session_type`),
+then the notifier from `RTV_PITWALL_SESSION_END_NOTIFIER` (`none` default, or `file`: one
+log line and `<run_id>.notice.txt`). Nothing on the default path touches the network.
 
 **Vision live worker** (`rtv.vision.live_worker`, details in `docs/VISION.md`). With
 `RTV_VISION_MODE=live`, events in `RTV_VISION_LIVE_TRIGGERS` become moments; the worker
@@ -160,8 +271,14 @@ is on purpose.
 ### Interfaces later stages consume
 
 ```python
-services.engine / .replay / .pitwall / .activity / .recorder   # None when disabled
+services.engine / .replay / .pitwall / .activity / .recorder / .segments  # None when disabled
+services.on_session_end.append(fn)    # fn(SessionEnded), worker thread; .wait(), .fired
 engine.on_frame(frame, catalog); engine.snapshot() -> RaceState; engine.health()
+engine.lifecycle (SessionLifecycle); engine.end_segment(reason); engine.reset_segment()
+snapshot().lifecycle: state, segment, session_num, session_type, green_at, player_finished
+orch.mode / .standby / .standby_reason / .observe_lifecycle(event) / .last_autonomy
+journal.list_runs(...)[i]: session_num, session_type, segment, end_reason, calls_used
+journal.summary_path(path); journal.laps_for_run(laps, records); session_end.run_summary
 engine.bus.subscribe(...) / .subscribe_callback(fn) / .history(limit)
 orch.handle_event(event, state)       # route + run inline (tests, evals)
 PitwallOrchestrator(..., callers=None)  # None = build_callers(); [] = no template calls
@@ -192,11 +309,11 @@ and `/vision/live`. FastAPI's `/docs` lists them all.
 
 ### Pending stages
 
-Prompts in `prompts/` (done ones in `prompts/done/`), revised by plan task D0:
+Prompts in `prompts/` (done ones in `prompts/done/`), revised by plan task D0. Stage 07
+(session lifecycle and autonomy) is done; the run order is 08, 10, 09.
 
 | Stage | Prompt | Goal |
 |---|---|---|
-| 07 | `07-session-lifecycle-autonomy.md` | The pitwall arms and disarms itself with the session; no operator needed |
 | 08 | `08-race-plan-projection.md` | A persistent `RacePlan` the agents revise, plus a deterministic projection layer |
 | 09 | `09-race-control-debrief.md` | Two new agents: race control during the race, a debrief after it |
 | 10 | `10-director-scheduler.md` | Implement the race director behind the stage-5 seam |
@@ -3113,6 +3230,110 @@ Not done: template calls need a mounted agent layer, which `services.build_pitwa
 only builds with a Kimi key. Running the radio and the callers without any key is a
 possible follow-up. Desktop: template calls are ordinary radio messages, so the live view
 shows them like any other; no view field changed, so the golden file is unchanged.
+
+---
+
+## A1 — typed grounding in the pitwall validator (2026-10-31)
+
+Plan task A1 (REVIEW.md P1-1). The validator used to accept any spoken number near *any*
+number the run had been shown. Now facts are typed and a figure said with a unit must match
+a fact of that unit family.
+
+- `rtv.grounding.units`: the Layer-3b prose check's figure patterns, moved unchanged
+  (`prose.py` imports them back), plus `read_figures(text)` (figure, unit family, unit;
+  spelled-out numbers up to ninety-nine, "two point four", "half a second", "a lap and a
+  half", "three tenths"; "a couple" is not a number), `field_unit(path)` (the unit an engine
+  field is reported in, from its key) and `convert()` within a family.
+- `FactSet(typed=None)`: `None` reads `RTV_PITWALL_TYPED_GROUNDING` (default true). Typed facts
+  are `(value, unit, path)` per family (`FactSet.facts(family)`); detector findings' generic
+  `value`/`threshold`/`excess` take the unit from the finding's `unit`/`measure`, and numbers
+  inside tool strings carry the unit written next to them. `supports_figure(Figure)` converts
+  the fact into the spoken unit (kPa to psi, m/s to km/h, fraction to %) and then applies the
+  old rounding and tolerance. Bare figures and `_ALWAYS_ALLOWED` (0-3, bare only) are as
+  before; structured payload fields are still exact.
+- `GroundingReport.unsupported_detail` / `.typed`; the repair turn now quotes the detail
+  ("166.5 laps (no laps figure in the data matches; 166.5 is race_state.tyres.pressures.LF
+  (pressure))"). `unsupported` is unchanged.
+- Evals: `evals.pitwall_cases.swapped_fact_cases()` (one per agent, the right fact swapped
+  for another real fact in the agent's FactSet) and `agent_facts(spec, case)` (the FactSet
+  the runtime would build). All four pass the old check and are caught by the typed one;
+  `run_pitwall.py --dry-run` prints them.
+- Kimi Spa replays (`project-files/spa-kimi-run-A1/`): refusals 2 (run 3) to 5, then 4 after
+  fixing "seventy-two" being read as "two". The new refusals are a speed from an event
+  payload (m/s) quoted with another unit, and derived counts ("three laps running" from a
+  recurrence). Task A3 is the planned fix for the derived counts.
+
+## F3 — real-journal eval cases (`evals/real/spa_run`)
+
+The F1 journal held the input but not the answer or the full state, so a recorded run
+could be re-executed but not re-scored. F3 closes that and turns a Spa replay into cases.
+
+- **Journal schema 3**: `run_start.data.state_full` (`RaceState.to_api()` of the snapshot
+  the run was handed; the policy, the validity rule and the role checks read more than the
+  agent's slice) and `validate.data.output_full` (`AgentOutput.model_dump`, one per pass:
+  first answer, then the repair). Both journal-only. `JOURNAL_SCHEMA_VERSION = 3`.
+- **`evals/real/cases.py`**: `extract_cases(journal)` (schema-3 runs with at least one
+  answer), `write_case_set(cases, dir, source=)` (`cases.jsonl`, `prompts.json` keyed by
+  `prompt_sha`, `source.json`), `load_case_set(name_or_dir)`. `context_events` is the last
+  `run_start.context_events` race events before the run; `air.state` is the nearest
+  journal state snapshot at or before air time, slimmed to what `validity.check` reads.
+- **`evals/real/offline.py`**: `score_case`, `score_set`, `summary`, `write_baseline`,
+  `read_baseline`, `diff`. The fact set is rebuilt as the runtime builds it (slice, event
+  payload, then tool results in call order); `same_as_recorded` says whether today's
+  validator and policy agree with the verdict recorded live. Validity re-stamps the rule
+  (the pit entry comes from the recorded `invalid_if_lap_dist_past`, since the engine's
+  value is not on the message) and checks it at the recorded air time.
+- **`evals/real/live.py`**: `run_case(case, provider, model=, tool_config=, judges=)`,
+  `recorded_tools`, `judge_answer` (advisory `PitwallJudgeScore`: usefulness,
+  actionability, grounding, 1-5), `aggregate`. `evals/run_pitwall.py --real <set>
+  [--agent] [--limit] [--model] [--judge-provider gemini[,kimi]] [--out file.json]`;
+  `--dry-run` with `--real` prints the recorded calls and offline scores.
+- **Set**: `evals/real/spa_run/` from the F3 Kimi Spa replay (full journal in project files
+  `spa-kimi-run-F3/`). See its README for how to regenerate it.
+- **Deviation**: the PLAN name was `spa_run3`; the set is `spa_run`, since it is cut from a
+  fresh replay, not run 3 (which has no inputs).
+
+---
+
+## Stage 07 — session lifecycle and autonomous arm/disarm (2026-10-31)
+
+Plan task D3; prompt `prompts/done/07-session-lifecycle-autonomy.md`. Built: the
+`SessionLifecycle` state machine (`racestate/lifecycle.py`) and the four lifecycle events
+plus `session_state_change`, which nothing emitted before; session segments with
+`engine.reset_segment()` / `end_segment()`; `services.SegmentJournal` (one journal run
+per segment, `pitwall.reset()` at each `session_start`); `pitwall.reset()` in
+`POST /replay/start`; standby and autonomous arm/disarm in the orchestrator; the
+session-end hook with a stored summary and a file notifier (`rtv/session_end.py`); the
+desktop's LIFECYCLE cell (session, phase, armed / standby and why / off) and run labels
+in the review picker (`rtv.desktop.model.session`, Python-only, not in the golden file
+because the frozen web pages have no counterpart). Settings: `RTV_PITWALL_AUTONOMOUS`,
+`RTV_PITWALL_AUTONOMOUS_SESSIONS`, `RTV_PITWALL_ROSTER_PRACTICE`,
+`RTV_PITWALL_ROSTER_QUALIFY`, `RTV_PITWALL_SESSION_END_NOTIFIER`. Test-only generator:
+`evals/synthetic_weekend.py` (practice, qualifying and race in one stream);
+`ScenarioSpec.session_num` / `.sessions` add the SessionNum channel and the session list
+without changing the default scenario. Tests: `tests/test_session_lifecycle.py`,
+`tests/test_desktop_session.py`, and a real-Spa test in `tests/test_real_ibt.py`.
+
+Deviations:
+
+- The lap table has no session number (and live laps are keyed by lap number, so a race
+  lap overwrites the practice lap of the same number). A run's laps are therefore the lap
+  numbers its own state snapshots saw, inside its session-time bounds; the summary each
+  run stores at its end is the record of that moment.
+- `session_checkered` is the player's flag, not the leader's. The leader's flag is the
+  `session_state_change` to `checkered`, and the lifecycle state follows it.
+- The real Spa green arrives with iRacing's `Lap` still 0 (98.7 % round the formation
+  lap); the test asserts it lands before the first lap completion rather than `lap == 1`.
+- A live disconnect closes the journal run (as before) but not the segment, so the hook
+  fires for that run and the reconnect opens a second run of the same segment. Ending the
+  segment would have thrown away the fuel model across a short gap.
+- `tests/test_pitwall_resilience.py::test_a_reconnect_produces_no_phantom_events` counted
+  18 bus events on the synthetic race; it now counts the 18 race events plus the three
+  lifecycle events the first frame adds.
+- B2's deterministic spotter templates merged while this was in review. They cost no
+  model call, so standby does not hold them: in standby `dispatch` runs the template
+  callers and then blocks the agents (`blocked: "standby"`, `templated` listing the
+  callers). The kill switch, `suspend()` and stale state still silence them, as before.
 
 ## B3: cross-agent decision groups
 
