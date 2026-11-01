@@ -21,8 +21,8 @@ FIND_ARGS = {"session_id": "synthetic", "main_lap": 5, "ref_lap": 3}
 
 # A faithful answer for the t4_brake_loss fixture: T4 loses 0.30s, cited by net_dt.
 GOOD_T4 = {
-    "headline": "Biggest gain is in T4 — you are braking late.",
-    "priorities": [{"corner": "T4", "why": "late braking", "gain_s": 0.30}],
+    "headline": "Biggest gain is in T4 — you are braking early.",
+    "priorities": [{"corner": "T4", "why": "early braking", "gain_s": 0.30}],
     "one_lap_focus": "Brake a car-length later into T4.",
     "claims": [
         {
