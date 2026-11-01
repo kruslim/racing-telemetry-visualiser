@@ -53,7 +53,8 @@ def test_an_extra_apex_is_numbered_after_the_map():
     notes: list[str] = []
     on_map, _lap = _service()._session_labels("s", 1, corners, LAP_M, notes)
     assert [c.label for c in corners] == ["T1", "T6", "T2", "T3", "T4", "T5"]
-    assert 1 not in on_map and corners[1].name == "own lookup"  # named by its own lap later
+    assert 1 not in on_map and corners[1].off_map and not corners[0].off_map
+    assert corners[1].name == "own lookup"  # named by its own lap later
     assert len(notes) == 1 and notes[0].startswith("T6 (apex 1190 m) is not on")
 
 

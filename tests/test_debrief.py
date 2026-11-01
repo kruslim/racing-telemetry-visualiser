@@ -409,25 +409,36 @@ def test_the_model_falls_back_to_the_reasoning_default():
     assert DebriefService(s, None, None).model() == "kimi-y"
 
 
-def test_lap_pair_corners_are_relabelled_onto_the_session_map():
-    """Layer-1 numbers each lap pair's apexes anew; the debrief counts one numbering."""
-    from rtv.debrief.inputs import _relabel
+def test_the_digest_counts_layer1_labels_and_skips_off_map_corners():
+    """Layer 1 labels every pair from the session map (R3); the digest no longer relabels."""
+    from types import SimpleNamespace
 
-    canon = [
-        {"label": "T1", "name": "La Source", "lap_dist_pct": 0.05},
-        {"label": "T2", "name": "Les Combes", "lap_dist_pct": 0.36},
-        {"label": "T3", "name": "Bruxelles", "lap_dist_pct": 0.44},
-    ]
-    pair = [  # this pair found an extra apex at 0.20, so Les Combes came out as T3
-        {"label": "T1", "distance": 50.0, "net_dt": 0.1},
-        {"label": "T2", "distance": 200.0, "net_dt": 0.3},
-        {"label": "T3", "distance": 361.0, "net_dt": 0.2},
-        {"label": "T4", "distance": 440.0, "net_dt": 0.4},
-    ]
-    out, dropped = _relabel(pair, 1000.0, canon)
-    assert dropped == 1
-    assert [(c["label"], c["name"], c["pair_label"]) for c in out] == [
-        ("T1", "La Source", "T1"),
-        ("T2", "Les Combes", "T3"),
-        ("T3", "Bruxelles", "T4"),
-    ]
+    from rtv.debrief.inputs import findings_digest
+
+    def corner(label, name, dt, *, off_map=False):
+        return {"label": label, "name": name, "distance": 100.0, "net_dt": dt, "diags": [],
+                "off_map": off_map}
+
+    by_lap = {
+        2: [corner("T1", "La Source", 0.2), corner("T2", "Les Combes", 0.3)],
+        3: [corner("T1", "La Source", 0.25), corner("T9", "Raidillon", 0.4, off_map=True),
+            corner("T2", "Les Combes", 0.1)],
+    }
+
+    class Coaching:
+        def lap_findings(self, _sid, main, _ref):
+            return SimpleNamespace(to_dict=lambda: {
+                "corners": by_lap[main], "chief": {}, "notes": [], "main_time": 141.0,
+                "corner_map_lap": 3, "lap_length_m": 1000.0,
+            })
+
+    laps = [{"lap": n, "lap_time": t, "is_valid": True} for n, t in ((1, 140.0), (2, 141.0),
+                                                                    (3, 141.5))]
+    live = [{"label": "T1", "name": "La Source", "lap_dist_pct": 0.1},
+            {"label": "T2", "name": "Kemmel", "lap_dist_pct": 0.3}]
+    d = findings_digest(Coaching(), "s", laps, live)
+    rows = {r["corner"]: r for r in d["recurring"]}
+    assert set(rows) == {"T1", "T2"} and rows["T1"]["laps"] == [2, 3]
+    assert "Corner labels follow the session corner map (built on lap 3)." in d["notes"]
+    assert any("1 lap-pair corner(s)" in n for n in d["notes"])
+    assert any("calls T2 Kemmel" in n and "Les Combes" in n for n in d["notes"])

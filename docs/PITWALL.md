@@ -3468,6 +3468,9 @@ review does.
   Speaker's Corner, so one lap can renumber everything. The map is adopted when two clean
   laps have the same apexes (each within 2 % of a lap); on Spa that is laps 2 and 5 (3-4
   ran under yellow), and the result equals the review's corners for its default laps.
+  Since R3 Layer 1 itself labels every lap pair from the same procedure run on the stored
+  laps (`rtv.tracks.service.session_corner_map`, `docs/TRACKS.md`), so `get_corner_detail`'s
+  `telemetry.corner.label` (now with `name`) is the live map's label on any lap.
 - `RaceState.track = {corner_map_lap, provisional, corners: [{label, name, lap_dist_pct}]}`,
   a new state section (`get_race_state_slice` lists it), in the coach's and the vehicle
   engineer's slices.

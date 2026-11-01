@@ -455,7 +455,8 @@ class CoachingService:
         Each detected apex takes the label and name of the session corner within
         ``MATCH_PCT`` of it (nearest first, one apex per corner), so ``T3`` is the same
         corner on every lap pair and in the live events. An apex the map has no corner for
-        (lap 1's extra dip at Raidillon at Spa) is numbered after the map's last corner, and
+        (lap 1's extra dip at Raidillon at Spa) is numbered after the map's last corner and
+        marked ``off_map``, and
         a map corner not detected on this lap is said so in ``notes``. Returns the indices of
         the corners that matched, and the lap the map was built on.
         """
@@ -484,7 +485,7 @@ class CoachingService:
                 c.label, c.name = k["label"], k.get("name")
             else:
                 last += 1
-                c.label = f"T{last}"
+                c.label, c.off_map = f"T{last}", True
         lap = smap["lap"]
         source = f"the session corner map (lap {lap})"
         for i, c in enumerate(corners):

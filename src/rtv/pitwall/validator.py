@@ -603,9 +603,10 @@ def name_issues(
 def _layer1_aliases(facts: FactSet) -> dict[str, str]:
     """Layer-1 labels a tool returned that the live map numbers differently, by position.
 
-    ``get_corner_detail`` numbers corners on the lap pair it analysed, and Layer 1 numbers
-    each lap on its own: its ``T3`` can be the map's ``T2``. The map corner nearest the
-    Layer-1 apex is the one it means.
+    Since R3 Layer 1 labels every lap pair from the session corner map, so this is empty
+    unless the stored map and the live one disagree. Journals recorded before R3 carry
+    ``get_corner_detail`` results numbered per lap pair (its ``T3`` could be the map's
+    ``T2``); for those the map corner nearest the Layer-1 apex is the one it means.
     """
     out: dict[str, str] = {}
     if not facts.place_pct:

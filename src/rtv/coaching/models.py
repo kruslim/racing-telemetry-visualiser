@@ -57,6 +57,9 @@ class CornerFinding:
     entry_m: float = 0.0  # start of the window net_dt is measured over (m)
     exit_m: float = 0.0  # end of that window (m)
     name: str | None = None  # the circuit's own name ("Eau Rouge") from rtv.tracks, if mapped
+    # True for an apex the session corner map has no corner for, numbered after the map's
+    # last corner: its label holds for this lap pair only, so cross-lap counts skip it
+    off_map: bool = False
 
 
 @dataclass
