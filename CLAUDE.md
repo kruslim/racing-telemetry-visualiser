@@ -51,7 +51,7 @@ files that were already formatted and sorts imports in every edited file.
   `scripts/build_track_refs.py`; see `docs/TRACKS.md`), `racestate/` (v2 race-state engine,
   detectors, event bus, replay), `pitwall/` (v2
   agents, provider, radio, TTS), `vision/` (onboard video sync and grounded VLM visual
-  notes, `docs/VISION.md`), `director/` (interfaces only), `llm.py` (the Kimi
+  notes, `docs/VISION.md`), `director/` (scripted race director, eval path only: `evals/run_director.py`), `llm.py` (the Kimi
   Code client), `config.py`, `services.py`, `main.py`, and `desktop/` (RTV Desktop, the
   PySide6 client: `model/` holds pure Python ports of the frontend's tested view
   models, the rest is Qt; PySide6 is imported only inside `rtv.desktop`).

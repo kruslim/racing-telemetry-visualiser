@@ -13,10 +13,12 @@ call, and it happens a handful of times a race rather than sixty times a second.
 
 from __future__ import annotations
 
-from typing import Literal
+from collections.abc import Mapping, Sequence
+from typing import Any, Literal
 
 from pydantic import Field
 
+from rtv.director.overlay import injected_caution, is_rain, pending_mandatory_stop
 from rtv.pitwall import tools as T
 from rtv.pitwall.framework import (
     AgentOutput,
@@ -28,7 +30,7 @@ from rtv.pitwall.framework import (
 from rtv.pitwall.questions import question_trigger
 from rtv.pitwall.validity import box_call_rules
 from rtv.racestate.models import EventType, FlagPhase, RaceEvent, RaceState
-from rtv.racestate.plan import plan_view
+from rtv.racestate.plan import plan_view, regulation_stop
 from rtv.racestate.strategy_math import (
     CAUTION_FLAGS,
     standings_around_player,
@@ -169,6 +171,16 @@ def _short_of_the_flag(event: RaceEvent, state: RaceState) -> bool:
     return margin is not None and float(margin) < 0
 
 
+def _regulation_moves_the_stop(event: RaceEvent, state: RaceState) -> bool:
+    """A scripted regulation that changes the stop (only the director emits one)."""
+    return regulation_stop(event.payload, event.session_time) is not None
+
+
+def _rain_arrives(event: RaceEvent, state: RaceState) -> bool:
+    """A scripted weather step that brings water: a tyre call, so a stop call."""
+    return is_rain(event.payload)
+
+
 STRATEGIST_TRIGGERS: tuple[Trigger, ...] = (
     Trigger(EventType.PIT_WINDOW_OPEN.value, label="pit window opens", cooldown_s=0.0),
     Trigger(
@@ -197,6 +209,20 @@ STRATEGIST_TRIGGERS: tuple[Trigger, ...] = (
         EventType.STINT_LAP_MILESTONE.value,
         predicate=_stop_is_needed,
         label="stint lap milestone",
+        cooldown_s=60.0,
+    ),
+    # Director-only event types (eval rehearsals, rtv.director): nothing in a live
+    # session emits them, so these two never fire in the app.
+    Trigger(
+        EventType.REGULATION_CHANGE.value,
+        predicate=_regulation_moves_the_stop,
+        label="a regulation makes a stop mandatory",
+        cooldown_s=0.0,
+    ),
+    Trigger(
+        EventType.WEATHER_CHANGE.value,
+        predicate=_rain_arrives,
+        label="rain arrives",
         cooldown_s=60.0,
     ),
     # A question the driver asked that needs judgement (rtv.pitwall.questions).
@@ -246,23 +272,35 @@ def strategist_subject(event: RaceEvent, output: AgentOutput) -> str:
 _BOX_CALLS = frozenset({"box_now", "box_next_lap", "pit_under_yellow"})
 
 
-def strategist_policy(output: AgentOutput, state: RaceState, event: RaceEvent) -> str | None:
+def strategist_policy(
+    output: AgentOutput,
+    state: RaceState,
+    event: RaceEvent,
+    *,
+    injected: Sequence[Mapping[str, Any]] = (),
+) -> str | None:
     """Why a call contradicts the deterministic stop plan, or ``None``.
 
     The validator checks that every number is real; this checks that the
     decision is. It rules out only what the fuel arithmetic settles: stopping
     when the tank reaches the flag, boxing laps before the planned stop without
     a caution to justify it, and stop laps outside the window.
+
+    ``injected`` is the race director's overlay (eval rehearsals only; empty in the
+    app): a scripted full-course caution makes a caution stop available, and a
+    scripted mandatory stop makes a stop required inside its lap window.
     """
     rec = getattr(output, "recommendation", None)
     target = getattr(output, "target_lap", None)
     plan = stop_plan(state)
     lap = plan.current_lap
+    rule = pending_mandatory_stop(injected, state) if injected else None
+    scripted_caution = bool(injected) and injected_caution(injected)
     if rec not in _BOX_CALLS and rec != "plan_stop":
         return None
     if not plan.grounded:
         return f"a stop was called but the stop plan has no data ({plan.reason})"
-    if not plan.stop_required:
+    if not plan.stop_required and rule is None:
         return (
             f"the tank reaches the flag (stop_plan.call is no_stop_needed, margin "
             f"{state.fuel.margin_laps} laps), so no stop is needed"
@@ -270,16 +308,30 @@ def strategist_policy(output: AgentOutput, state: RaceState, event: RaceEvent) -
     if target is not None:
         if plan.latest_lap is not None and target > plan.latest_lap:
             return f"target_lap {target} is after the run-dry lap {plan.latest_lap}"
-        if plan.earliest_lap is not None and target < plan.earliest_lap:
+        if rule is not None and not rule.allows(int(target)):
+            return f"target_lap {target} is outside the regulation's stop window ({rule.window()})"
+        if (
+            plan.stop_required
+            and plan.earliest_lap is not None
+            and target < plan.earliest_lap
+        ):
             return f"target_lap {target} is before the window opens at {plan.earliest_lap}"
-    if rec == "pit_under_yellow" and not plan.caution_stop_available:
+    caution = plan.caution_stop_available or scripted_caution
+    if rec == "pit_under_yellow" and not caution:
         return "pit_under_yellow needs a full-course caution inside the window"
+    if rule is not None and not plan.stop_required:
+        # The stop is the regulation's, not the fuel's: its window is the only bound.
+        if rec in ("box_now", "box_next_lap"):
+            stop_lap = lap if rec == "box_now" else (lap or 0) + 1
+            if stop_lap is not None and not rule.allows(int(stop_lap)):
+                return f"{rec} stops on lap {stop_lap}, outside the regulation's window"
+        return None
     # Covering a rival's stop is a real reason to box early, when there are live
     # gaps to price it against.
     covering = (
         event.event_type is EventType.RIVAL_PITTED and state.capabilities.standings
     )
-    if rec in ("box_now", "box_next_lap") and not (plan.caution_stop_available or covering):
+    if rec in ("box_now", "box_next_lap") and not (caution or covering):
         stop_lap = lap if rec == "box_now" else (lap or 0) + 1
         # A stop lap the race plan already accepted (a priced undercut, say) stands
         # in for the fuel-only target.

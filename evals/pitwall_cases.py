@@ -15,6 +15,12 @@ Stage 3 generalised this from one agent to four. The generator takes an
 :class:`~rtv.pitwall.framework.AgentSpec` and filters with that agent's own
 ``match()``, so a case exists exactly when the live path would have woken that
 agent -- there is no second, hand-maintained list of triggers to drift.
+
+Stage 10 adds the race director's cases (:func:`director_cases`): the shipped example
+script rehearsed over the director race, snapshotted at each scripted weather and
+regulation event, with the injected overlay the agent was shown (``EvalCase.injected``).
+Those event types exist only in a director rehearsal, so these are the only cases that
+can cover them.
 """
 
 from __future__ import annotations
@@ -58,6 +64,9 @@ class EvalCase:
     note: str = ""
     #: Which agent this case is for. Drives the checks applied to the answer.
     agent: str = "strategist"
+    #: The race director's overlay of scripted conditions in force (director cases
+    #: only): what goes in the agent's slice as ``injected``.
+    injected: list[dict[str, Any]] = field(default_factory=list)
 
     def describe(self) -> dict[str, Any]:
         return {
@@ -74,6 +83,7 @@ class EvalCase:
             ],
             "flags": self.state.flags.phase.value,
             "gap_basis": self.state.standings.gap_basis,
+            **({"injected": [i["director_id"] for i in self.injected]} if self.injected else {}),
         }
 
 
@@ -605,6 +615,63 @@ def question_cases(agent: str) -> list[EvalCase]:
 
 
 # --------------------------------------------------------------------------
+# stage 10: the race director's scripted weather and regulation
+# --------------------------------------------------------------------------
+#: Director-only event types: no detector emits them, so only a rehearsal covers them.
+DIRECTOR_EVENT_TYPES = frozenset(
+    {EventType.WEATHER_CHANGE.value, EventType.REGULATION_CHANGE.value}
+)
+
+
+def director_cases(agent: AgentSpec = STRATEGIST) -> list[EvalCase]:
+    """Rehearse the example script over the director race and snapshot ``agent``'s cases.
+
+    No agent runs: the engine and the :class:`~rtv.director.ScriptedDirector` alone, and
+    a case wherever a scripted weather or regulation event matches one of ``agent``'s
+    triggers (its own ``match()``, as for every generated case). Each case carries the
+    overlay the live path would have put in the slice.
+    """
+    from evals.director_rehearsal import DIRECTOR_RACE, EXAMPLE_SCRIPT
+    from evals.synthetic_race import scenario_source
+    from rtv.director import ScenarioScript, ScriptedDirector
+
+    source = scenario_source(DIRECTOR_RACE)
+    engine = RaceStateEngine(source="replay")
+    engine.bind_catalog(source.catalog, session_id="eval-director")
+    engine.set_session_info(source.session_info)
+    director = ScriptedDirector(ScenarioScript.load(EXAMPLE_SCRIPT))
+    runtime = AgentRuntime(agent, provider=None)
+    cases: list[EvalCase] = []
+    for frame in source.frames:
+        engine.on_frame(frame, source.catalog)
+        fired = director.poll(engine.snapshot())
+        if not fired:
+            continue
+        for event in fired:
+            engine.bus.publish(event)
+        state = engine.snapshot()
+        for event in fired:
+            if event.event_type.value not in DIRECTOR_EVENT_TYPES:
+                continue
+            trigger = runtime.match(event, state)
+            if trigger is None:
+                continue
+            runtime.arm(trigger, event)
+            cases.append(
+                EvalCase(
+                    name=f"director-{agent.name}-{event.payload.get('director_id')}",
+                    event=event,
+                    state=state,
+                    events=list(engine.bus.history(200)),
+                    note="race director rehearsal: scripted, never race data",
+                    agent=agent.name,
+                    injected=director.overlay(state),
+                )
+            )
+    return cases
+
+
+# --------------------------------------------------------------------------
 # assembly
 # --------------------------------------------------------------------------
 def build_cases(spec: ScenarioSpec | None = None) -> list[EvalCase]:
@@ -616,6 +683,7 @@ def build_cases(spec: ScenarioSpec | None = None) -> list[EvalCase]:
     return (
         scenario_cases(spec)
         + question_cases(STRATEGIST.name)
+        + director_cases(STRATEGIST)
         + plan_degraded_cases()
         + degraded_cases()
     )
@@ -640,6 +708,7 @@ def build_agent_cases(agent: str) -> list[EvalCase]:
         scenario_cases(ROLE_SCENARIO, agent=spec, config=ROLE_DETECTOR_CONFIG)
         + degraded()
         + question_cases(agent)
+        + director_cases(spec)
     )
 
 
@@ -662,7 +731,10 @@ def agent_facts(spec: AgentSpec, case: EvalCase, *, typed: bool | None = None):
     from rtv.pitwall.validator import FactSet
 
     facts = FactSet(typed=typed)
-    facts.add("race_state", spec.state_slice(case.state))
+    slice_ = spec.state_slice(case.state)
+    if case.injected:
+        slice_ = {**slice_, "injected": case.injected}
+    facts.add("race_state", slice_)
     facts.add("event", case.event.payload)
     ctx = ToolContext(
         state=case.state, event=case.event, events=list(case.events), config={}, extras={}

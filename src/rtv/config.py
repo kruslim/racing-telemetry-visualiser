@@ -303,14 +303,14 @@ class Settings(BaseSettings):
         "would otherwise cost one doomed call per race event for a whole race.",
     )
 
-    # --- race director (v2 stage 5: planned; interfaces only) ------------
+    # --- race director (v2 stages 5 and 10; scripted only in evals) -------
     pitwall_director_script: str = Field(
         default="",
         description="Path to a ScenarioScript JSON file (see "
         "docs/director_scenario.example.json). Loaded and VALIDATED at startup, "
         "then bound to the default NoopDirector -- which injects nothing, because "
-        "the race-director layer ships as interfaces only. Pointing at a script "
-        "is currently a way to lint it, not to run it.",
+        "the app never runs a director. Pointing at a script is a way to lint it; "
+        "evals/run_director.py rehearses it.",
     )
 
     # --- pitwall TTS (v2 stage 4: the radio's voice) ---------------------

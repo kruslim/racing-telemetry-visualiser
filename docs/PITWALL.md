@@ -31,6 +31,11 @@ engine.bus -> SegmentJournal (services.py): one journal run per session segment
 engine.bus + activity + radio -> SessionRecorder journal (data/sessions/<id>/runs/*.jsonl)
 closed run -> AppServices.on_session_end (worker thread): <run_id>.summary.json, notifier
 engine.bus -> LiveVisionWorker -> visual_observation events back onto engine.bus
+
+eval path only (evals/run_director.py, never the app):
+ScenarioScript -> ScriptedDirector.poll(state) -> injected RaceEvents onto engine.bus
+               -> ScriptedDirector.overlay() -> agent slice "injected"
+               -> its own journal under the eval --out dir (source "eval")
 ```
 
 **Engine** (`src/rtv/racestate/`, appendix stage 1 and phase 1). `engine.on_frame(frame,
@@ -166,7 +171,8 @@ inbox (a queued critical event is never displaced by a lesser one) and a cooldow
 `RTV_PITWALL_MAX_INFLIGHT` model calls at once. `RTV_PITWALL_AGENTS` is the kill switch,
 `suspend()` / `resume()` follow the connection, *standby* follows the session (below),
 and the race director seam
-(`rtv.director`, `NoopDirector` today) injects scripted events onto the same bus.
+(`rtv.director`) injects scripted events onto the same bus. The app's director is
+always `NoopDirector`; a scripted one exists only in eval rehearsals (below).
 
 **Deterministic callers** (`pitwall/callers.py`, appendix B2). A call whose words are
 fully determined by its event is a template, not a model run. `dispatch` runs every
@@ -368,6 +374,62 @@ Token usage per call is in `rtv.llm.USAGE` (`GET /api/v1/llm/usage`) and in the 
 are not cached. That is fine at today's volume (tens of runs per race) and is left as it
 is on purpose.
 
+**Race director** (`src/rtv/director/`, appendix stages 5 and 10). Rehearses scripted
+cautions, rain and rule changes against the agents, and **never runs in the app**: a
+director makes things happen that did not happen, so it is built only by the eval runner
+`evals/run_director.py` (core in `evals/director_rehearsal.py`), over the synthetic
+director race (`DIRECTOR_RACE`) or a stored session read with `store_source`. The app
+keeps `NoopDirector`; `RTV_PITWALL_DIRECTOR_SCRIPT` only loads and validates a script.
+
+- *Scheduler.* `ScriptedDirector` (`director/scheduler.py`) implements `DirectorEngine`.
+  `poll(state)` walks the script in order and fires an entry when its conjunctive
+  `InjectionTrigger` becomes true: `at_session_time` (clock at or past it), `at_lap` (on
+  that lap or later; with `at_lap_dist_pct` the point on the lap has been reached),
+  `at_lap_dist_pct` alone (at or past that fraction of the current lap), `after` +
+  `delay_s` (session seconds since the parent last fired), `while_flag` (the *effective*
+  flag: an active injected flag wins over the telemetry's) and `once`. Edge-triggered
+  and idempotent per entry; synchronous, no I/O, never raises (`errors` counts a failed
+  poll). `reset()` forgets what fired and the overlay (stage 07 resets the pitwall per
+  segment); `describe()` reports `fired`, `fired_log`, `pending`, `active`.
+- *Overlay.* Telemetry is never rewritten: under a scripted yellow `state.flags` still
+  says green. `ScriptedDirector.overlay(state)` lists the injected *conditions* in force
+  (the flag until a scripted green clears it, the newest weather step, each regulation;
+  not momentary hazards) as `{kind, event_type, director_id, since, lap, payload}` plus
+  `served` on a mandatory stop. `orch.injected_overlay(state)` hands it to every run;
+  `AgentRuntime.invoke(injected=)` adds it to the slice as `injected` (so the validator
+  cites `race_state.injected.*`), `agent_input.system_blocks` then appends
+  `INJECTED_RULE` after the race state, and a policy with an `injected` keyword gets it.
+  An empty overlay (every live run) adds nothing, so live inputs are byte-identical.
+- *Weather and regulation.* Director-only event types with real consumers now: a
+  `weather_change` that brings water (`overlay.is_rain`) wakes the strategist and the
+  vehicle engineer; a `regulation_change` with `regulation: mandatory_pit_stop` wakes the
+  strategist. `rtv.racestate.plan.mandatory_stop(events)` reads it from the bus history
+  (served by a later pit exit): `derive` plans at least one stop, `sanity_check` and
+  `propose_revision` require the stop inside `applies_from_lap`..`applies_to_lap` and
+  allow it when the fuel needs none, and the strategist policy reads the overlay the same
+  way (a scripted caution also makes `pit_under_yellow` available). The validator refuses
+  rain or wet-track words without a weather fact (a `weather_change` payload, the injected
+  weather condition or a wet `track_wetness` reading): a temperature trend is not a
+  forecast.
+- *Runner.* `rehearse(script, source=None, out_dir=, live=False, speed=0)`: frames go into
+  the engine one at a time, the director is polled through `orch.poll_director` after
+  each, every bus event is dispatched and the woken agents run **inline** (the race clock
+  waits for them), and the radio advances on the session clock. So a rehearsal is
+  deterministic (the same script over the same race gives a byte-identical event log)
+  and speed-independent (`speed` only paces frames). Offline the agents answer from the
+  scripted `rehearsal_answer`; `--live` uses Kimi. The journal goes to
+  `<out>/<session_id>/runs/*-eval.jsonl` (source `eval`, `scenario` on the start record),
+  refused under `data/sessions`. The report (`report.json`, `REPORT.md`, `events.jsonl`,
+  `radio.jsonl`) gives per injection: when it fired, the agents and template callers it
+  woke and whether that equals what the same event wakes without provenance keys, what
+  aired, the plan revisions, and the checks `provenance_ok`, `condition_ok`,
+  `woke_as_real_ok`, `radio_ok` plus `plan_revised_ok` / `weather_wakes_ok` /
+  `template_ok`. A replayed `.ibt` has no field, so a traffic injection gets a note.
+- *Eval cases.* `evals.pitwall_cases.director_cases(agent)` snapshots the example script
+  over the director race at each scripted weather and regulation event (`EvalCase.injected`
+  carries the overlay); `expected_calls(state, injected)` makes `stay_out` indefensible
+  under a pending mandatory stop the fuel does not need.
+
 ### Interfaces later stages consume
 
 ```python
@@ -399,6 +461,18 @@ engine.pit_entry_pct -> float | None                  # learned from OnPitRoad e
 AgentRuntime(spec, provider, ...).invoke(event, state, events=...) -> RadioMessage | None
 FactSet, validate_output(...)         # pitwall/validator.py
 rtv.director: DirectorEngine, NoopDirector, ScenarioScript, injected_event, is_injected
+rtv.director: ScriptedDirector(script).poll(state) / .overlay(state) / .effective_flag(state)
+    / .reset() / .describe()                      # eval path only, never the app
+rtv.director.overlay: injected_caution, pending_mandatory_stop, is_rain, injected_flag
+orch.injected_overlay(state) -> list[dict]; AgentRuntime.invoke(..., injected=)
+agent_input.INJECTED_RULE   # system block appended when the slice has "injected"
+rtv.racestate.plan: mandatory_stop(events), regulation_stop(payload), MandatoryStop,
+    derive/refresh_plan/sanity_check(..., events=)
+FactSet.has_weather; validator.weather_claims(text)
+evals.director_rehearsal: rehearse(...), Rehearsal, DIRECTOR_RACE, rehearsal_answer,
+    write_outputs, journal_root_allowed;  evals/run_director.py (CLI)
+evals.pitwall_cases: director_cases(agent), EvalCase.injected
+evals.pitwall_checks: expected_calls(state, injected=()), cross_check(..., injected=, events=)
 snapshot().laps: list[LapRecord]; snapshot().plan: RacePlan | None   # stage 08
 engine.propose_plan_revision(proposal, agent=) -> ProposalOutcome (.accepted, .to_tool, .payload)
 engine.pit_lane_loss_s                                # from RTV_PITWALL_PIT_LANE_LOSS_S
@@ -419,13 +493,12 @@ and `/vision/live`. FastAPI's `/docs` lists them all.
 ### Pending stages
 
 Prompts in `prompts/` (done ones in `prompts/done/`), revised by plan task D0. Stages 07
-(session lifecycle and autonomy) and 08 (race plan and projections) are done; the run
-order is 10, 09.
+(session lifecycle and autonomy), 08 (race plan and projections) and 10 (the race
+director scheduler, evals only) are done; 09 is next.
 
 | Stage | Prompt | Goal |
 |---|---|---|
 | 09 | `09-race-control-debrief.md` | Two new agents: race control during the race, a debrief after it |
-| 10 | `10-director-scheduler.md` | Implement the race director behind the stage-5 seam |
 
 ---
 
@@ -450,10 +523,13 @@ its spec (with a one-line rationale).
 > [the cleanup section](#phase-1-cleanup--real-data-only-kimi-only) before trusting
 > the older stage notes on replay, scenarios, providers or model ids.
 
-> The **race director itself is planned, not implemented.** Stage 5 ships its
-> schema, its protocol and a `NoopDirector` that injects nothing — plus a test
-> proving the seam carries a scripted full-course yellow indistinguishably from a
-> real one. See [stage 5](#stage-5--the-director-seam-and-a-live-path-that-survives-a-race).
+> The **race director** runs only from the eval path. Stage 5 shipped its schema,
+> its protocol and the `NoopDirector` the app keeps, plus a test proving the seam
+> carries a scripted full-course yellow indistinguishably from a real one; stage 10
+> added the scheduler (`ScriptedDirector`), the `injected` overlay and the rehearsal
+> runner `evals/run_director.py`. See
+> [stage 5](#stage-5--the-director-seam-and-a-live-path-that-survives-a-race) and the
+> stage 10 entry at the end.
 
 ---
 
@@ -583,8 +659,8 @@ except for flag changes which render as `flag_change:<phase>`.
 | `car_health_warning` | critical / advisory | an engine warning bit, a tow, or oil/water over the limit | `measure`, `warnings[]`, `value`, `threshold` |
 | `traffic_close` | advisory | a car is inside the gap threshold *and* closing | `car_idx`, `gap`, `side`, `closing_rate_s_per_s` |
 | `car_alongside` | advisory (`clear`: info) | `CarLeftRight` changes; key `car_alongside:<side>`; the first clear of a session and the sensor turning off are silent (B2) | `side` (`car_left`, `car_right`, `car_left_right`, `two_cars_left`, `two_cars_right`, `clear`), `from`, `raw` |
-| `weather_change` | — | **never** — director-only, see stage 5 | `measure`, `from`, `to`, … |
-| `regulation_change` | — | **never** — director-only, see stage 5 | `regulation`, `applies_from_lap`, … |
+| `weather_change` | — | **never** — director-only (eval rehearsals); wakes strategist and engineer on rain | `measure`, `from`, `to`, … |
+| `regulation_change` | — | **never** — director-only (eval rehearsals); a mandatory stop wakes the strategist | `regulation`, `applies_from_lap`, … |
 | `visual_observation` | info | **never** — published by `rtv.vision.live`, see `docs/VISION.md` | `source: "vision"`, `kind`, `text`, `confidence`, `trigger` |
 
 `visual_observation` is the third member no detector emits: a kept VLM note about a
@@ -596,8 +672,10 @@ The `weather_change` and `regulation_change` rows are director-only. They
 exist so a scripted scenario can say "rain in eight minutes" or "the stop is now
 mandatory" *as an ordinary event*: nothing in the channel contract announces
 either, and inferring one from a temperature drift would be exactly the invented
-figure this codebase refuses everywhere else. No agent trigger references them,
-so they cost nothing until a director exists to produce them.
+figure this codebase refuses everywhere else. Since stage 10 the strategist and the
+vehicle engineer take them (rain, a mandatory stop) and the race plan honours a mandatory
+stop, but only the eval path's `ScriptedDirector` ever emits them, so a live session
+never sees one.
 
 The five events added in stage 2 exist so the strategist can be woken by *facts*
 rather than by a clock. `stint_lap_milestone` in particular is the periodic
@@ -2082,11 +2160,14 @@ properties.
 
 ---
 
-## The race director — deliberately unimplemented
+## The race director — the seam (stage 5) and the scheduler (stage 10)
 
-> **Status: planned.** `NoopDirector` is what runs, and it injects nothing.
-> `src/rtv/director/` contains the schema, the protocol, one factory function and
-> the default. There is no scheduler.
+> **Status: built, eval path only.** The app runs `NoopDirector`, which injects
+> nothing. Stage 10 added `ScriptedDirector`, the scheduler that walks a script, and
+> it is built only by `evals/run_director.py`: a director makes things happen that
+> did not happen, so it never runs in the app, never writes to `data/sessions` and
+> nothing it injects is shown in the live view or the review as if it happened. The
+> current-architecture page has the firing rules, the overlay and the runner.
 
 A race director injects things that did not happen: a full-course yellow on
 lap 7, rain arriving at half distance, a mandatory stop nobody asked for. It is
@@ -2096,7 +2177,11 @@ and how a demo shows a safety car without waiting for one.
 What stage 5 was asked for, and what it therefore built, is the **seam** — and
 the seam is the interesting half. The scheduler is a loop over conditions;
 whether an injected event is a first-class citizen of the rest of the system is
-an architectural question, and it is the one that is now answered with a test.
+an architectural question, and stage 5 answered it with a test. That is why stage
+10 was cheap: `ScriptedDirector` is one file that calls `injected_event()` and
+hands the result to `poll_director()`, and the same equivalence tests pass against
+it unchanged. The only new idea it needed is the overlay: the telemetry is never
+rewritten, so the agents are told separately which scripted conditions are in force.
 
 ### Module map
 
@@ -2104,6 +2189,9 @@ an architectural question, and it is the one that is now answered with a test.
 |--------|------|
 | `director/models.py` | `ScenarioScript`, `ScriptedInjection`, `InjectionTrigger`, `InjectionKind`. Pydantic, validated, JSON-loadable. |
 | `director/engine.py` | The `DirectorEngine` protocol, `NoopDirector`, `injected_event()`, `is_injected()`. |
+| `director/scheduler.py` | `ScriptedDirector` (stage 10): the walker and the `injected` overlay. |
+| `director/overlay.py` | Reading the overlay: `injected_caution`, `pending_mandatory_stop`, `is_rain`. |
+| `evals/director_rehearsal.py`, `evals/run_director.py` | The rehearsal runner (stage 10), eval path only. |
 | `docs/director_scenario.example.json` | A worked five-entry script: FCY → restart → rain → mandatory stop → hazard. |
 
 ### A script is a list of conditional injections
@@ -2135,8 +2223,8 @@ fails three laps into a demo has already failed:
 - duplicate ids, self-references, and an `after` naming an entry not in the script.
 
 `RTV_PITWALL_DIRECTOR_SCRIPT` loads and validates a script at boot and binds it to
-the `NoopDirector`. Today that is a **linter**, not a runner, and the status
-endpoint says so in those words.
+the `NoopDirector`. In the app that is a **linter**, not a runner, and stays one: the
+runner is `evals/run_director.py`.
 
 ### The seam, and what "indistinguishable" means
 
@@ -2191,7 +2279,8 @@ happened. If any layer had grown a "was this real?" branch, both would fail.
 The one-shot director those tests use is **twelve lines** and lives in the test
 file, not in `rtv.director`. That is the argument stage 5 is making: the
 implementation is small, and the seam it plugs into is the part worth getting
-right first.
+right first. Stage 10 adds twins of those tests that run against `ScriptedDirector`,
+and the originals still pass unmodified.
 
 ---
 
@@ -3617,3 +3706,53 @@ Deviations:
   have `plan: None` (an `.ibt` without session info has no type, so no plan).
 - The plan cases sit before the stage-3 degraded cases in `build_cases()` so the
   existing test that names the last four cases is unchanged.
+
+## Stage 10 — race director scheduler, evals only (2026-11-01)
+
+Plan task D5; prompt `prompts/done/10-director-scheduler.md`. Dependencies checked: stage
+07 (PR #39), stage 08 (PR #49) and B2 (PR #40) are merged. Built: `ScriptedDirector`
+(`director/scheduler.py`) with every `InjectionTrigger` condition, edge-triggered firing,
+`reset` and `describe`; the `injected` overlay (`overlay()`, `orch.injected_overlay`,
+`AgentRuntime.invoke(injected=)`, `agent_input.INJECTED_RULE`, policies with an
+`injected` keyword) and `director/overlay.py`; consumers for the director-only types
+(strategist triggers on rain and a mandatory-stop regulation, engineer trigger on rain,
+`plan.mandatory_stop` in `derive` / `refresh_plan` / `sanity_check` / `propose_revision`,
+the strategist policy, and the validator's weather-claim check); the rehearsal runner
+`evals/director_rehearsal.py` + `evals/run_director.py` with its own journal; director eval
+cases for weather and regulation. Tests: about 45 new ones at the end of
+`tests/test_director.py` (each condition, the overlay, the stage-5 equivalence against the
+scheduler, the example end to end, a byte-identical event log twice, a chained entry at 1x
+and 4x with a fake clock, the eval journal, `.ibt` traffic note, the app with
+`RTV_PITWALL_DIRECTOR_SCRIPT` set injecting nothing into `data/sessions`, rain refusal,
+the regulation in the plan and the policy, the eval cases). `build_real_evals.py --diff
+spa_run`: no change.
+
+Deviations:
+
+- Runner: a separate `evals/run_director.py` rather than a `--scenario` mode of
+  `run_pitwall.py`, whose cases are single (state, event) pairs; a rehearsal is a whole
+  replay. Agents run inline after each frame (the race clock waits), which is what makes a
+  rehearsal deterministic and speed-independent; it is not a model of live latency.
+- `at_lap` holds on that lap *or later* (and `at_lap_dist_pct` alone at or past the
+  fraction), so a poll that misses the exact frame fires late, stamped from the state it
+  saw, instead of never. `while_flag` reads the effective flag (an injected flag wins).
+- The overlay lives in the director and reaches the agent through the orchestrator, not
+  as a `RaceState` field, so state snapshots, the journal's state records and every live
+  agent input are unchanged. The policy hook is a keyword (`injected=`) detected on the
+  policy's signature, so the other agents' policies did not change.
+- The plan reads a regulation from the engine's bus history (`regulation_change` and
+  `pit_exit` events), not from the overlay: the engine has no director. A regulation
+  older than the ring buffer is forgotten (rehearsals are short).
+- Weather grounding is a word check (rain, showers, drizzle, storm, wet, damp) added to
+  `validate_output` for every agent, backed by a weather fact; the Spa real-eval baseline
+  is unchanged by it.
+- The example script's hazard now names car 1 (P4) with the traffic detector's full
+  payload keys: car 11 is not in the synthetic field, and B1's air-time check rightly
+  dropped a call about a car that is not there. Its description and notes no longer say
+  the director is planned.
+- The example's entries fire FCY (lap 3) -> restart (+90 s) -> mandatory stop (lap 5) ->
+  rain (+120 s after the restart, green) -> hazard (420 s): the stop is an `at_lap` entry,
+  so on 60 s laps it lands before the rain.
+- Kimi: not run in this stage (offline checks only). The operator's live runs (the example
+  over the synthetic race with `--live`, and over the recorded Spa session) are queued in
+  `project-review/waves/kimi-queue.md`.
