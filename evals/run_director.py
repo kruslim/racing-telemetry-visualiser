@@ -3,10 +3,12 @@
 The race director makes things happen that did not happen -- a caution, rain, a stop
 made mandatory -- so it runs only here, from the eval path, never in the app. It walks
 the script with :class:`~rtv.director.ScriptedDirector` over the synthetic director race
-or a stored session (read-only), runs the agents inline, and writes everything to the
-output directory you name: the journal (``<out>/<session_id>/runs/*-eval.jsonl``, source
-"eval", the scenario name on the lifecycle record), ``report.json``, ``REPORT.md``,
-``events.jsonl`` and ``radio.jsonl``. It refuses to write under ``data/sessions``.
+or a stored session (read-only), runs the agents inline once each tick's template calls
+have aired (as in the app, where a model call never holds a template back), and writes
+everything to the output directory you name: the journal
+(``<out>/<session_id>/runs/*-eval.jsonl``, source "eval", the scenario name on the
+lifecycle record), ``report.json``, ``REPORT.md``, ``events.jsonl`` and ``radio.jsonl``.
+It refuses to write under ``data/sessions``.
 
     python evals/run_director.py --out eval-out/director              # offline, scripted
     python evals/run_director.py --out eval-out/director --live       # Kimi (quota)

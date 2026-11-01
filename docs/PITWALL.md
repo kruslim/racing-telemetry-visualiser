@@ -465,10 +465,14 @@ keeps `NoopDirector`; `RTV_PITWALL_DIRECTOR_SCRIPT` only loads and validates a s
   forecast.
 - *Runner.* `rehearse(script, source=None, out_dir=, live=False, speed=0)`: frames go into
   the engine one at a time, the director is polled through `orch.poll_director` after
-  each, every bus event is dispatched and the woken agents run **inline** (the race clock
-  waits for them), and the radio advances on the session clock. So a rehearsal is
+  each, and every bus event is routed as the app's pump routes it (`orch.dispatch`:
+  template calls on the channel at once, woken agents into their one-slot inboxes, latest
+  wins). The radio is pumped on the session clock *before* the agents run, so a template
+  airs on its own tick as in the app (where the model calls are still in flight) instead
+  of queueing behind a model answer to the same tick and going stale; then the agents run
+  **inline** (`orch.drain_inboxes()`; the race clock waits for them). So a rehearsal is
   deterministic (the same script over the same race gives a byte-identical event log)
-  and speed-independent (`speed` only paces frames). Offline the agents answer from the
+  and independent of speed and model latency (`speed` only paces frames). Offline the agents answer from the
   scripted `rehearsal_answer`; `--live` uses Kimi. The journal goes to
   `<out>/<session_id>/runs/*-eval.jsonl` (source `eval`, `scenario` on the start record),
   refused under `data/sessions`. The report (`report.json`, `REPORT.md`, `events.jsonl`,
@@ -494,7 +498,8 @@ orch.mode / .standby / .standby_reason / .observe_lifecycle(event) / .last_auton
 journal.list_runs(...)[i]: session_num, session_type, segment, end_reason, calls_used
 journal.summary_path(path); journal.laps_for_run(laps, records); session_end.run_summary
 engine.bus.subscribe(...) / .subscribe_callback(fn) / .history(limit)
-orch.handle_event(event, state)       # route + run inline (tests, evals)
+orch.handle_event(event, state)       # route + run inline (tests, smoke)
+orch.open_inboxes(); orch.dispatch(e); await orch.drain_inboxes()  # app inboxes, inline (evals)
 PitwallOrchestrator(..., callers=None)  # None = build_callers(); [] = no template calls
 rtv.pitwall.callers: TemplateCall(spoken_text, detail_text, priority=, subject=, data=,
     expires_after_s=, subject_car_idx=, valid_until_lap=, max_age_s=, cooldown_s=)
@@ -3908,7 +3913,8 @@ Deviations:
 - Runner: a separate `evals/run_director.py` rather than a `--scenario` mode of
   `run_pitwall.py`, whose cases are single (state, event) pairs; a rehearsal is a whole
   replay. Agents run inline after each frame (the race clock waits), which is what makes a
-  rehearsal deterministic and speed-independent; it is not a model of live latency.
+  rehearsal deterministic and speed-independent; it is not a model of live latency. Since
+  R4 the tick's template calls air before those inline runs (see *Runner*).
 - `at_lap` holds on that lap *or later* (and `at_lap_dist_pct` alone at or past the
   fraction), so a poll that misses the exact frame fires late, stamped from the state it
   saw, instead of never. `while_flag` reads the effective flag (an injected flag wins).
@@ -3939,3 +3945,18 @@ Deviations:
 - Kimi: not run in this stage (offline checks only). The operator's live runs (the example
   over the synthetic race with `--live`, and over the recorded Spa session) are queued in
   `project-review/waves/kimi-queue.md`.
+
+### R4: director rehearsal schedules agents like the app
+
+D5's Kimi run over the Spa .ibt failed `debris_hazard` `radio_ok`: the rehearsal ran each
+event's agents inline before pumping the radio, so the strategist's answer to the restart
+queued ahead of the spotter's same-tick hazard template (equal priority, earlier
+sequence), held the channel for its airtime and the 3 s template expired; the synthetic
+`incident_limit` read-out aired as "Late call:" behind race control's critical answer the
+same way. The app never does this: templates go on air at dispatch while the model calls
+are in flight. `rehearse()` now routes each pass with `orch.dispatch`, pumps the radio,
+then runs the agents through `orch.open_inboxes()` / `orch.drain_inboxes()` (the app's
+one-slot inboxes, so two events for one agent on one tick also resolve latest-wins, a
+critical event or question holding its slot). Eval path only: the app never calls the two
+new methods, and they refuse to run while the workers are started. Offline test:
+`test_a_same_tick_template_airs_on_time_behind_a_slow_model_call` (fails on the old loop).

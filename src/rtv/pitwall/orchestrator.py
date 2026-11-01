@@ -898,6 +898,38 @@ class PitwallOrchestrator:
                 messages.append(message)
         return messages
 
+    # ---- driving the app's inboxes by hand (eval rehearsals) ---------------------
+    def open_inboxes(self) -> None:
+        """Give every agent its app inbox without starting the workers.
+
+        For a caller that drives the agents itself, frame by frame (the director
+        rehearsal, ``evals/director_rehearsal.py``): :meth:`dispatch` then hands events
+        over exactly as the running app does (template calls on the channel at once,
+        latest wins in an agent's one-slot inbox, a queued critical event or question
+        holds its slot) and :meth:`drain_inboxes` runs what is waiting. Not used by the
+        app, whose :meth:`start` opens the inboxes for its own workers.
+        """
+        if self._tasks:
+            raise RuntimeError("the workers are running; they own the inboxes")
+        for name in self.runtimes:
+            self._inbox.setdefault(name, asyncio.Queue(maxsize=1))
+
+    async def drain_inboxes(self) -> list[RadioMessage]:
+        """Run each agent's waiting event once, inline and in roster order, and publish."""
+        if self._tasks:
+            raise RuntimeError("the workers are running; they own the inboxes")
+        messages: list[RadioMessage] = []
+        for name, queue in self._inbox.items():
+            try:
+                event = queue.get_nowait()
+            except asyncio.QueueEmpty:
+                continue
+            message = await self._run_agent(name, event)
+            if message is not None:
+                self.publish(message)
+                messages.append(message)
+        return messages
+
     # ---- session lifecycle autonomy -----------------------------------------
     @property
     def standby(self) -> bool:
