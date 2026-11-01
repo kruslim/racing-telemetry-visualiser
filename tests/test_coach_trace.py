@@ -15,7 +15,7 @@ FIND_ARGS = {"session_id": "synthetic", "main_lap": 5, "ref_lap": 3}
 
 GOOD_T4 = {
     "headline": "Biggest gain is in T4.",
-    "priorities": [{"corner": "T4", "why": "late braking", "gain_s": 0.30}],
+    "priorities": [{"corner": "T4", "why": "early braking", "gain_s": 0.30}],
     "one_lap_focus": "Brake later into T4.",
     "claims": [
         {

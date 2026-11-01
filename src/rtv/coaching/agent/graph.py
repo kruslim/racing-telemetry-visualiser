@@ -5,7 +5,7 @@ Nodes and edges:
 
     START -> agent -> (conditional) tools | validate | refuse
     tools -> agent                       [the cycle]
-    validate -> (conditional) END | agent    [retry on schema / figure failure]
+    validate -> (conditional) END | agent    [retry on schema / figure / prose failure]
     refuse -> END
 
 Why a graph rather than the hand-rolled ``asyncio.gather`` pipeline in ``orchestrator.py``:
@@ -45,6 +45,7 @@ from rtv.coaching.agent.prompts import (
     SYSTEM_PROMPT,
     VALIDATION_FEEDBACK_TEMPLATE,
 )
+from rtv.coaching.agent.prose import answer_prose, check_prose
 from rtv.coaching.agent.provider import FindingsProvider
 from rtv.coaching.agent.registry import GET_LAP_FINDINGS_TOOL, LIST_CHANNELS_TOOL
 from rtv.coaching.agent.state import CoachState
@@ -81,11 +82,20 @@ def _tool_calls(message: Any) -> list[dict]:
 
 
 def _merged_findings(state: CoachState) -> dict:
-    """All retrieved corner findings, merged into one dict for figure validation."""
+    """All retrieved findings, merged into one dict for figure and prose validation.
+
+    Corners and sectors are concatenated; each lap pair's chief summary is kept in
+    ``chiefs`` so a headline may quote any retrieved pair's lap-level delta.
+    """
     corners: list[dict] = []
+    sectors: list[dict] = []
+    chiefs: list[dict] = []
     for findings in state.findings_by_key.values():
         corners.extend(findings.get("corners", []))
-    return {"corners": corners}
+        sectors.extend(findings.get("sectors", []))
+        if findings.get("chief"):
+            chiefs.append(findings["chief"])
+    return {"corners": corners, "sectors": sectors, "chiefs": chiefs}
 
 
 def build_graph(model: Any, executor: CoachToolExecutor):
@@ -231,12 +241,19 @@ def build_graph(model: Any, executor: CoachToolExecutor):
             # The highest-value validator: every cited figure must match a finding that was
             # actually retrieved. The in-model validator checks corners the answer *says* it
             # examined; this checks the numbers against ground truth that really came back.
+            findings = _merged_findings(state)
             figure_issues = check_figures(
                 [p.model_dump() for p in payload.priorities],
                 [c.model_dump() for c in payload.claims],
-                _merged_findings(state),
+                findings,
             )
             errors.extend(f"  figures: {issue}" for issue in figure_issues)
+            # The same deterministic prose check the orchestrator and the eval harness run
+            # (units, brake direction, corner labels), on the headline, focus, whys and claim
+            # statements: a structured figure can be right while the sentence says the
+            # opposite ("brake later" for a corner braked too late).
+            prose = check_prose(answer_prose(payload.model_dump()), findings)
+            errors.extend(f"  prose: {issue}" for issue in prose.issues)
 
         if errors:
             feedback = VALIDATION_FEEDBACK_TEMPLATE.format(errors="\n".join(errors))

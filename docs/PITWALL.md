@@ -288,7 +288,10 @@ call each other; each run is shown the recent radio and its own last call on eac
 last two subjects, with what the radio did with it (D1). Model per agent: the spec names a
 tier (strategist `reasoning`, the rest `fast`) and `framework.agent_model()` resolves it
 from `RTV_PITWALL_<NAME>_MODEL`, else `RTV_LLM_KIMI_MODEL_REASONING` / `_FAST` (all
-`kimi-k3` today). All calls go through `KimiProvider` with a forced respond tool.
+`kimi-k3` today). All calls go through `KimiProvider` with a forced respond tool. Both
+tiers stay on `kimi-k3`: no model on the Kimi Code key is faster at forced tool calls
+with thinking off (B4 trial, see the appendix section "B4 — fast Kimi tier
+trial").
 
 **Validator** (`pitwall/validator.py`). Every number in an answer must be in the
 `FactSet` built from what the run was shown: state slice, triggering event, prefetch and
@@ -299,8 +302,10 @@ spoken (`rtv.grounding.units`, shared with the Layer-3b prose check). A bare fig
 the any-fact match, and 0-3 are free only when bare. `RTV_PITWALL_TYPED_GROUNDING=false`
 restores the old any-number check. Spoken text is tolerant (±0.05 or 2 %, rounding, clock
 notation, a fraction as a percentage); structured payload fields are exact. Also the 25-word limit and the
-spec's deterministic `policy`. On failure: one repair turn naming the figures, then a
-grounded refusal at `info` priority with the blocked text kept in `detail_text`.
+spec's deterministic `policy`. The coach (`AgentSpec.prose_check`) is also held to the
+Layer-1 prose check whenever a `get_corner_detail` result held a corner (A2). On failure: one
+repair turn naming the figures, then a grounded refusal at `info` priority with the blocked
+text kept in `detail_text`.
 
 **Radio** (`pitwall/radio.py`). One channel, ordered by `(priority, sequence)`. A newer
 non-critical message with the same `(agent, subject)` supersedes a queued one; a critical
@@ -3634,6 +3639,8 @@ On the A1 Spa replay most refusals were arithmetic or units, not inventions. Cha
 - Kimi Spa replay deferred: the Kimi Code quota was blocked when A3 merged, so it merged on
   the offline checks; one combined Spa replay later measures A3 against `spa-kimi-run-A1/`.
 
+---
+
 ## Stage 08 — race plan and projection layer (2026-11-01)
 
 Plan task D4; prompt `prompts/done/08-race-plan-projection.md`. Built: the projection
@@ -3671,6 +3678,69 @@ Deviations:
   have `plan: None` (an `.ibt` without session info has no type, so no plan).
 - The plan cases sit before the stage-3 degraded cases in `build_cases()` so the
   existing test that names the last four cases is unchanged.
+
+---
+
+## B4 — fast Kimi tier trial (2026-10-31)
+
+Plan task B4 (REVIEW.md P1-2). Result: **no change**; every agent stays on `kimi-k3`.
+Runs, journals and the full report are in project files `spa-kimi-run-B4/`.
+
+The key's `GET /v1/models` lists `kimi-for-coding` (K2.8 Preview),
+`kimi-for-coding-highspeed` (K2.7 Code Highspeed), `k3`, `k3-256k`, `k3.1-pro` and
+`k3.1-pro-highspeed`; `kimi-k3` is not listed but is served. With a forced respond tool
+and `thinking` disabled: `k3.1-pro*` return 400 ("does not support disabled thinking
+mode"), `kimi-for-coding` ignores `tool_choice` and answers in text, and
+`kimi-for-coding-highspeed` skipped the tool in 2 of 5 calls. `kimi-k3`, `k3` and
+`k3-256k` behave the same (about 3.2 s for a tiny call, about 23 output tokens/s). Only
+`kimi-for-coding-highspeed` was faster per output token (about 27 tokens/s), so it was
+trialled.
+
+Three Spa replays at 2x ran at the same time (control all `kimi-k3`, coach on the
+candidate, engineer on the candidate), compared with `scripts/compare_runs.py` against run
+3. The candidate was slower for the agent it ran: coach median call 16.7 s against 8.4 s,
+engineer 15.9 s against 10.3 s. Refusals did not rise (coach 0/0, engineer 0 against 1)
+and validator failures did not rise either, but there was no speed to gain.
+`evals/run_pitwall.py` agreed: coach ungrounded numbers 14 against 8, average call 10.2 s
+against 9.0 s; engineer 11.8 s against 9.5 s.
+
+Run 3's 17.5 s median call was endpoint time: the unchanged control ran at 8.6 s today.
+To repeat the trial on a new model id, set `RTV_PITWALL_<AGENT>_MODEL` and compare a
+replay with a control run made at the same time.
+
+## A2 — one prose check for all three coaches (2026-11-01)
+
+REVIEW.md P2-4: the 3a orchestrator ran the deterministic prose check, the 3b graph coach only
+checked structured figures, and the pitwall coach only its FactSet. Now all three call
+`rtv.coaching.agent.prose.check_prose`:
+
+- **Graph coach.** `validate_node` runs it over `prose.answer_prose(payload)` (headline,
+  one_lap_focus, priority whys, claim statements) against every retrieved findings dict
+  (`_merged_findings` now also carries `sectors` and one `chiefs` entry per lap pair). Issues
+  are `prose:` lines in the existing validation turn, so retries and the degraded answer work
+  as before.
+- **Pitwall coach.** `FactSet.corners` keeps every Layer-1 corner a tool returned
+  (`validator.layer1_corner`: a `get_corner_detail` result with `telemetry.available`, mapped
+  back to `CornerFinding` field names). `validate_output(..., prose_check=True)` (set by
+  `AgentSpec.prose_check`, true for the coach only) runs `prose_contradictions`, which calls
+  `check_prose(..., mode="live")` over spoken_text, detail_text and the payload's prose fields
+  when the answer's `corner` is one of those corners or names none. Live mode checks brake
+  direction only: the FactSet already checks figures against every source, live detector
+  events can justify a brake cue with no Layer-1 brake-point difference, and other corners of
+  the map are not inventions. Results land in `GroundingReport.contradictions` (ok=false):
+  the repair turn names them, a refusal's `detail_text` says "contradicts the corner
+  analysis", and the `validate` trace has `contradictions` and appends them to
+  `unsupported_detail` so both audits show them unchanged.
+- `get_corner_detail` diagnostics gain `distance_m`, so a quoted brake point can be placed.
+- `rtv.coaching.agent/__init__` loads `graph` and `provider` lazily: `prose` and
+  `validation` (hence the pitwall validator and the orchestrator) import without langgraph.
+- Two scripted graph-coach answers in tests said "late braking" for T4, whose fixture finding
+  is "Brake point 9 m early"; the check caught it and the scripts now say "early".
+- Offline: `evals/real/spa_run` baseline rebuilt (verdicts unchanged; answers gain an empty
+  `contradictions`). On the F3 partial Spa journal, 5 coach answers held a Layer-1 corner
+  (T4, T8) and none was flagged; coach-5's "brake a touch earlier" at T8 matches its
+  "Brake point 14 m late". Tests: `tests/test_one_prose_check.py`.
+- Kimi: one coach eval run (`evals/run.py`, Gemini judge) after the combined Spa replay.
 
 ## Stage 09 part A — race control (2026-11-01)
 
