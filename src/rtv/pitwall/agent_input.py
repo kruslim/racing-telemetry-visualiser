@@ -43,6 +43,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 from collections.abc import Mapping, Sequence
 from typing import Any
 
@@ -93,6 +94,34 @@ def jsonable(value: Any) -> Any:
     return json.loads(as_text(value))
 
 
+#: Decimals an agent is shown. Raw telemetry floats print with 15-17 digits
+#: (55.096466064453125 C); four decimals keep every derived figure the engine already
+#: rounds (17.409 L, 0.4801 of a lap) exact and cut those digits from the prompt.
+SHOWN_DECIMALS = 4
+
+
+def compact(value: Any, decimals: int = SHOWN_DECIMALS) -> Any:
+    """``value`` as JSON data with every float rounded to ``decimals``.
+
+    Applied to what an agent is shown (its state slice, the event payload, each tool
+    result) *before* the fact set reads it, so the figures the validator holds are
+    exactly the figures the model saw.
+    """
+    data = jsonable(value)
+
+    def walk(item: Any) -> Any:
+        if isinstance(item, float):
+            rounded = round(item, decimals)
+            return rounded if math.isfinite(rounded) else item
+        if isinstance(item, dict):
+            return {k: walk(v) for k, v in item.items()}
+        if isinstance(item, list):
+            return [walk(v) for v in item]
+        return item
+
+    return walk(data)
+
+
 def sha(text: str) -> str:
     """Short content hash: enough to tell two prompt versions apart."""
     return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
@@ -120,6 +149,9 @@ def instruction(
     prefetched: Sequence[Mapping[str, Any]] = (),
     superseded: Sequence[Mapping[str, Any]] = (),
     previous: Sequence[Mapping[str, Any]] = (),
+    *,
+    word_limit: int = SPOKEN_WORD_LIMIT,
+    tools_offered: bool = True,
 ) -> str:
     """The run's first user message, from the event, the agent's own earlier calls,
     the radio and prefetched results.
@@ -157,7 +189,21 @@ def instruction(
         parts.append("RECENT RADIO (do not repeat a call that still stands):\n" + recent)
     for note in list(superseded)[-1:]:
         parts.append(superseded_line(note))
-    if prefetched:
+    if not tools_offered:
+        if prefetched:
+            parts.append(
+                "TOOL RESULTS (already called for you, as if you had called them):\n"
+                + "\n".join(
+                    f"- {p['tool']}({as_text(p['args']) if p['args'] else ''}): "
+                    f"{as_text(p['result'])}"
+                    for p in prefetched
+                )
+            )
+        parts.append(
+            "Answer now in the required structure, from the race state and these "
+            f"results; there are no more tools. Keep spoken_text under {word_limit} words."
+        )
+    elif prefetched:
         parts.append(
             "TOOL RESULTS (already called for you, as if you had called them):\n"
             + "\n".join(
@@ -169,13 +215,13 @@ def instruction(
         parts.append(
             "If these and the race state settle it, answer now in the required "
             "structure; call another tool only for a figure that is not here. "
-            f"Keep spoken_text under {SPOKEN_WORD_LIMIT} words."
+            f"Keep spoken_text under {word_limit} words."
         )
     else:
         parts.append(
             "Call the tools you need, then answer in the required structure. "
             "Keep spoken_text under "
-            f"{SPOKEN_WORD_LIMIT} words."
+            f"{word_limit} words."
         )
     return "\n\n".join(parts)
 
@@ -273,6 +319,7 @@ def build_input(
     provider: Mapping[str, Any] | None = None,
     superseded: Sequence[Mapping[str, Any]] = (),
     previous: Sequence[Mapping[str, Any]] = (),
+    max_tool_iterations: int | None = None,
 ) -> dict[str, Any]:
     """The ``run_start`` input record of one run of ``spec`` (an ``AgentSpec``).
 
@@ -280,13 +327,22 @@ def build_input(
     last :data:`PREVIOUS_SUBJECTS` kept) are recorded only when there are any, so a run
     without them keeps the record (and the model input) it always had.
     """
-    shown = list(radio_history)[-RADIO_SHOWN:] if RADIO_SHOWN else []
+    kept = list(previous)[-PREVIOUS_SUBJECTS:] if PREVIOUS_SUBJECTS else []
+    # The agent's own call that YOUR EARLIER CALLS already quotes is not shown twice.
+    recalled = {p.get("message_id") for p in kept}
+    shown = [
+        m
+        for m in (list(radio_history)[-RADIO_SHOWN:] if RADIO_SHOWN else [])
+        if m.message_id not in recalled
+    ]
     record = {
         "v": INPUT_VERSION,
         "agent": spec.name,
         "model": spec.model,
         "max_tokens": spec.max_tokens,
-        "max_tool_iterations": spec.max_tool_iterations,
+        "max_tool_iterations": (
+            spec.max_tool_iterations if max_tool_iterations is None else max_tool_iterations
+        ),
         "provider": dict(provider or {}),
         "system_prompt": system_prompt,
         "prompt_sha": sha(system_prompt),
@@ -310,9 +366,12 @@ def build_input(
         "output_contract": spec.output_model.__name__,
         "output_schema_sha": output_schema_sha(spec.output_model),
     }
+    limit = getattr(spec, "spoken_word_limit", SPOKEN_WORD_LIMIT)
+    if limit != SPOKEN_WORD_LIMIT:
+        # Recorded only when it is not the default, so other runs keep their record.
+        record["spoken_word_limit"] = limit
     if superseded:
         record["superseded"] = [jsonable(dict(n)) for n in list(superseded)[-1:]]
-    kept = list(previous)[-PREVIOUS_SUBJECTS:] if PREVIOUS_SUBJECTS else []
     if kept:
         record["previous"] = [jsonable(dict(p)) for p in kept]
     return record
@@ -343,11 +402,12 @@ def model_input(record: Mapping[str, Any]) -> dict[str, Any]:
     version = data.get("v")
     if version != INPUT_VERSION:
         raise ValueError(f"Unsupported run input version {version!r}.")
+    tools_offered = data.get("max_tool_iterations", 1) != 0
     return {
         "agent": data["agent"],
         "model": data["model"],
         "max_tokens": data["max_tokens"],
-        "tools": list(data["tools"]),
+        "tools": list(data["tools"]) if tools_offered else [],
         "output_contract": data["output_contract"],
         "system": system_blocks(data["system_prompt"], data["state_slice"]),
         "messages": [
@@ -359,6 +419,8 @@ def model_input(record: Mapping[str, Any]) -> dict[str, Any]:
                     data["prefetched"],
                     data.get("superseded") or (),
                     data.get("previous") or (),
+                    word_limit=data.get("spoken_word_limit", SPOKEN_WORD_LIMIT),
+                    tools_offered=tools_offered,
                 ),
             }
         ],

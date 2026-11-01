@@ -125,6 +125,13 @@ def run_stats(records: Iterable[dict[str, Any]]) -> dict[str, Any]:
             "calls_without_answer": (
                 sum(1 for c in sel_calls if c.get("answered") is False) if has_answered else None
             ),
+            # A turn that asked for a tool (propose_plan_revision, a lookup): the
+            # loop working, not a miss. Counted in calls_without_answer too.
+            "tool_turns": (
+                sum(1 for c in sel_calls if c.get("answered") is False and c.get("tool_calls"))
+                if has_answered
+                else None
+            ),
             "malformed_respond": (
                 sum(
                     1
@@ -246,6 +253,7 @@ _SUMMARY_ROWS: list[tuple[str, Any, str]] = [
     ("refusals", lambda s: s["refusals"], ""),
     ("errored runs", lambda s: s["errored_runs"], ""),
     ("calls without a structured answer", lambda s: s["calls_without_answer"], ""),
+    ("of which tool-use turns", lambda s: s["tool_turns"], ""),
     (
         "no answer and no tool call (malformed respond or text)",
         lambda s: s["malformed_respond"],

@@ -78,6 +78,9 @@ Rules that matter more than being helpful:
 - Never say a temperature, pressure, trend or occurrence count you were not given.
   If the tyre channels are missing for this session, say that.
 - 'none' is a real finding. Use it when the trigger turned out to be benign.
+- Another engineer's figure on the radio (the strategist's fuel or stop lap) is not
+  yours to quote: refer to their call ("fuel as the strategist called") without
+  the number.
 """
 
 

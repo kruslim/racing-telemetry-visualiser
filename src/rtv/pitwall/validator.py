@@ -96,6 +96,9 @@ class FactSet:
         #: Layer-1 corner findings a tool returned, by label, in the shape the prose check
         #: reads (:func:`layer1_corner`).
         self.corners: dict[str, dict[str, Any]] = {}
+        #: Figures other agents said on the radio this run was shown: (agent, Figure).
+        #: Never grounding (a radio line is not data), only a better repair hint.
+        self._heard: list[tuple[str, Figure]] = []
 
     def add(self, source: str, payload: Any) -> None:
         corner = layer1_corner(payload)
@@ -110,6 +113,18 @@ class FactSet:
                 self._typed.setdefault(unit[0], []).append((value, unit[1], path))
             elif _is_count(path, value):
                 self._typed.setdefault("count", []).append((value, "n", path))
+
+    def hear(self, agent: str, spoken_text: str) -> None:
+        """Note the figures another agent said on the radio (for :meth:`explain` only)."""
+        for figure in read_figures(spoken_text or ""):
+            self._heard.append((agent, figure))
+
+    def heard_from(self, figure: Figure) -> str | None:
+        """The agent whose radio call said ``figure`` (same family, same value), if any."""
+        for agent, said in self._heard:
+            if said.family == figure.family and abs(said.value - figure.value) <= ABS_TOL:
+                return agent
+        return None
 
     def facts(self, family: str) -> list[tuple[float, str, str]]:
         """Every ``(value, unit, path)`` of one unit family, in the order they were added."""
@@ -156,6 +171,11 @@ class FactSet:
             for form in _rounded_forms(spoken):
                 if abs(figure.value - form) <= max(ABS_TOL, REL_TOL * abs(form)):
                     return True
+        if figure.family == "laps" and _spelled_out(figure) and figure.value == 1.0:
+            # "one lap to green", "one more lap": a spelled-out "one" is the article "a"
+            # said another way ("a lap" is not a figure at all), so it is as free as the
+            # bare small numbers. "two laps" / "three laps" still need a fact.
+            return True
         if figure.family == "laps" and _spelled_out(figure):
             # "three laps running wide" for a recurring issue with occurrences: 3, or
             # "second off in two laps" for two events at the corner: on the radio a
@@ -214,6 +234,12 @@ class FactSet:
 
     def explain(self, figure: Figure) -> str:
         """Why ``figure`` failed, in words an agent can act on in its repair turn."""
+        heard = self.heard_from(figure)
+        if heard is not None:
+            return (
+                f"{figure.written} (that is the {heard}'s figure from the radio, not in your "
+                f"data: refer to the {heard}'s call without the number)"
+            )
         if figure.family is None or not self.typed:
             return f"{figure.written} (no figure in the data matches)"
         unit = _UNIT_WORDS.get(figure.unit or "", figure.family)
@@ -384,8 +410,14 @@ def _walk_facts(
             out.append((value, field_unit(path), path))
         return out
     if isinstance(payload, str):
-        for figure in read_figures(payload):
+        figures = read_figures(payload)
+        # "Apex in gear 1 - reference used 2": the gear diagnostic names the unit once,
+        # so the other small whole numbers of a text about gears are gears too.
+        geared = any(f.family == "gear" for f in figures)
+        for figure in figures:
             unit = (figure.family, figure.unit) if figure.family and figure.unit else None
+            if unit is None and geared and _is_gear_number(figure.value):
+                unit = ("gear", "gear")
             out.append((figure.value, unit, f"{path}~text"))
         return out
     if isinstance(payload, dict):
@@ -414,6 +446,10 @@ _COUNT_KEYS = frozenset({"occurrences", "count"})
 def _is_count(path: str, value: float) -> bool:
     key = path.rsplit(".", 1)[-1]
     return key in _COUNT_KEYS and float(value).is_integer() and value >= 0
+
+
+def _is_gear_number(value: float) -> bool:
+    return float(value).is_integer() and 1 <= value <= 8
 
 
 def _spelled_out(figure: Figure) -> bool:
@@ -556,6 +592,7 @@ def validate_output(
     payload: Any | None = None,
     *,
     prose_check: bool = False,
+    word_limit: int = MAX_SPOKEN_WORDS,
 ) -> GroundingReport:
     """Check an agent's whole answer -- prose *and* structured payload.
 
@@ -606,7 +643,7 @@ def validate_output(
     )
 
     words = len((spoken_text or "").split())
-    over = words > MAX_SPOKEN_WORDS
+    over = words > word_limit
     return GroundingReport(
         ok=not unsupported and not contradictions and not over,
         numbers=numbers,

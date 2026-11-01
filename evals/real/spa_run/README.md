@@ -44,3 +44,11 @@ time). In this baseline every answer reproduces its live verdict. Findings: the 
 "T8" and "T4" before the corner map was built; `engineer_check` flags "T4 Speaker's Corner"
 against the event's bucket `C09` (it compares raw strings: a false positive in the check);
 one spotter answer to a driver question is 19 words against the spotter's 14.
+
+After R1 (fixes from the combined replay) the baseline was rebuilt again, and four answers
+now differ from their live verdict, all on purpose: the engineer's two "one lap to green"
+answers and the coach's "second gear ... slip 0.23 lap 13" now pass (a spelled-out "one" is
+speech; the gear diagnostic's "reference used 2" is a gear; "0.23 lap 13" is a slip figure
+then a lap number), and the spotter's 19-word answer now fails the spotter's own 14-word
+limit, which the live validator holds it to. The engineer's "17.4 litres" (the strategist's
+fuel, heard on the radio) still fails; its repair hint now names the strategist's call.

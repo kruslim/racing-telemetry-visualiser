@@ -30,7 +30,7 @@ from rtv.coaching.agent.validation import name_key, split_corner
 from rtv.pitwall import validity
 from rtv.pitwall.agents import AGENT_REGISTRY
 from rtv.pitwall.framework import EventRef, RadioMessage
-from rtv.pitwall.validator import FactSet, validate_output
+from rtv.pitwall.validator import MAX_SPOKEN_WORDS, FactSet, validate_output
 from rtv.racestate.models import RaceEvent, RaceState
 
 SPECS = {spec.name: spec for spec in AGENT_REGISTRY}
@@ -60,6 +60,9 @@ def facts_of(case: dict[str, Any]) -> FactSet:
     facts = FactSet()
     facts.add("race_state", data["state_slice"])
     facts.add("event", data["event"].get("payload") or {})
+    for heard in data.get("radio") or []:
+        if heard.get("agent") != data.get("agent"):
+            facts.hear(heard["agent"], heard.get("spoken_text") or "")
     for call in case["tool_calls"]:
         if call["ok"]:
             facts.add(call["tool"], call["result"])
@@ -131,6 +134,7 @@ def _validator(case: dict[str, Any], answer: dict[str, Any], facts: FactSet,
         facts,
         payload=payload_of(output),
         prose_check=spec is not None and spec.prose_check,
+        word_limit=spec.spoken_word_limit if spec is not None else MAX_SPOKEN_WORDS,
     )
     policy = None
     if spec is not None and spec.policy is not None:

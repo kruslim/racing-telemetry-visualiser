@@ -40,6 +40,8 @@ from rtv.racestate.strategy_math import standings_around_player
 from rtv.vision.live import SPOTTER_KINDS
 
 AGENT_NAME = "spotter"
+#: Most words a spotter call may have (the eval holds it to the same number).
+SPOTTER_WORD_LIMIT = 14
 
 SPOTTER_PROMPT = """\
 You are the SPOTTER on a sim-racing pit wall. You own one thing: what is around
@@ -221,6 +223,8 @@ SPOTTER = AgentSpec(
         ("get_recent_detector_events", {"limit": 10}),
     ),
     max_tool_iterations=2,
+    # A spotter call is a glance, not a sentence: the eval's limit, held live too.
+    spoken_word_limit=SPOTTER_WORD_LIMIT,
     # A summary is never urgent, so it is never tagged late; it expires after a
     # minute instead (spotter_validity). The instant calls' 3 s limit is the
     # template caller's (rtv.pitwall.callers.SPOTTER_MAX_AGE_S).

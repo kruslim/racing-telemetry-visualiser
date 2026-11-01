@@ -375,6 +375,20 @@ class AgentSpec:
     #: Hold the answer to the Layer-1 prose check (brake direction against the corner
     #: analysis) whenever a tool handed the run a Layer-1 corner. The coach's, task A2.
     prose_check: bool = False
+    #: Most words ``spoken_text`` may have before the validator flags it (the spotter
+    #: speaks shorter than the engineers).
+    spoken_word_limit: int = SPOKEN_WORD_LIMIT
+
+    def tool_iterations(self, event: RaceEvent | None) -> int:
+        """Tool round trips this run may make: none when the driver asked a question.
+
+        The driver is waiting on the answer, and the prefetched results already hold
+        what each owner answers from; one forced answer is one model call, where the
+        combined Spa replay's question runs took two and aired 35-54 s late.
+        """
+        if event is not None and event.event_type is EventType.DRIVER_QUESTION:
+            return min(self.max_tool_iterations, QUESTION_TOOL_ITERATIONS)
+        return self.max_tool_iterations
 
     def tool(self, name: str) -> ToolSpec | None:
         return next((t for t in self.tools if t.name == name), None)
@@ -405,6 +419,12 @@ class AgentSpec:
 # runtime
 # --------------------------------------------------------------------------
 REFUSAL_SPOKEN = "Standby - I can't back that call with data yet."
+#: Tool round trips a driver-question run may make (:meth:`AgentSpec.tool_iterations`).
+QUESTION_TOOL_ITERATIONS = 0
+#: An agent's answer to the driver airs tagged late after this many seconds. The
+#: driver asked and is waiting: an answer is still wanted later than a call is, but
+#: one model call (~10-15 s on kimi-k3) must fit inside it.
+ANSWER_MAX_AGE_S = 30.0
 #: Shown (never spoken) for a call the agent's policy ruled out.
 POLICY_WITHHELD_SPOKEN = "Call withheld: it contradicts the fuel plan."
 
@@ -562,14 +582,20 @@ class AgentRuntime:
         previous_calls: Sequence[Mapping[str, Any]] = (),
     ) -> RadioMessage | None:
         spec = self.spec
-        slice_ = spec.state_slice(state)
+        # What the agent is shown, floats cut to SHOWN_DECIMALS: the prompt, the
+        # journal and the fact set all hold this one copy.
+        slice_ = agent_input.compact(spec.state_slice(state))
 
         # The agent sees the event with its speeds in km/h and its streak counts
         # derived (rtv.racestate.derived); the FactSet holds exactly that view.
-        event = event.model_copy(update={"payload": agent_payload(event.payload)})
+        payload = agent_input.compact(agent_payload(event.payload))
+        event = event.model_copy(update={"payload": payload})
         facts = FactSet()
         facts.add("race_state", slice_)
         facts.add("event", event.payload)
+        for heard in list(radio_history)[-agent_input.RADIO_SHOWN :]:
+            if heard.agent != spec.name:
+                facts.hear(heard.agent, heard.spoken_text)
 
         ctx = ToolContext(
             state=state,
@@ -593,6 +619,7 @@ class AgentRuntime:
             superseded=superseded,
             provider=self._provider_info(),
             previous=previous_calls,
+            max_tool_iterations=spec.tool_iterations(event),
         )
         self._start_run(record, state)
         first = agent_input.model_input(record)
@@ -645,6 +672,7 @@ class AgentRuntime:
             facts,
             payload=_payload_of(output),
             prose_check=self.spec.prose_check,
+            word_limit=self.spec.spoken_word_limit,
         )
 
     # ---- the tool-use loop ----------------------------------------------
@@ -725,6 +753,7 @@ class AgentRuntime:
                     latency_ms=round(elapsed, 2),
                     tool_calls=[c.name for c in tool_calls],
                     answered=getattr(response, "output", None) is not None,
+                    **_call_diagnostics(response),
                     input_tokens=usage.get("input_tokens"),
                     output_tokens=usage.get("output_tokens"),
                     cache_read_input_tokens=usage.get("cache_read_input_tokens"),
@@ -739,9 +768,10 @@ class AgentRuntime:
         tools_used: list[str],
     ) -> AgentOutput | None:
         spec = self.spec
-        for iteration in range(spec.max_tool_iterations + 1):
+        iterations = spec.tool_iterations(ctx.event)
+        for iteration in range(iterations + 1):
             # On the last pass the tools are withdrawn, so the model must answer.
-            offer_tools = iteration < spec.max_tool_iterations
+            offer_tools = iteration < iterations
             response = await self._complete(
                 agent=spec.name,
                 model=spec.model,
@@ -753,6 +783,11 @@ class AgentRuntime:
             )
             if response.output is not None and not response.tool_calls:
                 return response.output
+            if not response.tool_calls and getattr(response, "invalid_output", None):
+                # The respond call failed the contract (on the combined Spa replay: an
+                # empty or truncated payload, about one call in twelve). One forced
+                # retry with the reason costs a call; giving up costs the whole run.
+                return await self._retry_respond(system, messages, response.invalid_output)
             if not response.tool_calls:
                 if not offer_tools or not getattr(response, "text", ""):
                     return response.output
@@ -794,6 +829,37 @@ class AgentRuntime:
             messages.append({"role": "user", "content": results})
         return None
 
+    async def _retry_respond(
+        self, system: list[dict[str, Any]], messages: list[dict[str, Any]], reason: str
+    ) -> AgentOutput | None:
+        """Ask once more for the answer, tools withdrawn, saying what was wrong.
+
+        The invalid respond call is not put in the history: a tool_use with no
+        tool_result is a request every Messages implementation rejects, and the
+        model only needs the reason to send a whole payload.
+        """
+        spec = self.spec
+        retry = list(messages) + [
+            {
+                "role": "user",
+                "content": (
+                    f"Your answer could not be read ({reason}). Send the whole answer "
+                    "again in the required structure, every required field filled."
+                ),
+            }
+        ]
+        response = await self._complete(
+            agent=spec.name,
+            model=spec.model,
+            system=system,
+            messages=retry,
+            tools=[],
+            output_model=spec.output_model,
+            # A payload cut off at the token limit would be cut off again.
+            max_tokens=spec.max_tokens + spec.max_tokens // 2,
+        )
+        return response.output
+
     def _run_tool(
         self,
         name: str,
@@ -810,7 +876,7 @@ class AgentRuntime:
         tools_used.append(name)
         tool_started = time.perf_counter()
         try:
-            payload = tool(ctx, args)
+            payload = agent_input.compact(tool(ctx, args))
             is_error = False
         except Exception as exc:  # tool bugs are the agent's problem, not fatal
             log.exception("Tool %s failed for %s", name, self.spec.name)
@@ -882,7 +948,8 @@ class AgentRuntime:
             )
         if report.over_word_limit:
             problems.append(
-                f"spoken_text is {report.word_count} words; the limit is {SPOKEN_WORD_LIMIT}."
+                f"spoken_text is {report.word_count} words; the limit is "
+                f"{self.spec.spoken_word_limit}."
             )
         messages.append(
             {
@@ -1064,7 +1131,7 @@ class AgentRuntime:
                 f"({'; '.join(report.contradictions)}). Original text: " + output.spoken_text
             )
         elif report.over_word_limit:
-            spoken = _truncate_words(spoken, SPOKEN_WORD_LIMIT)
+            spoken = _truncate_words(spoken, self.spec.spoken_word_limit)
         if event.event_type is EventType.VISUAL_OBSERVATION:
             # A camera note is seconds old and number-free: it never pre-empts a
             # fuel, flag or traffic call, whatever the agent asked for.
@@ -1144,6 +1211,18 @@ def _trace_args(args: Any, *, limit: int = 120) -> dict[str, Any]:
         elif not isinstance(value, str | int | float | bool | type(None)):
             value = _as_text(value)[:limit]
         out[key] = value
+    return out
+
+
+def _call_diagnostics(response: Any) -> dict[str, Any]:
+    """Why a call did not answer, for ``llm_call_end`` (only the keys that are set)."""
+    out: dict[str, Any] = {}
+    invalid = getattr(response, "invalid_output", None)
+    if isinstance(invalid, str) and invalid:
+        out["invalid_output"] = invalid[:200]
+    stop = getattr(response, "stop_reason", None)
+    if isinstance(stop, str) and stop:
+        out["stop_reason"] = stop
     return out
 
 

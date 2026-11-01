@@ -3793,3 +3793,35 @@ Deviations:
   an unseen agent on its first record, so race control's records do not break them (it has
   no lane there). The golden view file is unchanged.
 
+
+## R1 — fixes from the combined Spa replay (2026-11-01)
+
+The combined Kimi replay (project files `spa-kimi-run-combined/`) regressed against B2.
+Each cause was reproduced from `evals/real/spa_run` first (`tests/test_pitwall_r1.py`):
+
+- Grounding (`rtv.pitwall.validator`, `rtv.grounding.units`): a spelled-out "one" with
+  laps ("one lap to green") is as free as a bare small number; two/three laps still need
+  a fact. A tool text that names a gear ("Apex in gear 1 - reference used 2") makes its
+  other small whole numbers gears. "lap" followed by a number is that number's prefix, so
+  "slip 0.23 lap 13" is no longer 0.23 laps.
+- `FactSet.hear(agent, text)`: figures other agents said on the radio this run was shown.
+  Never grounding; `explain()` names whose figure it was, so the repair turn can drop it.
+  The vehicle engineer's prompt says not to quote another engineer's numbers (the plan's
+  fuel stays out of its slice on purpose).
+- Respond retries: `ProviderResponse.invalid_output` (why a respond payload failed the
+  contract) and `stop_reason`, both on `llm_call_end`. An invalid payload gets one forced
+  retry (tools withdrawn, 1.5x max_tokens) with the reason; a second one ends the run.
+- `compare_runs` adds "of which tool-use turns": the combined run's 8 "calls without a
+  structured answer" were 5 tool turns (3 strategist `propose_plan_revision`) and 3 misses.
+- Driver questions: `AgentSpec.tool_iterations(event)` is 0 for `driver_question` runs
+  (one forced answer from the prefetched results); the input record holds
+  `max_tool_iterations: 0` and `model_input` rebuilds it with no tools. An agent's answer
+  airs late after `framework.ANSWER_MAX_AGE_S` (30 s), not the agent's call limit.
+- `AgentSpec.spoken_word_limit` (default 25; spotter 14, shared with the eval). Recorded
+  in the input as `spoken_word_limit` only when it is not 25.
+- Tokens: agent-visible floats are cut to `agent_input.SHOWN_DECIMALS` (4) by
+  `agent_input.compact` before the fact set reads them (slice, event payload, tool
+  results), and the agent's own call quoted under YOUR EARLIER CALLS is no longer also in
+  RECENT RADIO. Most of the growth was more work, not bloat: 36 calls vs 25 (4 driver-
+  question runs, 3 plan-proposal turns), plus the plan, track map and tyre-change fields
+  added to the slices since F1.
