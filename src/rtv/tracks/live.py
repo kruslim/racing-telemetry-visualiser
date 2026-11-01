@@ -40,6 +40,9 @@ _CHANNELS = ("Speed", "LapDist", "Lat", "Lon")
 #: Two laps agree when they have the same apexes, each within this lap fraction (~140 m at
 #: Spa; Layer 1 merges minima closer than 120 m, so nearer apexes would be one corner).
 AGREE_PCT = 0.02
+#: How far (lap fraction) one lap's apex may sit from a session-map corner and still be that
+#: corner. Spa's closest pair (Bruxelles, Speaker's Corner) is 0.029 apart, so half of that.
+MATCH_PCT = 0.014
 #: Clean laps kept to agree with; more than this many disagreeing laps in a row is unusual.
 MAX_CANDIDATES = 4
 

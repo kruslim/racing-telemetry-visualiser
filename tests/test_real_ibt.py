@@ -228,6 +228,49 @@ def test_live_corner_labels_match_the_review(client):
     assert recurring[0]["payload"]["place"]["name"] == "Speaker's Corner"
 
 
+def test_a_corner_keeps_its_label_on_every_lap_pair(client):
+    """R3: Layer 1 labels corners from the session corner map, not per lap pair.
+
+    Detected on its own, lap 8 misses Speaker's Corner and lap 1 has an extra dip at
+    Raidillon, so a per-pair "T4" was Double Gauche on lap 8 and Bruxelles on lap 1. Every
+    pair now uses one numbering, the one the live events use.
+    """
+    _replayed(client)
+    track = client.get("/api/v1/racestate").json()["track"]
+    live = {c["label"]: c["name"] for c in track["corners"]}
+    laps = [
+        r["lap"] for r in client.get(f"/api/v1/sessions/{client.session_id}/laps").json()["laps"]
+        if r["is_valid"] and r["lap_time"]
+    ]
+    seen: dict[str, set] = {}
+    where: dict[str, list[float]] = {}
+    for main in laps:
+        ref = 6 if main != 6 else 11
+        f = client.get(
+            "/api/v1/coaching/lap-findings",
+            params={"session_id": client.session_id, "main_lap": main, "ref_lap": ref},
+        ).json()
+        assert f["corner_map_lap"] is not None
+        labels = [c["label"] for c in f["corners"]]
+        assert len(labels) == len(set(labels)), (main, labels)
+        for c in f["corners"]:
+            seen.setdefault(c["label"], set()).add(c["name"])
+            where.setdefault(c["label"], []).append(c["distance"] / f["lap_length_m"])
+        assert {p["label"] for p in f["chief"]["top3"]} <= set(labels)
+    for label, name in live.items():
+        assert seen[label] == {name}, (label, seen[label])
+        assert max(where[label]) - min(where[label]) < 0.03, label
+    # Off the map, numbered after it: lap 1's dip at Raidillon and the out-lap's pit exit.
+    extra = set(seen) - set(live)
+    assert extra == {"T9"} and seen["T9"] == {"Raidillon", None}
+    f8 = client.get(
+        "/api/v1/coaching/lap-findings",
+        params={"session_id": client.session_id, "main_lap": 8, "ref_lap": 6},
+    ).json()
+    assert [c["label"] for c in f8["corners"]] == ["T1", "T2", "T3", "T5", "T6", "T7", "T8"]
+    assert any("T4 (Speaker's Corner)" in n and "lap 8" in n for n in f8["notes"])
+
+
 def _journal_run(client) -> dict:
     """The replay's journal run (replaying the race first if no test has yet)."""
     _replayed(client)
@@ -318,24 +361,28 @@ def test_prose_check_accepts_the_findings_own_words(client, main_lap, ref_lap):
     assert score["prose_claims"] > len(priorities)
 
 
-def test_prose_check_catches_the_kimi_t7_brake_advice(client):
-    """The orchestrator's real lap-12 plan moved the T7 brake point the wrong way."""
+def test_prose_check_catches_the_kimi_t8_brake_advice(client):
+    """The orchestrator's real lap-12 plan moved the T7 brake point the wrong way.
+
+    That plan was written when lap 12 had its own numbering (it misses Speaker's Corner, so
+    the Bus Stop was its T7). On the session corner map the Bus Stop is T8 on every lap.
+    """
     from evals.checks import cross_check
 
     f = client.get(
         "/api/v1/coaching/lap-findings",
         params={"session_id": client.session_id, "main_lap": IN_LAP, "ref_lap": 6},
     ).json()
-    t7 = next(c for c in f["corners"] if c["label"] == "T7")
+    t8 = next(c for c in f["corners"] if c["label"] == "T8")
     plan = {
         "headline": "",
-        "one_lap_focus": "T7: move your brake point from 6540 m to ~6570 m.",
-        "priorities": [{"corner": "T7", "why": "", "gain_s": t7["net_dt"]}],
+        "one_lap_focus": "T8: move your brake point from 6540 m to ~6570 m.",
+        "priorities": [{"corner": "T8", "why": "", "gain_s": t8["net_dt"]}],
     }
     result = {"clean": False, "plan": plan, "advices": []}
     score = cross_check(result, f)
     assert score["claim_factuality"] < 1.0
-    assert any("brake later at T7" in i and "6508 m" in i for i in score["prose_issues"])
+    assert any("brake later at T8" in i and "6508 m" in i for i in score["prose_issues"])
 
 
 def test_stage08_projection_and_plan_on_the_real_race(client):

@@ -25,6 +25,9 @@ the main and reference laps on a uniform lap-distance grid, detects corners as p
 minima, builds an elapsed-time delta curve scaled to the API lap time, and runs the eight
 diagnostics (speed, brake, lock-up, throttle, gear, grip, consistency, sector). Output is the
 compact `LapFindings` model. Requires `Speed` + `LapDist`; missing channels are skipped and noted.
+Corner labels come from the session corner map, not from the lap pair's own apex count, so
+`T3` is the same corner on every lap pair and in the live events (`docs/TRACKS.md`, "One
+numbering on every lap").
 
 ```
 GET /api/v1/coaching/lap-findings?session_id=...&main_lap=5&ref_lap=3
