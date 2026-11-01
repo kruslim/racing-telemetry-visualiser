@@ -364,6 +364,9 @@ class AgentSpec:
     #: fields (``valid_until_lap``, ``invalid_if_lap_dist_past``, ...). Read
     #: from the message's structured ``data``, never from the spoken words.
     validity: Callable[..., dict[str, Any]] | None = None
+    #: Hold the answer to the Layer-1 prose check (brake direction against the corner
+    #: analysis) whenever a tool handed the run a Layer-1 corner. The coach's, task A2.
+    prose_check: bool = False
 
     def tool(self, name: str) -> ToolSpec | None:
         return next((t for t in self.tools if t.name == name), None)
@@ -628,7 +631,11 @@ class AgentRuntime:
 
     def _validate(self, output: AgentOutput, facts: FactSet) -> GroundingReport:
         return validate_output(
-            output.spoken_text, output.detail_text, facts, payload=_payload_of(output)
+            output.spoken_text,
+            output.detail_text,
+            facts,
+            payload=_payload_of(output),
+            prose_check=self.spec.prose_check,
         )
 
     # ---- the tool-use loop ----------------------------------------------
@@ -859,6 +866,11 @@ class AgentRuntime:
                 "These figures are not in the race state or in any tool result you were "
                 f"given: {'; '.join(report.unsupported_detail or report.unsupported)}."
             )
+        if report.contradictions:
+            problems.append(
+                "These statements contradict the corner analysis you were given: "
+                f"{'; '.join(report.contradictions)}."
+            )
         if report.over_word_limit:
             problems.append(
                 f"spoken_text is {report.word_count} words; the limit is {SPOKEN_WORD_LIMIT}."
@@ -974,7 +986,9 @@ class AgentRuntime:
             policy=policy,
             unsupported=list(report.unsupported),
             # Why each figure failed, for the audit (rendered there with rounded values).
-            unsupported_detail=list(report.unsupported_detail),
+            # A prose contradiction is a reason too, so both audits show it unchanged.
+            unsupported_detail=list(report.unsupported_detail) + list(report.contradictions),
+            contradictions=list(report.contradictions),
             word_count=report.word_count,
             over_word_limit=report.over_word_limit,
             repaired=repaired,
@@ -1028,6 +1042,17 @@ class AgentRuntime:
                 "Withheld: the agent cited figures that are not traceable to the race "
                 f"state or to a tool result ({', '.join(report.unsupported)}). "
                 "Original text: " + output.spoken_text
+            )
+        elif not report.ok and report.contradictions:
+            # A cue the corner analysis contradicts ("brake later" where the driver
+            # already brakes late) is as wrong as an invented figure.
+            self.refusals += 1
+            refused = True
+            priority = RadioPriority.INFO
+            spoken = REFUSAL_SPOKEN
+            detail = (
+                "Withheld: the call contradicts the corner analysis "
+                f"({'; '.join(report.contradictions)}). Original text: " + output.spoken_text
             )
         elif report.over_word_limit:
             spoken = _truncate_words(spoken, SPOKEN_WORD_LIMIT)

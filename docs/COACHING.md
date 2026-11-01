@@ -82,7 +82,15 @@ make it more than a chat wrapper:
   must trace to a finding that was actually retrieved. A claimed time gain the findings don't
   support is bounced back as a validation turn (`validation.check_figures`, shared with the 3a
   eval checker); after bounded retries it degrades to an honest "couldn't determine" — never a
-  crash, never a guess.
+  crash, never a guess. The headline, focus, priority whys and claim statements then go
+  through the same deterministic prose check as 3a (`prose.check_prose` over
+  `prose.answer_prose(payload)`): a wrong brake direction, a figure in the wrong unit or a
+  corner label the findings lack is a `prose:` line in the same validation turn.
+
+All three coaches use that one prose check: the 3a orchestrator after its verifier, the 3b
+validate node, and the live pitwall coach whenever `get_corner_detail` returned a Layer-1
+corner (`docs/PITWALL.md`, "A2"). The pitwall runs it in `mode="live"`: brake direction
+only, since its typed fact set already checks every figure.
 
 ```
 pip install -e ".[agent]"          # or just ".[dev]" — the tests need no key

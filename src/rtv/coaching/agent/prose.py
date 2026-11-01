@@ -23,13 +23,22 @@ finds against the corner the text is about:
 
 Each figure is a claim; :func:`check_prose` returns how many it checked and the ones it could
 not ground. Tolerances live in :mod:`rtv.coaching.agent.validation` with the others.
+
+All three coaches use this one check (task A2): the Layer-3a orchestrator on its plan and
+advices (:func:`result_prose`), the Layer-3b graph coach's validate node on every answer it
+submits (:func:`answer_prose`), and the live pitwall coach whenever a tool result handed it a
+Layer-1 corner (:mod:`rtv.pitwall.validator`). The pitwall runs it in ``mode="live"``: the
+brake-direction rule only, because its typed fact set already checks every figure against
+every source it saw, its live detector events can justify a brake cue the lap findings have no
+brake-point difference for, and its corner map has corners the one Layer-1 corner it fetched
+does not.
 """
 
 from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Literal
 
 from rtv.coaching.agent.validation import (
     APPROX_FRACTION,
@@ -48,7 +57,18 @@ from rtv.grounding.units import METRES_RE as _METRES_RE
 from rtv.grounding.units import ORDINALS as _ORDINALS
 from rtv.grounding.units import SECONDS_RE as _SECONDS_RE
 
-__all__ = ["CornerFacts", "ProseReport", "check_prose", "corner_facts", "result_prose"]
+__all__ = [
+    "CornerFacts",
+    "ProseReport",
+    "answer_prose",
+    "check_prose",
+    "corner_facts",
+    "result_prose",
+]
+
+#: ``"lap"``: the post-race standard (every figure, every label, every brake claim).
+#: ``"live"``: brake direction against the corners the findings hold, nothing else.
+ProseMode = Literal["lap", "live"]
 
 # ------------------------------------------------------------------ the findings, as facts
 _BRAKE_RE = re.compile(r"Brake point (\d+(?:\.\d+)?) m (late|early)")
@@ -116,10 +136,12 @@ def corner_facts(corner: dict[str, Any]) -> CornerFacts:
 def _lap_seconds(findings: dict[str, Any]) -> list[float]:
     """Lap-level time figures a headline may quote (total available, net lap, sectors)."""
     out: list[float] = []
-    chief = findings.get("chief", {})
-    for key in ("lost", "net_lap", "time_spread"):
-        if chief.get(key) is not None:
-            out.append(abs(float(chief[key])))
+    # A merged findings dict (the graph coach can retrieve several lap pairs) has one chief
+    # summary per pair in ``chiefs``.
+    for chief in findings.get("chiefs") or [findings.get("chief") or {}]:
+        for key in ("lost", "net_lap", "time_spread"):
+            if chief.get(key) is not None:
+                out.append(abs(float(chief[key])))
     for s in findings.get("sectors", []):
         if s.get("delta") is not None:
             out.append(abs(float(s["delta"])))
@@ -168,15 +190,19 @@ class ProseReport:
     supported: int = 0
     issues: list[str] = field(default_factory=list)
     corners: list[str] = field(default_factory=list)  # the corner each issue is about
+    #: What each issue is: ``"corner"`` (a label the findings lack), ``"brake"`` (a brake
+    #: direction the findings contradict or lack) or ``"figure"`` (a number they don't hold).
+    kinds: list[str] = field(default_factory=list)
 
     def ok(self) -> None:
         self.claims += 1
         self.supported += 1
 
-    def bad(self, message: str, corner: str) -> None:
+    def bad(self, message: str, corner: str, kind: str = "figure") -> None:
         self.claims += 1
         self.issues.append(message)
         self.corners.append(corner)
+        self.kinds.append(kind)
 
 
 def _merge(facts: list[CornerFacts]) -> CornerFacts:
@@ -193,7 +219,9 @@ def _merge(facts: list[CornerFacts]) -> CornerFacts:
     return m
 
 
-def _check_brake_clause(clause: str, f: CornerFacts, where: str, rep: ProseReport) -> None:
+def _check_brake_clause(
+    clause: str, f: CornerFacts, where: str, rep: ProseReport, mode: ProseMode = "lap"
+) -> None:
     """A brake-point direction claim in ``clause`` must agree with the brake finding."""
     claimed: tuple[str, str] | None = None  # (kind, direction): kind is "fix" or "state"
     if m := _FROM_TO_RE.search(clause):
@@ -211,10 +239,13 @@ def _check_brake_clause(clause: str, f: CornerFacts, where: str, rep: ProseRepor
         return
     kind, direction = claimed
     if f.brake_gap is None:
+        if mode == "live":
+            return  # the live detector events, not the lap findings, may be its basis
         rep.bad(
             f"{where}: says the brake point should be or was {direction} at {f.label}, but the "
             f"findings have no brake-point difference there.",
             f.label,
+            "brake",
         )
         return
     was = "later" if f.brake_gap > 0 else "earlier"
@@ -229,6 +260,7 @@ def _check_brake_clause(clause: str, f: CornerFacts, where: str, rep: ProseRepor
         f"{abs(f.brake_gap):.0f} m {'late' if f.brake_gap > 0 else 'early'} "
         f"(main {f.brake_main:.0f} m{ref}).",
         f.label,
+        "brake",
     )
 
 
@@ -239,14 +271,19 @@ def _check_sentence(
     lap_seconds: list[float],
     where: str,
     rep: ProseReport,
+    mode: ProseMode = "lap",
 ) -> None:
     labels = _labels(sentence)
-    for label in labels:
-        if label not in facts:
-            rep.bad(f"{where}: mentions corner {label}, which is not in the findings.", label)
+    if mode == "lap":
+        for label in labels:
+            if label not in facts:
+                msg = f"{where}: mentions corner {label}, which is not in the findings."
+                rep.bad(msg, label, "corner")
     scope = [facts[lb] for lb in labels if lb in facts]
     if labels and not scope:
-        return  # only a hallucinated corner: already flagged, nothing true to check against
+        # Only a hallucinated corner (already flagged), or, live, only corners of the map the
+        # findings don't cover: nothing true to check against.
+        return
     owner = split_corner(owner)[0]
     if not scope and owner in facts:
         scope = [facts[owner]]
@@ -263,7 +300,10 @@ def _check_sentence(
             named = [facts[lb] for lb in _labels(clause) if lb in facts]
             target = named or (scope if len(scope) == 1 else [])
             for corner in target:
-                _check_brake_clause(clause, corner, where, rep)
+                _check_brake_clause(clause, corner, where, rep, mode)
+
+    if mode == "live":
+        return
 
     for m in _METRES_RE.finditer(sentence):
         v, approx = _num(m.group("num")), bool(m.group("approx"))
@@ -299,12 +339,18 @@ def _check_sentence(
             rep.bad(msg, f.label)
 
 
-def check_prose(texts: list[tuple[str, str | None, str]], findings: dict[str, Any]) -> ProseReport:
+def check_prose(
+    texts: list[tuple[str, str | None, str]],
+    findings: dict[str, Any],
+    *,
+    mode: ProseMode = "lap",
+) -> ProseReport:
     """Check ``(where, corner_label_or_None, text)`` triples against the findings.
 
     The corner is the one the text belongs to (an advice's or a priority's); a sentence that
     names corners is checked against those instead, and a sentence with neither (a headline
-    with no label) against every corner.
+    with no label) against every corner. ``mode="live"`` is the pitwall coach's subset (see
+    the module docstring).
     """
     facts = {label: corner_facts(c) for label, c in corner_map(findings).items()}
     lap_seconds = _lap_seconds(findings)
@@ -312,7 +358,7 @@ def check_prose(texts: list[tuple[str, str | None, str]], findings: dict[str, An
     for where, owner, text in texts:
         for sentence in _SENTENCE_RE.split(text or ""):
             if sentence.strip():
-                _check_sentence(sentence, owner, facts, lap_seconds, where, rep)
+                _check_sentence(sentence, owner, facts, lap_seconds, where, rep, mode)
     return rep
 
 
@@ -330,4 +376,18 @@ def result_prose(result: dict[str, Any]) -> list[tuple[str, str | None, str]]:
         out.append((f"advice[{corner}].diagnosis", corner, a.get("diagnosis", "")))
         for i, cue in enumerate(a.get("cues", [])):
             out.append((f"advice[{corner}].cue[{i}]", corner, cue))
+    return out
+
+
+def answer_prose(answer: dict[str, Any]) -> list[tuple[str, str | None, str]]:
+    """The prose of a graph-coach answer (``CoachingAnswerPayload.model_dump()``), tagged."""
+    out: list[tuple[str, str | None, str]] = [
+        ("headline", None, answer.get("headline", "")),
+        ("one_lap_focus", None, answer.get("one_lap_focus", "")),
+    ]
+    for p in answer.get("priorities", []):
+        out.append((f"priority[{p.get('corner')}].why", p.get("corner"), p.get("why", "")))
+    for i, claim in enumerate(answer.get("claims", [])):
+        corner = claim.get("corner")
+        out.append((f"claim[{i}][{corner}].statement", corner, claim.get("statement", "")))
     return out

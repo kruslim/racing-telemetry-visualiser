@@ -4,6 +4,7 @@
    "agent": "vehicle_engineer",
    "answers": [
     {
+     "contradictions": [],
      "ok": true,
      "over_word_limit": false,
      "policy": null,
@@ -39,6 +40,7 @@
    "agent": "strategist",
    "answers": [
     {
+     "contradictions": [],
      "ok": true,
      "over_word_limit": false,
      "policy": null,
@@ -76,6 +78,7 @@
    "agent": "coach",
    "answers": [
     {
+     "contradictions": [],
      "ok": true,
      "over_word_limit": false,
      "policy": null,
@@ -113,6 +116,7 @@
    "agent": "vehicle_engineer",
    "answers": [
     {
+     "contradictions": [],
      "ok": false,
      "over_word_limit": true,
      "policy": null,
@@ -123,6 +127,7 @@
      ]
     },
     {
+     "contradictions": [],
      "ok": true,
      "over_word_limit": false,
      "policy": null,
@@ -158,6 +163,7 @@
    "agent": "spotter",
    "answers": [
     {
+     "contradictions": [],
      "ok": true,
      "over_word_limit": false,
      "policy": null,
@@ -194,6 +200,7 @@
    "agent": "strategist",
    "answers": [
     {
+     "contradictions": [],
      "ok": true,
      "over_word_limit": false,
      "policy": null,
@@ -231,6 +238,7 @@
    "agent": "strategist",
    "answers": [
     {
+     "contradictions": [],
      "ok": true,
      "over_word_limit": false,
      "policy": null,
@@ -268,6 +276,7 @@
    "agent": "coach",
    "answers": [
     {
+     "contradictions": [],
      "ok": true,
      "over_word_limit": false,
      "policy": null,
@@ -305,6 +314,7 @@
    "agent": "coach",
    "answers": [
     {
+     "contradictions": [],
      "ok": true,
      "over_word_limit": false,
      "policy": null,
@@ -340,6 +350,7 @@
    "agent": "coach",
    "answers": [
     {
+     "contradictions": [],
      "ok": true,
      "over_word_limit": false,
      "policy": null,
@@ -375,6 +386,7 @@
    "agent": "vehicle_engineer",
    "answers": [
     {
+     "contradictions": [],
      "ok": true,
      "over_word_limit": false,
      "policy": null,
@@ -412,6 +424,7 @@
    "agent": "coach",
    "answers": [
     {
+     "contradictions": [],
      "ok": true,
      "over_word_limit": false,
      "policy": null,

@@ -343,6 +343,7 @@ def _layer1_corner(ctx: ToolContext, pct: float | None) -> dict[str, Any]:
                 {
                     "agent": d.agent,
                     "text": d.text,
+                    "distance_m": round(d.distance, 1),
                     "time_loss_s": round(d.time_loss, 4),
                     "lockup": d.lockup,
                     "good": d.good,
