@@ -1,8 +1,8 @@
 # Racing Telemetry Visualiser
 
 **A live AI pit crew for iRacing.** RTV reads a car's telemetry 60 times a second, works out
-the race state with plain code, and wakes four LLM agents (strategist, vehicle engineer,
-spotter and driving coach) only when something happens. They talk to the driver on one radio
+the race state with plain code, and wakes five LLM agents (strategist, vehicle engineer,
+spotter, driving coach and race control) only when something happens. They talk to the driver on one radio
 channel, and every number they say is checked against the data before it is spoken. After
 the race, a review replays everything the agents saw and said.
 
@@ -76,7 +76,7 @@ flowchart LR
     S --> F[Lap findings<br/>deterministic coaching]
     E -- race events --> O[Orchestrator<br/>triggers, cooldowns, budget]
     O -- template calls --> R
-    O --> G[Agents on Kimi<br/>strategist, engineer,<br/>spotter, coach]
+    O --> G[Agents on Kimi<br/>strategist, engineer,<br/>spotter, coach, race control]
     F --> G
     G --> V[Fact check<br/>every figure vs the data]
     V --> R[Radio feed<br/>priority, supersede, late/expired]

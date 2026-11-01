@@ -30,6 +30,7 @@ from rtv.logging import get_logger
 from rtv.racestate import channels as ch
 from rtv.racestate import detectors as det
 from rtv.racestate import plan as race_plan
+from rtv.racestate import race_control as rc
 from rtv.racestate.bus import EventBus
 from rtv.racestate.lifecycle import SessionLifecycle, Signal
 from rtv.racestate.models import (
@@ -208,6 +209,11 @@ class RaceStateEngine:
             self._alongside: str | None = None
             self._health_latched: str | None = None
             self._tyre_latched: str | None = None
+
+            # race control (stage 09): incidents vs limit, offs, penalty flags
+            self._race_control = rc.RaceControlMonitor(self.config)
+            self._race_control.set_limit(*rc.incident_limit_from(self._session_info))
+            self._sync_race_control()
 
             # stint / tyres
             self._lap_had_pit = False
@@ -394,6 +400,10 @@ class RaceStateEngine:
             name = weekend.get("TrackDisplayName") or weekend.get("TrackName")
             if name:
                 self._state.session.track_name = str(name)
+            # The incident limit lives in the document, not in a channel.
+            self._race_control.set_limit(*rc.incident_limit_from(info))
+            self._race_control_capabilities(self._state.capabilities)
+            self._sync_race_control()
 
     def setup_snapshot(self) -> dict[str, Any]:
         """The car setup as the sim reported it, or a stated reason it is absent.
@@ -494,6 +504,7 @@ class RaceStateEngine:
             and ch.THROTTLE in catalog
             and ch.SPEED in catalog,
         )
+        self._race_control_capabilities(caps)
         if not caps.tyres:
             missing.extend(sorted(set(ch.TYRE_TEMP.values()) | set(ch.TYRE_PRESSURE.values())))
         if not caps.lockup:
@@ -502,6 +513,37 @@ class RaceStateEngine:
             missing.extend(ch.WHEEL_SPEED[c] for c in ch.REAR_WHEELS)
         caps.missing = sorted(set(missing))
         return caps
+
+    def _race_control_capabilities(self, caps: Capabilities) -> None:
+        """Race control's four flags, and why any of them is off (stage 09).
+
+        The incident limit is a session-info fact, not a channel, so it is re-read
+        whenever the document arrives (:meth:`set_session_info`).
+        """
+        limit, source = rc.incident_limit_from(self._session_info)
+        caps.incident_limit = caps.incidents and limit is not None
+        caps.track_limits = caps.offtrack
+        caps.penalties = caps.flags
+        caps.blue_flag_compliance = caps.standings
+        missing: dict[str, list[str]] = {}
+        if not caps.incidents:
+            missing["incident_limit"] = [ch.PLAYER_INCIDENTS]
+        elif limit is None:
+            missing["incident_limit"] = [f"{rc.INCIDENT_LIMIT_KEY}: {source}"]
+        if not caps.offtrack:
+            missing["track_limits"] = [ch.PLAYER_TRACK_SURFACE]
+        if not caps.flags:
+            missing["penalties"] = [ch.SESSION_FLAGS]
+        if not caps.standings:
+            # Blue-flag compliance needs the field: a replayed .ibt has no CarIdx arrays.
+            missing["blue_flag_compliance"] = list(ch.REQUIRED["standings"])
+        self._race_control_missing = missing
+
+    def _sync_race_control(self) -> None:
+        """Copy the monitor into ``RaceState.race_control`` (only when it changed)."""
+        self._state.race_control = self._race_control.summary(
+            getattr(self, "_race_control_missing", {}), self._state.player.lap
+        )
 
     # ------------------------------------------------------------------
     # ingress
@@ -746,6 +788,17 @@ class RaceStateEngine:
             f.time_in_state = max(0.0, now - f.since_session_time)
         if phase is not FlagPhase.GREEN:
             self._lap_all_green = False
+        changes = self._race_control.observe_flags(active, now)
+        for payload in changes:
+            if payload["state"] == "cleared":
+                severity = Severity.INFO
+            elif payload["flag"] == "furled":
+                severity = Severity.ADVISORY
+            else:
+                severity = Severity.CRITICAL
+            events.append(self._event(EventType.PENALTY, severity, payload))
+        if changes:
+            self._sync_race_control()
 
     def _update_player(self, values: Mapping[str, Any]) -> None:
         p = self._state.player
@@ -1011,29 +1064,68 @@ class RaceStateEngine:
                 "wheelspin", det.detect_wheelspin(window, self.config), events,
                 EventType.WHEELSPIN, Severity.INFO,
             )
+        rc_changed = False
         if caps.offtrack:
             payload = det.detect_offtrack(window)
             if payload:
                 events.append(
                     self._event(EventType.OFFTRACK, Severity.ADVISORY, payload)
                 )
+                rc_changed = True
+                limits = self._race_control.observe_off(
+                    lap=self._state.player.lap,
+                    session_time=self._state.session_time,
+                    lap_dist_pct=payload.get("lap_dist_pct"),
+                )
+                if limits:
+                    events.append(self._event(EventType.TRACK_LIMITS, Severity.ADVISORY, limits))
         if caps.incidents:
+            count = self._state.player.incidents
+            stage = None
+            if count != self._race_control.incidents:
+                rc_changed = True
+                stage = self._race_control.observe_incidents(count)
             payload = det.detect_incident(window)
             if payload:
+                limit = self._race_control.limit
+                if limit is not None:
+                    # A known limit makes the count a race-control read-out.
+                    payload["incident_limit"] = limit
+                    payload["incidents_remaining"] = self._race_control.remaining()
+                    payload["incident_stage"] = self._race_control.stage
                 events.append(
                     self._event(EventType.INCIDENT, Severity.CRITICAL, payload)
                 )
+            if stage:
+                events.append(
+                    self._event(
+                        EventType.INCIDENT_LIMIT,
+                        Severity.ADVISORY if stage["stage"] == "approaching" else Severity.CRITICAL,
+                        stage,
+                    )
+                )
+        if rc_changed:
+            self._sync_race_control()
         if caps.pit:
             self._pit_transitions(events)
         if caps.standings:
+            blue = det.detect_blue_flag(self._state.standings, self.config)
             self._latching(
                 "blue_flag",
-                det.detect_blue_flag(self._state.standings, self.config),
+                blue,
                 events,
                 EventType.BLUE_FLAG,
                 Severity.ADVISORY,
                 cooldown=5.0,
             )
+            me = next((c for c in self._state.standings.cars if c.is_player), None)
+            ignored = self._race_control.observe_blue(
+                blue, me.laps_completed if me is not None else None, self._state.session_time
+            )
+            if ignored:
+                events.append(
+                    self._event(EventType.BLUE_FLAG_IGNORED, Severity.ADVISORY, ignored)
+                )
             self._check_traffic(events)
         if caps.car_health:
             self._check_car_health(events)
@@ -1299,6 +1391,8 @@ class RaceStateEngine:
             lap_time = round(frame.session_time - self._lap_started_at, 3)
         self._lap_started_at = frame.session_time
         p = self._state.player
+        self._race_control.roll_lap(completion.get("new_lap"))
+        self._sync_race_control()
 
         events.append(
             self._event(

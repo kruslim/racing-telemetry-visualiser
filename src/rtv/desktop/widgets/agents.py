@@ -29,6 +29,7 @@ LAYOUT = {
     "vehicle_engineer": (5, 1),
     "spotter": (5, 2),
     "coach": (5, 3),
+    "race_control": (5, 4),
     "llm": (6, 0),
     "tools": (6, 1),
     "validator": (7, 0),
@@ -119,8 +120,9 @@ class FlowGraph(QWidget):
             gap = 14
             bw = span - gap
             if col == 5:
-                bh = 26
-                y = 10 + row * (bh + 8)
+                # Five agents stacked: 5 x 24 + 4 x 6 fits the 168 px minimum.
+                bh = 24
+                y = 8 + row * (bh + 6)
             elif col == 6:
                 bh = 28
                 y = 28 + row * (bh + 26)
@@ -215,7 +217,7 @@ class FlowGraph(QWidget):
         font.setBold(True)
         p.setFont(font)
         p.setPen(QColor(ink))
-        name = "engineer" if node == "vehicle_engineer" else node
+        name = {"vehicle_engineer": "engineer", "race_control": "race control"}.get(node, node)
         if not is_agent:
             name = p.fontMetrics().elidedText(name, Qt.TextElideMode.ElideRight,
                                               int(rect.width()) - 4)

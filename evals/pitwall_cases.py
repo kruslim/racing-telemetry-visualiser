@@ -24,6 +24,7 @@ from typing import Any
 
 from evals.synthetic_race import ScenarioSpec, replay_scenario
 from rtv.pitwall.agents.coach import COACH
+from rtv.pitwall.agents.race_control import RACE_CONTROL
 from rtv.pitwall.agents.spotter import SPOTTER
 from rtv.pitwall.agents.strategist import STRATEGIST
 from rtv.pitwall.agents.vehicle_engineer import VEHICLE_ENGINEER
@@ -574,6 +575,108 @@ def coach_degraded_cases() -> list[EvalCase]:
 
 
 # --------------------------------------------------------------------------
+# stage 09: race control
+# --------------------------------------------------------------------------
+#: A 17x race with a pattern race control must react to: 4x on lap 1, 4x and an
+#: off on lap 2 (three offs in two laps, the third at 10x of 17: track limits close
+#: to the limit), 4x on lap 3 (14x: one heavy contact from the limit) and a black
+#: flag shown on lap 4 and cleared at the lap-5 pit entry it was served at.
+RACE_CONTROL_SCENARIO = ScenarioSpec(
+    incident_limit="17",
+    incidents=((1, 0.50, 4), (2, 0.20, 4), (2, 0.70, 2), (3, 0.10, 4)),
+    offtracks=((1, 0.50, 0.52), (2, 0.20, 0.22), (2, 0.80, 0.82)),
+    penalty_flags=((4, 0.60, 1.00, 0x10000), (5, 0.00, 0.86, 0x10000)),
+)
+
+
+def race_control_degraded_cases() -> list[EvalCase]:
+    """No consequence, no penalty channel, and the blue flag only a live field can show."""
+    base = _end_of_scenario_state(ROLE_DETECTOR_CONFIG, RACE_CONTROL_SCENARIO)
+    events = _scenario_events(spec=RACE_CONTROL_SCENARIO)
+    out: list[EvalCase] = []
+
+    approaching = base.model_copy(deep=True)
+    # Back to 9x of 17: eight left, two heavy contacts from the limit.
+    approaching.player.incidents = 9
+    approaching.race_control.incidents = 9
+    approaching.race_control.incidents_remaining = 8
+    approaching.race_control.incident_stage = "approaching"
+    out.append(
+        EvalCase(
+            name="race-control-approaching-only",
+            event=_synthetic_event(
+                approaching,
+                "incident_limit",
+                {
+                    "stage": "approaching",
+                    "incidents": approaching.race_control.incidents,
+                    "incident_limit": approaching.race_control.incident_limit,
+                    "incidents_remaining": approaching.race_control.incidents_remaining,
+                },
+            ),
+            state=approaching,
+            events=events,
+            note="Approaching is a read-out the template already made: the answer is 'none'.",
+            agent=RACE_CONTROL.name,
+        )
+    )
+
+    blind = base.model_copy(deep=True)
+    blind.capabilities.penalties = False
+    blind.race_control.penalty = []
+    blind.race_control.serve_in_pit = False
+    blind.race_control.missing["penalties"] = ["SessionFlags"]
+    out.append(
+        EvalCase(
+            name="race-control-no-flags-channel",
+            event=_synthetic_event(
+                blind,
+                "track_limits",
+                {
+                    "offs": 3,
+                    "window_laps": 3,
+                    "threshold": 3,
+                    "laps": [blind.player.lap],
+                    "incidents": blind.race_control.incidents,
+                    "incident_limit": blind.race_control.incident_limit,
+                    "incidents_remaining": blind.race_control.incidents_remaining,
+                    "approach_margin": 8,
+                },
+            ),
+            state=blind,
+            events=events,
+            note="No SessionFlags: speak to the incident count, never claim a penalty.",
+            agent=RACE_CONTROL.name,
+        )
+    )
+
+    field = _end_of_scenario_state(ROLE_DETECTOR_CONFIG, ROLE_SCENARIO)
+    lapping = next((c for c in field.standings.cars if not c.is_player), None)
+    out.append(
+        EvalCase(
+            name="race-control-blue-flag-held-up",
+            event=_synthetic_event(
+                field,
+                "blue_flag_ignored",
+                {
+                    "car_idx": lapping.idx if lapping else None,
+                    "position": lapping.position if lapping else None,
+                    "gap": 1.2,
+                    "laps_ahead": 1.0,
+                    "corners": 3,
+                    "threshold_corners": 3,
+                },
+            ),
+            state=field,
+            events=_scenario_events(),
+            note="A car a lap up held behind us for three corners: let it through.",
+            agent=RACE_CONTROL.name,
+        )
+    )
+    return out
+
+
+# --------------------------------------------------------------------------
 # C1: a driver question that needs the agent's judgement
 # --------------------------------------------------------------------------
 #: One question per agent that no template answers (the router gives no intent).
@@ -582,6 +685,7 @@ QUESTIONS = {
     "vehicle_engineer": "How are the tyres holding up?",
     "spotter": "Anyone close enough to attack me?",
     "coach": "Where am I losing time?",
+    "race_control": "Do I need to serve this penalty now?",
 }
 
 
@@ -626,7 +730,11 @@ ROLE_BUILDERS = {
     VEHICLE_ENGINEER.name: (VEHICLE_ENGINEER, engineer_degraded_cases),
     SPOTTER.name: (SPOTTER, spotter_degraded_cases),
     COACH.name: (COACH, coach_degraded_cases),
+    RACE_CONTROL.name: (RACE_CONTROL, race_control_degraded_cases),
 }
+
+#: Agents whose scripted race is not :data:`ROLE_SCENARIO`.
+ROLE_SCENARIOS = {RACE_CONTROL.name: RACE_CONTROL_SCENARIO}
 
 
 def build_agent_cases(agent: str) -> list[EvalCase]:
@@ -637,7 +745,9 @@ def build_agent_cases(agent: str) -> list[EvalCase]:
         raise KeyError(f"No eval cases are defined for agent {agent!r}")
     spec, degraded = ROLE_BUILDERS[agent]
     return (
-        scenario_cases(ROLE_SCENARIO, agent=spec, config=ROLE_DETECTOR_CONFIG)
+        scenario_cases(
+            ROLE_SCENARIOS.get(agent, ROLE_SCENARIO), agent=spec, config=ROLE_DETECTOR_CONFIG
+        )
         + degraded()
         + question_cases(agent)
     )
@@ -754,6 +864,15 @@ _SWAPS: dict[str, tuple[str, str, tuple[str, str], str, tuple[str, ...], dict]] 
         "event.speed",
         ("event.lap_dist_pct", "race_state.player.lap_dist_pct", "race_state.player.lap"),
         {"theme": "line", "cue": "Brake a touch earlier.", "corner": None},
+    ),
+    # Stage 09: the incident figures are a count family of their own.
+    "race_control": (
+        "incident_limit",
+        "{v} incidents left before the limit, keep it clean.",
+        ("incidents", "x"),
+        "event.incidents_remaining",
+        ("event.delta", "race_state.player.position", "race_state.player.lap"),
+        {"consequence": "incident_limit", "confidence": "high"},
     ),
 }
 

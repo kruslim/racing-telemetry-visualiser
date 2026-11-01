@@ -89,6 +89,19 @@ class EventType(StrEnum):
     #: ``payload.question_id`` the driver transcript's radio ``message_id``. See
     #: :mod:`rtv.pitwall.questions`. On the bus so the journal records it.
     DRIVER_QUESTION = "driver_question"
+    #: Race control (stage 09, :mod:`rtv.racestate.race_control`). Aggregates of
+    #: what the stewards would see, computed in the engine before any agent wakes.
+    #: ``incident_limit``: the player's incident count crossed a stage against the
+    #: session's limit (``approaching``, ``final`` = one 4x from it, ``reached``).
+    INCIDENT_LIMIT = "incident_limit"
+    #: Repeated off-tracks inside a window of laps (from the offtrack detector).
+    TRACK_LIMITS = "track_limits"
+    #: A driver flag on the player changed (SessionFlags black, furled, repair,
+    #: disqualify): ``payload.flag``, ``payload.state`` ``shown`` or ``cleared``.
+    PENALTY = "penalty"
+    #: A car lapping us stayed within the blue-flag gap for N corners. Needs
+    #: CarIdx standings, so it never fires on a replayed ``.ibt``.
+    BLUE_FLAG_IGNORED = "blue_flag_ignored"
 
 
 class FlagPhase(StrEnum):
@@ -155,6 +168,16 @@ class Capabilities(BaseModel):
     lifecycle: bool = False
     #: ``CarLeftRight`` is present (live sessions only), so ``car_alongside`` fires.
     car_alongside: bool = False
+    #: Race control (stage 09). ``incident_limit``: the incident counter exists
+    #: *and* the session-info YAML gives a numeric ``IncidentLimit``.
+    #: ``track_limits``: the offtrack detector runs. ``penalties``: SessionFlags is
+    #: present, so the player's black / furled / repair / DQ bits are read.
+    #: ``blue_flag_compliance``: CarIdx standings exist. Why one is False is in
+    #: :attr:`RaceState.race_control` ``.missing``.
+    incident_limit: bool = False
+    track_limits: bool = False
+    penalties: bool = False
+    blue_flag_compliance: bool = False
     #: Channels the engine looked for and did not find, for operator diagnosis.
     missing: list[str] = Field(default_factory=list)
 
@@ -431,6 +454,43 @@ class RacePlan(BaseModel):
     revisions: list[PlanRevision] = Field(default_factory=list)
 
 
+class TrackOff(BaseModel):
+    """One off-track the race-control window counts."""
+
+    lap: int | None = None
+    session_time: float = 0.0
+    lap_dist_pct: float | None = None
+
+
+class RaceControlState(BaseModel):
+    """What the stewards would see about the player (:mod:`rtv.racestate.race_control`).
+
+    Every number is copied from a channel or the session-info YAML; a detector the
+    catalog cannot back is listed in :attr:`missing` with why, never guessed.
+    """
+
+    incidents: int | None = None
+    #: The session's incident limit from ``WeekendOptions.IncidentLimit``; ``None``
+    #: when it is "unlimited" or absent (:attr:`limit_source` says which).
+    incident_limit: int | None = None
+    incidents_remaining: int | None = None
+    #: ``session_info`` | ``unlimited`` | ``absent`` | ``unreadable``
+    limit_source: str = "absent"
+    #: The last incident-limit stage reached: approaching | final | reached.
+    incident_stage: str | None = None
+    #: Off-tracks inside the last :attr:`offs_window_laps` laps.
+    offs_in_window: int = 0
+    offs_window_laps: int = 0
+    offs: list[TrackOff] = Field(default_factory=list)
+    #: The player's driver flags now showing (black, furled, repair, disqualify).
+    penalty: list[str] = Field(default_factory=list)
+    penalty_since: float | None = None
+    #: True when a showing penalty is served in the pit lane (black, repair).
+    serve_in_pit: bool = False
+    #: detector -> why it cannot run on this session.
+    missing: dict[str, list[str]] = Field(default_factory=dict)
+
+
 class RaceState(BaseModel):
     """The single continuously-updated object the pitwall reasons over."""
 
@@ -458,6 +518,8 @@ class RaceState(BaseModel):
     laps: list[LapRecord] = Field(default_factory=list)
     #: The race plan; ``None`` outside race segments and before the data supports one.
     plan: RacePlan | None = None
+    #: Incidents against the limit, track-limit offs, penalty flags (stage 09).
+    race_control: RaceControlState = Field(default_factory=RaceControlState)
     capabilities: Capabilities = Field(default_factory=Capabilities)
     metrics: EngineMetrics = Field(default_factory=EngineMetrics)
 

@@ -186,6 +186,10 @@ class Settings(BaseSettings):
     pitwall_coach_model: str = Field(
         default="", description="Override the live coach's model. Empty = RTV_LLM_KIMI_MODEL_FAST."
     )
+    pitwall_race_control_model: str = Field(
+        default="",
+        description="Override race control's model. Empty = RTV_LLM_KIMI_MODEL_FAST.",
+    )
     pitwall_strategist_max_age_s: float | None = Field(
         default=None,
         description=(
@@ -214,6 +218,14 @@ class Settings(BaseSettings):
         description=(
             "Seconds a coach call may wait for the radio before it airs "
             "tagged late. Unset = the agent's default (30 s); 0 = never tagged late."
+        ),
+    )
+    pitwall_race_control_max_age_s: float | None = Field(
+        default=None,
+        description=(
+            "Seconds a race-control agent call may wait for the radio before it airs "
+            "tagged late. Unset = the agent's default (15 s); 0 = never tagged late. "
+            "Its template read-outs (incidents, flags) use 5 s."
         ),
     )
     pitwall_agents_only: str = Field(

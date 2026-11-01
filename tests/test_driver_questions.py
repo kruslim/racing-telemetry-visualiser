@@ -89,6 +89,12 @@ ROUTES = [
     ("Am I braking too late into T1?", "coach", None),
     ("Why was that last lap slow?", "coach", None),
     ("How's my line through Pouhon", "coach", None),
+    # race control (stage 09)
+    ("How many incidents do I have?", "race_control", "incidents"),
+    ("incident count?", "race_control", "incidents"),
+    ("Do I need to serve this penalty now?", "race_control", None),
+    ("Is that a black flag?", "race_control", None),
+    ("Am I close to a drive through for track limits?", "race_control", None),
     # nothing matched: the strategist, flagged unmatched
     ("hello?", "strategist", None),
 ]

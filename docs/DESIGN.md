@@ -77,7 +77,7 @@ flowchart TB
         BUS[event bus]
         ORC[pitwall orchestrator]
         TPL[template callers]
-        AG[agents: strategist, engineer, spotter, coach]
+        AG[agents: strategist, engineer, spotter, coach, race control]
         VAL[validator]
         RAD[radio feed]
         JRN[(race journal)]

@@ -6,8 +6,8 @@ DuckDB metadata tables plus per-lap Parquet, and serves it over a FastAPI REST A
 Layer 1 deterministic lap findings (the ground truth), Layer 2 an MCP server, Layer 3a
 a multi-agent orchestrator, Layer 3b a LangGraph coach with grounded refusal and
 in-loop citation checks, plus a hermetic eval harness. v2 adds a live pitwall: a
-deterministic race-state engine, four event-driven agents (strategist, vehicle engineer,
-spotter, coach) on one prioritised radio feed, browser TTS, and a live pit-stand UI.
+deterministic race-state engine, five event-driven agents (strategist, vehicle engineer,
+spotter, coach, race control) on one prioritised radio feed, browser TTS, and a live pit-stand UI.
 `README.md` is the public overview and `docs/DESIGN.md` the system design (`docs/API.md`
 is the route reference); `docs/COACHING.md`, `docs/PITWALL.md`, `docs/TRACKS.md`,
 `docs/VISION.md`, `docs/VARIABLES.md` and `docs/WEEKLY_EVAL.md` go deeper.

@@ -165,7 +165,7 @@ def test_the_agent_layer_boots_with_the_app(client):
     assert status["enabled"] is True
     assert status["healthy"] is True
     assert [a["name"] for a in status["agents"]] == [
-        "strategist", "vehicle_engineer", "spotter", "coach"
+        "strategist", "vehicle_engineer", "spotter", "coach", "race_control"
     ]
 
 
