@@ -74,6 +74,12 @@ live corner map):
   circuits use ("the Esses", "Hairpin", "Club", "Turn 5") never count as another
   circuit's name, and corner types ("T8 Hairpin") are not names.
 
+Layer 1 numbers corners per lap pair, so another pair's `T3` can be the map's `T2`.
+The pitwall lines a Layer-1 label from `get_corner_detail` up with the live map corner
+nearest its apex, and merged findings with two numberings make the second label an
+alias, so a name is held to either. R3 (one numbering on every lap) removes this at
+the source.
+
 A wrong name is a `name` issue in the prose report and a `contradictions` entry in the
 pitwall's grounding report, with the same repair turn and refusal as an invented figure.
 The swapped-name golden cases are `evals.pitwall_cases.swapped_name_cases` (Spa and a

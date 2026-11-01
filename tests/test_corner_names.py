@@ -287,3 +287,47 @@ def test_a_swapped_name_is_caught(case):
     scored = _score(case, case.swapped)
     assert not scored["grounding_ok"], case.describe()
     assert any(issue.startswith("corner name:") for issue in scored["issues"])
+
+
+# --------------------------------------------------------------------------
+# Layer 1 numbers corners per lap pair: another pair's label is the same corner
+# --------------------------------------------------------------------------
+def test_a_layer1_label_from_another_lap_pair_lines_up_by_position():
+    """D6b: Spa's T3 was Les Combes on one lap pair and Bruxelles on another."""
+    facts = FactSet()
+    track = {
+        "provisional": False,
+        "corners": [
+            {"label": "T2", "name": "Les Combes", "lap_dist_pct": 0.3597},
+            {"label": "T3", "name": "Bruxelles", "lap_dist_pct": 0.4383},
+        ],
+    }
+    facts.add("race_state", {"track": track})
+    detail = {
+        "telemetry": {
+            "available": True,
+            "corner": {"label": "T3", "lap_dist_pct": 0.3601, "distance_m": 2495.0},
+        }
+    }
+    facts.add("get_corner_detail", detail)
+    payload = {"theme": "braking", "corner": "T3"}
+    assert validate_output("T3 Les Combes: brake earlier.", "", facts, payload).ok
+    assert validate_output("Les Combes again, brake earlier.", "", facts, payload).ok
+    assert not validate_output("T3 Campus: brake earlier.", "", facts, payload).ok
+
+
+def test_merged_findings_with_two_numberings_accept_either_name():
+    findings = {
+        "corners": [
+            {"label": "T2", "name": "Les Combes", "distance": 2490.0, "diags": []},
+            {"label": "T3", "name": "Bruxelles", "distance": 3030.0, "diags": []},
+            {"label": "T3", "name": "Les Combes", "distance": 2495.0, "diags": []},
+        ],
+        "venue": "spa",
+    }
+    texts = [("claim[0][T3].statement", "T3", "Les Combes costs you the most.")]
+    assert check_prose(texts, findings).issues == []
+    texts = [("claim[0][T3].statement", "T3", "T3 Bruxelles costs you the most.")]
+    assert check_prose(texts, findings).issues == []
+    texts = [("claim[0][T3].statement", "T3", "T3 La Source costs you the most.")]
+    assert check_prose(texts, findings).kinds == ["name"]

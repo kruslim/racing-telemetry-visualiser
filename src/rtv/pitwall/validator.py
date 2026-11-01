@@ -126,6 +126,8 @@ class FactSet:
         #: Corner label -> mapped name (or None) for every ``{label, name}`` place the agent
         #: was shown: the live corner map, event places, tool results.
         self.places: dict[str, str | None] = {}
+        #: Where each map label's apex is (lap fraction), to line up Layer-1 labels.
+        self.place_pct: dict[str, float] = {}
         #: The corner the triggering event happened at, when its place is on the map.
         self.event_corner: str | None = None
         #: Sources that announce rain or a wet track (see :meth:`has_weather`).
@@ -142,9 +144,11 @@ class FactSet:
         corner = layer1_corner(payload)
         if corner is not None:
             self.corners.setdefault(corner["label"], corner)
-        for label, name in _walk_places(payload):
+        for label, name, pct in _walk_places(payload):
             if name or label not in self.places:
                 self.places[label] = name
+            if pct is not None:
+                self.place_pct.setdefault(label, pct)
         if source == "event" and isinstance(payload, dict):
             place = payload.get("place")
             if isinstance(place, dict) and not place.get("provisional") and place.get("label"):
@@ -532,9 +536,10 @@ def _render(value: float) -> str:
 _MAP_LABEL_RE = re.compile(r"T\d{1,2}")
 
 
-def _walk_places(payload: Any) -> list[tuple[str, str | None]]:
-    """Every ``{label: "T7", name: ...}`` place in ``payload`` (corner map rows, event places)."""
-    out: list[tuple[str, str | None]] = []
+def _walk_places(payload: Any) -> list[tuple[str, str | None, float | None]]:
+    """Every ``{label: "T7", name: ...}`` place in ``payload`` (corner map rows, event places),
+    with its lap fraction when it has one."""
+    out: list[tuple[str, str | None, float | None]] = []
     stack: list[Any] = [payload]
     while stack:
         item = stack.pop()
@@ -549,7 +554,9 @@ def _walk_places(payload: Any) -> list[tuple[str, str | None]]:
                 and (item["name"] is None or isinstance(item["name"], str))
                 and not item.get("provisional")
             ):
-                out.append((label, item["name"] or None))
+                pct = item.get("lap_dist_pct")
+                pct = float(pct) if _is_number(pct) else None
+                out.append((label, item["name"] or None, pct))
             stack.extend(item.values())
         elif isinstance(item, (list, tuple)):
             stack.extend(item)
@@ -579,6 +586,8 @@ def name_issues(
     about = [split_corner(cited)[0] if isinstance(cited, str) and cited.strip() else None]
     about.append(facts.event_corner)
     names = CornerNames.build(facts.places)
+    for label, other in _layer1_aliases(facts).items():
+        names.alias(label, other)
     texts = [("spoken_text", spoken_text or "", True), ("detail_text", detail_text or "", False)]
     for key, value in data.items():
         if isinstance(value, str) and key not in _NOT_PROSE and key not in _BASE_TEXT:
@@ -589,6 +598,29 @@ def name_issues(
     for where, text, bound in texts:
         issues += [i.message for i in names.check(text, about if bound else (), where)]
     return list(dict.fromkeys(issues))
+
+
+def _layer1_aliases(facts: FactSet) -> dict[str, str]:
+    """Layer-1 labels a tool returned that the live map numbers differently, by position.
+
+    ``get_corner_detail`` numbers corners on the lap pair it analysed, and Layer 1 numbers
+    each lap on its own: its ``T3`` can be the map's ``T2``. The map corner nearest the
+    Layer-1 apex is the one it means.
+    """
+    out: dict[str, str] = {}
+    if not facts.place_pct:
+        return out
+    for label, corner in facts.corners.items():
+        pct = corner.get("lap_dist_pct")
+        if not _is_number(pct):
+            continue
+        nearest = min(
+            facts.place_pct,
+            key=lambda lb: min(abs(facts.place_pct[lb] - pct), 1 - abs(facts.place_pct[lb] - pct)),
+        )
+        if nearest != label:
+            out[label] = nearest
+    return out
 
 
 #: The answer's own text fields, passed separately (a flat answer dict carries them too).
@@ -635,6 +667,7 @@ def layer1_corner(payload: Any) -> dict[str, Any] | None:
     return {
         "label": str(corner["label"]),
         "distance": corner.get("distance_m"),
+        "lap_dist_pct": corner.get("lap_dist_pct"),
         "min_main": corner.get("min_speed_kmh"),
         "min_ref": corner.get("ref_min_speed_kmh"),
         "net_dt": corner.get("time_delta_s"),

@@ -178,6 +178,10 @@ class CornerNames:
     venue: str | None = None
     #: name_key -> owning label, for names of this circuit placed on the lap.
     owners: dict[str, str | None] = field(default_factory=dict)
+    #: label -> other map labels it may also stand for. Layer 1 numbers corners per lap
+    #: pair, so a ``T3`` from another lap pair (a tool result, a second retrieved pair) can be
+    #: the map's ``T2``; a name is then held to either. Filled by :meth:`alias`.
+    aliases: dict[str, set[str]] = field(default_factory=dict)
     _compiled: tuple[re.Pattern[str] | None, dict[str, _Known]] | None = field(
         default=None, repr=False, compare=False
     )
@@ -208,9 +212,39 @@ class CornerNames:
 
     @classmethod
     def from_findings(cls, findings: Mapping[str, Any]) -> CornerNames:
-        """From a Layer-1 findings dict (``corners`` with ``name``, optional ``places``)."""
-        labels = {c["label"]: c.get("name") for c in findings.get("corners", []) if "label" in c}
-        return cls.build(labels, findings.get("places") or (), findings.get("venue"))
+        """From a Layer-1 findings dict (``corners`` with ``name``, optional ``places``).
+
+        A merged dict (the graph coach's several lap pairs) can hold one label twice, each
+        pair numbering its own lap: the first one names the label, and a later one with
+        another name makes the label an alias of the corner that name belongs to.
+        """
+        labels: dict[str, str | None] = {}
+        later: list[tuple[str, str]] = []
+        for c in findings.get("corners", []):
+            if "label" not in c:
+                continue
+            if c["label"] not in labels:
+                labels[c["label"]] = c.get("name")
+            elif c.get("name") and name_key(c["name"]) != name_key(labels[c["label"]]):
+                later.append((c["label"], c["name"]))
+        names = cls.build(labels, findings.get("places") or (), findings.get("venue"))
+        for label, name in later:
+            owner = names.owners.get(name_key(name))
+            if owner:
+                names.alias(label, owner)
+        return names
+
+    def alias(self, label: str, other: str) -> None:
+        """``label`` may also mean the map's ``other`` (another lap pair's numbering)."""
+        if label != other:
+            self.aliases.setdefault(label, set()).add(other)
+            self._compiled = None
+
+    def _also(self, label: str) -> set[str]:
+        return {label} | self.aliases.get(label, set())
+
+    def _knows(self, label: str) -> bool:
+        return label in self.labels or label in self.aliases
 
     # ---- the vocabulary for one session --------------------------------------------------
     def _known(self) -> dict[str, _Known]:
@@ -280,21 +314,28 @@ class CornerNames:
                 names.append((m.start(), m.end(), known))
         labels = [(m.start(), m.end(), f"T{int(m.group(1))}") for m in _LABEL_RE.finditer(folded)]
         # Only corners of the map count: a wheel ("RF") or a provisional bucket is no corner.
-        scope = {lb for lb in owners | {lb for _, _, lb in labels} if lb in self.labels}
+        scope = {
+            other
+            for lb in owners | {lb for _, _, lb in labels}
+            if self._knows(lb)
+            for other in self._also(lb)
+        }
         adjacent: set[int] = set()
 
         for start, end, label in labels:
-            if label not in self.labels:
+            if not self._knows(label):
                 continue  # an unknown label is the label check's business
             sep = _SEP_RE.match(folded, end)
             at = sep.end() if sep and sep.end() > end else None
             if at is None:
                 continue
             hit = next((n for n in names if n[0] == at), None)
-            truth = self.labels[label]
+            allowed = self._also(label)
+            truths = [t for t in (self.labels.get(lb) for lb in sorted(allowed)) if t]
+            truth = " or ".join(truths) or None
             if hit is not None:
                 adjacent.add(hit[0])
-                if hit[2].label == label or (truth and name_key(hit[2].name) == name_key(truth)):
+                if hit[2].label in allowed or name_key(hit[2].name) in map(name_key, truths):
                     continue
                 issues.append(NameIssue(self._wrong(where, label, hit[2].name, truth), label))
                 continue
@@ -306,7 +347,7 @@ class CornerNames:
             cand = _candidate(folded, at)
             if cand is None:
                 continue
-            if truth and name_key(cand).startswith(name_key(truth)):
+            if any(name_key(cand).startswith(name_key(t)) for t in truths):
                 continue
             issues.append(NameIssue(self._wrong(where, label, cand, truth), label))
 
