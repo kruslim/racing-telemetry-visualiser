@@ -474,9 +474,10 @@ function renderLogs(t) {
     const badge = airBadge(d);
     if (badge) li.append(el('em', '', `[${badge.text}] `));
     const text = el('span', d.refused ? 'refused' : '', d.spoken_text || d.detail_text || '');
-    if (badge && badge.kind === 'expired') text.style.textDecoration = 'line-through';
+    const dropped = badge && (badge.kind === 'expired' || badge.kind === 'superseded');
+    if (dropped) text.style.textDecoration = 'line-through';
     li.append(text);
-    li.title = badge && badge.kind === 'expired' ? `Not aired: ${badge.reason}` : d.detail_text || '';
+    li.title = dropped ? `Not aired: ${badge.reason}` : d.detail_text || '';
     li.onclick = () => seek(rec.session_time);
     radio.append(li);
   }

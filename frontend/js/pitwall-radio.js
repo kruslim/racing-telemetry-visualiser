@@ -104,7 +104,7 @@ function onState(state) {
 }
 
 function onRadio(message) {
-  if (message.expired) return; // dropped at air time: never said
+  if (message.expired || message.superseded) return; // dropped before airing: never said
   const result = manager.push(message);
   logMessage(message, result);
 }

@@ -63,10 +63,14 @@ export function airedTimes(records) {
 /**
  * What the radio decided at air time: {kind: 'late', text: 'late +27s'} for a call
  * aired after its agent's limit, {kind: 'expired', text: 'not aired', reason} for
- * one dropped because it had stopped being true, else null.
+ * one dropped because it had stopped being true, {kind: 'superseded', text: 'not
+ * aired', reason} for one another call on the same decision replaced, else null.
  */
 export function airBadge(message) {
   if (!message || typeof message !== 'object') return null;
+  if (message.superseded) {
+    return { kind: 'superseded', text: 'not aired', reason: message.superseded_reason || 'superseded' };
+  }
   if (message.expired) {
     return { kind: 'expired', text: 'not aired', reason: message.expired_reason || 'no longer valid' };
   }
@@ -79,7 +83,9 @@ export function airBadge(message) {
 
 /** When a call reached the channel: aired, or (for a dropped one) dropped. */
 function radioWhen(data, aired, t) {
-  if (data.expired && Number.isFinite(data.air_session_time)) return data.air_session_time;
+  if ((data.expired || data.superseded) && Number.isFinite(data.air_session_time)) {
+    return data.air_session_time;
+  }
   return aired.has(data.message_id) ? aired.get(data.message_id) : t;
 }
 
@@ -198,7 +204,9 @@ export function laneItems(records, laps) {
     } else if (rec.kind === 'radio') {
       const badge = airBadge(data);
       let note = '';
-      if (badge && badge.kind === 'expired') note = ` (not aired: ${badge.reason})`;
+      if (badge && (badge.kind === 'expired' || badge.kind === 'superseded')) {
+        note = ` (not aired: ${badge.reason})`;
+      }
       else if (badge) note = ` (${badge.text})`;
       lanes.radio.push({
         t0: radioWhen(data, aired, t),
@@ -206,6 +214,7 @@ export function laneItems(records, laps) {
         cls: `agent-${data.agent}${data.refused ? ' refused' : ''}${badge ? ` ${badge.kind}` : ''}`,
         late: !!data.late,
         expired: !!data.expired,
+        superseded: !!data.superseded,
         record: rec,
       });
     }

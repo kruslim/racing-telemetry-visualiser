@@ -138,21 +138,20 @@ def test_no_earlier_calls_means_no_section():
     record = agent_input.build_input(
         STRATEGIST, system_prompt="p", state_slice={}, event=_event(400.0, 6).to_api()
     )
-    assert record["previous"] == []
+    # Left out, not empty: a run without earlier calls keeps the record it always had.
+    assert "previous" not in record and record["v"] == 1
     assert "YOUR EARLIER CALLS" not in _first_message(agent_input.model_input(record))
 
 
-def test_a_version_1_record_rebuilds_exactly_as_before():
+def test_a_record_without_previous_rebuilds_exactly_as_before():
     record = agent_input.build_input(
         STRATEGIST, system_prompt="p", state_slice={"a": 1}, event=_event(400.0, 6).to_api(),
         radio_history=[_message("Box.", agent="spotter")],
     )
-    old = {k: v for k, v in record.items() if k != "previous"} | {"v": 1}
-    rebuilt = agent_input.model_input(old)
+    rebuilt = agent_input.model_input(record)
     assert _first_message(rebuilt) == agent_input.instruction(
-        old["event"], old["radio"], old["prefetched"]
+        record["event"], record["radio"], record["prefetched"]
     )
-    assert rebuilt == agent_input.model_input(record)
     with pytest.raises(ValueError):
         agent_input.model_input({**record, "v": 99})
 
@@ -173,7 +172,7 @@ async def test_the_journal_rebuilds_a_first_call_with_earlier_calls_byte_identic
     recorder.end()
 
     [start] = journal.agent_inputs(journal.run_path(tmp_path, "s1", run_id))
-    assert start["data"]["input"]["v"] == 2
+    assert start["data"]["input"]["v"] == 1
     assert start["data"]["input"]["previous"] == previous
     rebuilt = agent_input.model_input(start)
 
@@ -237,3 +236,19 @@ async def test_at_most_two_subjects_newest_last(engine):
     for i, subject in enumerate(["a", "b", "c", "a"]):
         orch._remember_call(_message(f"Call {i}.", subject=subject, lap=i))
     assert [e["spoken_text"] for e in orch.previous_calls("strategist")] == ["Call 2.", "Call 3."]
+
+
+def test_a_call_another_agent_replaced_reads_as_replaced():
+    replaced = _message(superseded=True, superseded_reason="the strategist's critical call")
+    entry = agent_input.previous_call(replaced)
+    assert entry["status"] == "superseded"
+    assert agent_input.previous_line(entry).endswith(
+        "(never aired, replaced: the strategist's critical call)"
+    )
+
+
+async def test_answers_to_the_driver_are_not_remembered(engine):
+    orch, _ = _orchestrator(engine, [])
+    orch._remember_call(_message("Two laps of fuel.", subject="answer:q1", in_reply_to="q1"))
+    assert orch.previous_calls("strategist") == []
+

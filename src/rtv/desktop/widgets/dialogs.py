@@ -30,8 +30,16 @@ QUOTA_TEXT = (
 
 
 def agents_will_run(status: dict | None) -> bool:
-    """Mounted and enabled: a replay or recorded run would call Kimi."""
-    return bool(status and status.get("available") and status.get("enabled") is not False)
+    """Mounted and enabled: a replay or recorded run would call Kimi.
+
+    The template-only mount (no LLM key, ``agents_mounted: false``) calls no model.
+    """
+    return bool(
+        status
+        and status.get("available")
+        and status.get("enabled") is not False
+        and status.get("agents_mounted") is not False
+    )
 
 
 class QuotaDialog(QDialog):

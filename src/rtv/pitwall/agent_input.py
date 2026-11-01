@@ -15,14 +15,14 @@ copy kept in step by hand.
 
 The record, version :data:`INPUT_VERSION`::
 
-    {"v": 2,
+    {"v": 1,
      "agent": "strategist", "model": "kimi-k3", "max_tokens": 1500,
      "max_tool_iterations": 4, "provider": {"name": "kimi", "thinking": false},
      "system_prompt": "<role prompt + grounding rules>", "prompt_sha": "1a2b...",
      "state_slice": {...}, "event": {<RaceEvent.to_api()>},
      "radio": [{"message_id", "agent", "priority", "spoken_text"}, ...],
      "previous": [{"message_id", "subject", "lap", "session_time", "spoken_text",
-                   "status", "late_by_s", "expired_reason"}, ...],
+                   "status", "late_by_s", "expired_reason"}, ...],   # only when any
      "prefetched": [{"tool": "fuel_plan", "args": {...}, "result": {...}}, ...],
      "tools": ["fuel_plan", ...], "tools_sha": "...",
      "output_contract": "StrategistOutput", "output_schema_sha": "..."}
@@ -31,8 +31,8 @@ The record, version :data:`INPUT_VERSION`::
 record's ``context_radio`` still lists every id the run was given. ``previous`` is
 the agent's own last call on each of its last :data:`PREVIOUS_SUBJECTS` subjects, with
 what the radio did with it (aired, aired late, dropped, still queued), so the agent
-revises its earlier call instead of restating it (task D1). Version 1 records have no
-``previous`` and rebuild exactly as before. Tool results the
+revises its earlier call instead of restating it (task D1). It is left out when the
+agent has no earlier call, so such a run's record is unchanged. Tool results the
 model asks for *during* the run are on its ``tool_call`` records (``result_full``).
 
 This module imports nothing from the runtime so the evals and the review can use it
@@ -49,17 +49,15 @@ from typing import Any
 from pydantic import BaseModel
 
 #: Version of the ``run_start`` ``input`` record. Bump on any change to its shape
-#: or to how :func:`model_input` reads it. 2 added ``previous``.
-INPUT_VERSION = 2
-
-#: Versions :func:`model_input` can rebuild.
-READABLE_VERSIONS = (1, 2)
+#: or to how :func:`model_input` reads it. Optional keys that are left out when
+#: empty (``superseded``, ``previous``) do not bump it: older records rebuild unchanged.
+INPUT_VERSION = 1
 
 #: How many of an agent's own subjects its first message recalls (one line each).
 PREVIOUS_SUBJECTS = 2
 
 #: ``status`` of a recalled call: what the radio did with it.
-AIRED, LATE, EXPIRED, QUEUED = "aired", "late", "expired", "queued"
+AIRED, LATE, EXPIRED, SUPERSEDED, QUEUED = "aired", "late", "expired", "superseded", "queued"
 
 #: Radio is a scarce channel; a message longer than this stops being radio.
 SPOKEN_WORD_LIMIT = 25
@@ -120,10 +118,16 @@ def instruction(
     event: Mapping[str, Any],
     radio: Sequence[Mapping[str, Any]] = (),
     prefetched: Sequence[Mapping[str, Any]] = (),
+    superseded: Sequence[Mapping[str, Any]] = (),
     previous: Sequence[Mapping[str, Any]] = (),
 ) -> str:
     """The run's first user message, from the event, the agent's own earlier calls,
-    the radio and prefetched results."""
+    the radio and prefetched results.
+
+    ``superseded`` (at most one entry) is this agent's last call that another
+    agent's call kept off the air: one line, so the agent does not repeat it.
+    ``previous`` are its own last calls per subject (:func:`previous_line`).
+    """
     lap = event.get("lap")
     parts = [
         f"TRIGGER: {event['key']} (severity {event['severity']}) at "
@@ -131,6 +135,15 @@ def instruction(
         + (f", lap {lap}" if lap is not None else "")
         + f".\nEvent payload: {as_text(event.get('payload'))}"
     ]
+    payload = event.get("payload") or {}
+    if event.get("event_type") == "driver_question" and isinstance(payload, Mapping):
+        # The driver asked; the run exists to answer them, not to make a call.
+        parts.append(
+            f'THE DRIVER ASKED: "{payload.get("text", "")}"\n'
+            "Answer that question in spoken_text, in your own role, as you would on the "
+            "radio. Use only the race state and tool results; if they cannot answer it, "
+            "say so plainly and never guess a figure."
+        )
     if previous:
         parts.append(
             "YOUR EARLIER CALLS (revise or confirm them; do not restate one that still "
@@ -142,6 +155,8 @@ def instruction(
             f"- [{m['agent']}/{m['priority']}] {m['spoken_text']}" for m in radio
         )
         parts.append("RECENT RADIO (do not repeat a call that still stands):\n" + recent)
+    for note in list(superseded)[-1:]:
+        parts.append(superseded_line(note))
     if prefetched:
         parts.append(
             "TOOL RESULTS (already called for you, as if you had called them):\n"
@@ -165,6 +180,14 @@ def instruction(
     return "\n\n".join(parts)
 
 
+def superseded_line(note: Mapping[str, Any]) -> str:
+    """The one line an agent is shown about its call that did not air."""
+    return (
+        f'NOT AIRED: your call "{note.get("spoken_text")}" was dropped, {note.get("reason")}: '
+        f'"{note.get("by_spoken_text")}". Do not repeat it unless the situation has changed.'
+    )
+
+
 def previous_line(call: Mapping[str, Any]) -> str:
     """One recalled call as the agent is shown it.
 
@@ -179,6 +202,9 @@ def previous_line(call: Mapping[str, Any]) -> str:
     elif status == EXPIRED:
         reason = call.get("expired_reason")
         note = "never aired, dropped" + (f": {reason}" if reason else "")
+    elif status == SUPERSEDED:
+        reason = call.get("expired_reason")
+        note = "never aired, replaced" + (f": {reason}" if reason else "")
     elif status == QUEUED:
         note = "not aired yet, still queued"
     else:
@@ -198,6 +224,8 @@ def previous_call(message: Any, *, queued: bool = False) -> dict[str, Any]:
         spoken = spoken[len(LATE_PREFIX) :]
     if message.expired:
         status = EXPIRED
+    elif getattr(message, "superseded", False):
+        status = SUPERSEDED
     elif queued:
         status = QUEUED
     elif message.late:
@@ -212,7 +240,14 @@ def previous_call(message: Any, *, queued: bool = False) -> dict[str, Any]:
         "spoken_text": spoken,
         "status": status,
         "late_by_s": message.late_by_s if status == LATE else None,
-        "expired_reason": message.expired_reason if status == EXPIRED else None,
+        # Why it never aired: the radio's expiry reason, or why another call replaced it.
+        "expired_reason": (
+            message.expired_reason
+            if status == EXPIRED
+            else getattr(message, "superseded_reason", None)
+            if status == SUPERSEDED
+            else None
+        ),
     }
 
 
@@ -236,15 +271,17 @@ def build_input(
     radio_history: Sequence[Any] = (),
     prefetched: Sequence[tuple[str, Mapping[str, Any], Any]] = (),
     provider: Mapping[str, Any] | None = None,
+    superseded: Sequence[Mapping[str, Any]] = (),
     previous: Sequence[Mapping[str, Any]] = (),
 ) -> dict[str, Any]:
     """The ``run_start`` input record of one run of ``spec`` (an ``AgentSpec``).
 
-    ``previous`` are :func:`previous_call` entries, oldest first; only the last
-    :data:`PREVIOUS_SUBJECTS` are kept.
+    ``superseded`` and ``previous`` (:func:`previous_call` entries, oldest first, the
+    last :data:`PREVIOUS_SUBJECTS` kept) are recorded only when there are any, so a run
+    without them keeps the record (and the model input) it always had.
     """
     shown = list(radio_history)[-RADIO_SHOWN:] if RADIO_SHOWN else []
-    return {
+    record = {
         "v": INPUT_VERSION,
         "agent": spec.name,
         "model": spec.model,
@@ -264,11 +301,6 @@ def build_input(
             }
             for m in shown
         ],
-        "previous": [
-            jsonable(dict(p)) for p in list(previous)[-PREVIOUS_SUBJECTS:]
-        ]
-        if PREVIOUS_SUBJECTS
-        else [],
         "prefetched": [
             {"tool": name, "args": jsonable(dict(args)), "result": jsonable(payload)}
             for name, args, payload in prefetched
@@ -278,6 +310,12 @@ def build_input(
         "output_contract": spec.output_model.__name__,
         "output_schema_sha": output_schema_sha(spec.output_model),
     }
+    if superseded:
+        record["superseded"] = [jsonable(dict(n)) for n in list(superseded)[-1:]]
+    kept = list(previous)[-PREVIOUS_SUBJECTS:] if PREVIOUS_SUBJECTS else []
+    if kept:
+        record["previous"] = [jsonable(dict(p)) for p in kept]
+    return record
 
 
 def input_of(record: Mapping[str, Any]) -> dict[str, Any] | None:
@@ -303,7 +341,7 @@ def model_input(record: Mapping[str, Any]) -> dict[str, Any]:
     if data is None:
         raise ValueError("This run_start record has no input (journal schema version 1).")
     version = data.get("v")
-    if version not in READABLE_VERSIONS:
+    if version != INPUT_VERSION:
         raise ValueError(f"Unsupported run input version {version!r}.")
     return {
         "agent": data["agent"],
@@ -319,7 +357,8 @@ def model_input(record: Mapping[str, Any]) -> dict[str, Any]:
                     data["event"],
                     data["radio"],
                     data["prefetched"],
-                    data.get("previous", ()),
+                    data.get("superseded") or (),
+                    data.get("previous") or (),
                 ),
             }
         ],

@@ -421,7 +421,7 @@ def test_a_broken_template_costs_the_call_not_the_radio():
 # --------------------------------------------------------------------------
 def test_the_llm_spotter_has_no_per_event_triggers_left():
     types = {t.event_type for t in SPOTTER.triggers}
-    assert types == {"lap_completed", "visual_observation"}
+    assert types == {"lap_completed", "visual_observation", "driver_question"}
     assert not types & set(SPOTTER_TEMPLATES)
     summary = next(t for t in SPOTTER.triggers if t.event_type == "lap_completed")
     assert summary.cooldown_s >= 300

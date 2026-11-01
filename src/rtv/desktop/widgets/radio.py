@@ -1,8 +1,9 @@
 """The radio feed: on-air strip, audio controls, the calls (newest first), driver input.
 
 Used by the live pitwall and the radio window. Refusals are shown as grounded
-refusals, not errors; a driver message nests the calls that aired within 45 s as
-"after your message", never as a reply.
+refusals, not errors. A driver message is a question: its answer (``in_reply_to``)
+nests under it tagged "answer", and other calls that aired within 45 s nest as
+"after your message".
 """
 
 from __future__ import annotations
@@ -22,8 +23,8 @@ from PySide6.QtWidgets import (
 
 from ..model.activity import AGENTS
 from ..model.format import agent_badge, clock, is_num
-from ..model.radio import thread_feed
-from ..model.review import air_badge
+from ..model.radio import question_status, thread_feed
+from ..model.review import NOT_AIRED, air_badge
 from ..theme import tokens as t
 from .common import clear_layout, label, severity_tag, tag
 
@@ -41,7 +42,7 @@ def _when(message: dict, aired: dict[str, float]) -> str:
         event_t = message.get("session_time")
     text = (f"L{lap} · " if lap is not None else "") + clock(event_t)
     aired_t = aired.get(message.get("message_id") or "")
-    if message.get("expired"):
+    if message.get("expired") or message.get("superseded"):
         dropped_t = message.get("air_session_time")
         return text + (f" → dropped {clock(dropped_t)}" if is_num(dropped_t) else " → dropped")
     if is_num(aired_t) and is_num(event_t) and aired_t - event_t >= 1:
@@ -86,6 +87,8 @@ class RadioEntry(QFrame):
         if is_driver:
             head.addWidget(tag("not spoken", "#1c222a", t.SOFT))
         else:
+            if message.get("answer"):
+                head.addWidget(tag("answer", "#173322", "#8ff0c3"))
             head.addWidget(severity_tag(message.get("priority")))
         if refused:
             head.addWidget(tag("withheld · grounded refusal", "#2a2414", "#ffd27a"))
@@ -99,7 +102,7 @@ class RadioEntry(QFrame):
         head.addWidget(label(_when(message, aired), "muted", mono=True))
         head.addStretch(1)
         layout.addLayout(head)
-        expired = badge is not None and badge["kind"] == "expired"
+        expired = badge is not None and badge["kind"] in NOT_AIRED
         spoken = label(
             message.get("spoken_text") or "",
             "radio",
@@ -160,12 +163,23 @@ class RadioEntry(QFrame):
             tl = QVBoxLayout(thread)
             tl.setContentsMargins(10, 2, 0, 0)
             tl.setSpacing(4)
-            tl.addWidget(label("after your message", "muted", size=11))
-            for child in children:
+            answers = [c for c in children if c.get("answer")]
+            others = [c for c in children if not c.get("answer")]
+            status = question_status(message, children)
+            if status:
+                tl.addWidget(label(status, "muted", size=11))
+            for child in answers:
                 entry = RadioEntry(child, [], aired, expanded, muted)
                 entry.toggled_detail.connect(self.toggled_detail)
                 tl.addWidget(entry)
-            if not children:
+            if others:
+                tl.addWidget(label("after your message", "muted", size=11))
+            for child in others:
+                entry = RadioEntry(child, [], aired, expanded, muted)
+                entry.toggled_detail.connect(self.toggled_detail)
+                tl.addWidget(entry)
+            if not children and not status:
+                tl.addWidget(label("after your message", "muted", size=11))
                 tl.addWidget(label("no call aired within 45 s yet", "muted", size=11))
             row = QHBoxLayout()
             row.setContentsMargins(14, 0, 0, 0)
@@ -280,10 +294,10 @@ class RadioFeed(QWidget):
         dl = QHBoxLayout(driver)
         dl.setContentsMargins(14, 8, 14, 8)
         self.input = QLineEdit()
-        self.input.setPlaceholderText("say something to the pitwall…")
-        self.input.setAccessibleName("Message to the pitwall")
+        self.input.setPlaceholderText("ask the pitwall… (fuel, gaps, tyres, lap times)")
+        self.input.setAccessibleName("Ask the pitwall")
         self.input.setMaxLength(500)
-        self.send = QPushButton("Send")
+        self.send = QPushButton("Ask")
         self.send.setProperty("role", "primary")
         dl.addWidget(self.input, 1)
         dl.addWidget(self.send)

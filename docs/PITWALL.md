@@ -132,7 +132,30 @@ left.". The kill switch, `suspend()`, a stale state and the spotter's own enable
 silence template calls too; the model-call budget does not, since they cost nothing.
 `dispatch` traces each one as a `template_call` activity record and lists the caller in
 the dispatch record's `templated`; `status()` has `template_calls` and `callers`.
-Template calls need the agent layer to be mounted (today that means a Kimi key is set).
+With `RTV_PITWALL_AGENTS=true` and no Kimi key (or no `ai` extra), `build_pitwall`
+mounts a template-only orchestrator (`services.build_template_pitwall`: no agents, no
+provider, `status()["agents_mounted"]` false), so template calls and driver-question
+lookups run with no key (appendix C1).
+
+**Driver questions** (`pitwall/questions.py`, appendix C1). `orch.ask(text, source=
+"text"|"voice")` (and `driver_message`, which calls it) puts the transcript on the channel
+(`agent="driver"`, `speak=False`, `data.question` = the route) and publishes a
+`driver_question` RaceEvent on the race bus (`payload`: `text`, `source`, `question_id` =
+the transcript's `message_id`, `owner`, `intent`, `matched`, `answered_by`), so the journal
+records it. `route_question(text)` is a keyword table, no model: fuel, pit and strategy go
+to the strategist, tyres, temperatures and damage to the vehicle engineer, traffic and gaps
+to the spotter, driving and corners to the coach, anything else to the strategist with
+`matched=False`. A plain lookup (`fuel_laps`, `gap_ahead`, `gap_behind`, `last_lap`,
+`best_lap`, `position`, `laps_to_go`, `tyre_temps`) is answered by `QuestionCaller` (a
+`DeterministicCaller`, in the owner's name) from the engine state, or with an honest "No
+... data" answer when the state lacks the value. Anything else wakes the owner's
+`Trigger("driver_question")` (cooldown 0, its own questions only); the run's first message
+starts `THE DRIVER ASKED: "..."` and the answer goes through the validator as usual. Every
+answer has `in_reply_to` = the question id and subject `answer:<id>`. A question nobody can
+answer (no such agent, agent disabled, budget spent, no live telemetry, the run failed)
+gets a `pitwall` reply saying so, also `in_reply_to`; with the kill switch off that reply
+is shown, not spoken. A queued question is never displaced from an agent's inbox by a
+detector event short of critical.
 
 **Autonomy and standby** (`RTV_PITWALL_AUTONOMOUS`, default false). A third switch next
 to the kill switch and `suspended`. With autonomy on, the orchestrator starts in standby;
@@ -178,7 +201,13 @@ grounded refusal at `info` priority with the blocked text kept in `detail_text`.
 
 **Radio** (`pitwall/radio.py`). One channel, ordered by `(priority, sequence)`. A newer
 non-critical message with the same `(agent, subject)` supersedes a queued one; a critical
-message is never superseded. Airtime is about 0.4 s per word, and
+message is never superseded. Subjects of different agents that answer one decision share a
+group (`pitwall/decisions.py`, appendix B3: `pit_stop` = the strategist's calls plus the
+engineer's `damage_stop`/`tyre_stop` "box now"). In a group the newer call replaces a queued
+one of the same or lower priority from any agent, and a call that contradicts a
+higher-priority one still queued or aired within 60 s is dropped; the loser goes to
+consumers marked `superseded` (`radio_superseded` with `by_message_id`, `rule`, `reason`),
+and its agent sees one "NOT AIRED" line on its next run. Airtime is about 0.4 s per word, and
 `pump(session_time)` is the deterministic, clock-injected twin of `run()`. Every agent
 message is checked again when it reaches the front (`pitwall/validity.py`, appendix B1):
 older than its agent's `max_age_s` but still true, it airs tagged late ("Late call:
@@ -3330,6 +3359,78 @@ Deviations:
   callers and then blocks the agents (`blocked: "standby"`, `templated` listing the
   callers). The kill switch, `suspend()` and stale state still silence them, as before.
 
+## B3: cross-agent decision groups
+
+`rtv.pitwall.decisions`: `DECISION_GROUPS` (one group, `pit_stop`: `strategist/pit_stop`,
+`vehicle_engineer/damage_stop`, `vehicle_engineer/tyre_stop`), `CONFLICT_WINDOW_S = 60`,
+`group_of(message)`, `action_of(message)` (`box_now`, `stop_later`, `stay_out` or `None`
+from the structured answer; refusals and `hold` take no side) and `opposed(a, b)` (box_now
+vs stay_out or stop_later). The coach's `coaching` and the engineer's `grip` were
+considered and left out: they complement each other on a lockup rather than decide one
+thing.
+
+`EngineerCall.pit_request` (`none` | `box_now`) is new, with a prompt paragraph: box_now only
+when the car cannot safely reach the planned stop. With it the engineer's subject is
+`damage_stop` (or `tyre_stop` for a tyre finding) and `vehicle_engineer_validity` stamps the
+box-call rules for the current lap. This changes the engineer's output contract, so
+`spec_drift` reports `output_contract` and `prompt` against older journals.
+
+`RadioFeed.publish` rules inside a group: (1) a newer call replaces queued non-critical calls
+of the same or lower priority from any agent (`rule` `same_agent` / `group`, or `critical`
+when the newer one is critical; a critical call still replaces nothing of its own agent's);
+(2) a call opposed to a strictly higher-priority call from another agent, queued or aired
+within the window, is dropped itself (`conflict`). Equal priority is a revision: the newer
+airs. Outside groups nothing changed. Every superseded message (same-agent ones too, which
+before were only traced) now reaches subscribers and callbacks with `superseded`,
+`superseded_by`, `superseded_reason`, `speak=False` and `air_session_time`, so the journal
+has its `radio` record. `radio_superseded` gains `by_message_id`, `by_agent`, `by_priority`,
+`rule`, `group`, `reason`, `spoken_text` (the old `by` field is gone). `feed.stats()` adds
+`conflicts`; `feed.take_superseded(agent)` hands out, once, the agent's last call another
+agent's call beat.
+
+Agent context: the orchestrator passes it to `AgentRuntime.invoke(superseded=)`; the
+instruction gets one `NOT AIRED: ...` line (`agent_input.superseded_line`) after the recent
+radio, and `run_start.data.input.superseded` records it only when present, so other runs'
+inputs are byte-identical to before. `run_stats` adds `radio_superseded_cross_agent`,
+`radio_conflicts` (n/a for older journals) and `radio_superseded_by_rule`; compare_runs
+prints the first two.
+
+Views: `air_badge` returns `{"kind": "superseded", "text": "not aired", "reason"}` (Python
+and JS), and superseded calls are struck through with the reason like expired ones in the
+desktop live radio and review, and in the web review. The web live pages skip them like
+expired calls. Golden cases: a test-only engineer box call superseded by the strategist's
+real critical yellow-flag call in `journal_air`, plus airBadge cases.
+
+
+## C1 — the driver asks, the pitwall answers (2026-10-31)
+
+Plan task C1 (REVIEW.md P1-4). Described under "Driver questions" above. Pieces:
+`EventType.DRIVER_QUESTION`; `RadioMessage.in_reply_to`; `rtv.pitwall.questions`
+(`route_question`, `Route`, `LOOKUPS`, `answer_lookup`, `QuestionCaller`,
+`question_trigger(agent)`); every agent spec gains `question_trigger(AGENT_NAME)`;
+`agent_input.instruction` adds the `THE DRIVER ASKED` block for a `driver_question` event
+only, so other runs' inputs (and their journal rebuilds) are unchanged.
+`PitwallOrchestrator.ask`, `_reply_unanswered`, `_holds_slot`; `status()` adds
+`questions` and `agents_mounted`; the orchestrator always appends a `QuestionCaller` to
+its callers. `services.build_template_pitwall` fixes B2's gap (template calls without a
+key). `POST /pitwall/driver-message` calls `ask` and also returns `question` (the route).
+
+Desktop: the radio box is now "Ask"; `hub.ask(text, source)` is the entry point for C2's
+voice input (`send_driver` calls it). `model.radio.thread_feed` nests a message whose
+`in_reply_to` matches a driver message under it as `answer`, wherever it lands;
+`question_status` shows "asked the coach · waiting for the answer" until it does. The
+quota dialog's `agents_will_run` is false for the template-only mount. The frozen web
+radio panel keeps its 45 s "after your message" rule.
+
+Evals: `evals.pitwall_cases.question_cases(agent)`, one `question-<agent>` case per agent
+(`QUESTIONS`); the strategist's sits before its degraded cases. `scripts/ask_during_replay.py`
+asks ten scripted questions at fixed laps of a running replay and records each answer and
+its latency.
+
+Changed tests, by design: `test_a_driver_message_joins_the_log_but_is_never_read_back`
+now finds the transcript among the messages (a reply is also queued), and the LLM
+spotter's trigger set includes `driver_question`. New: `tests/test_driver_questions.py`.
+
 ---
 
 ## D1 — each agent sees its own previous call (2026-10-31)
@@ -3351,12 +3452,15 @@ because every run started from the state slice and the recent radio only.
   `agent_input.previous_call(message, queued=)`. It holds the message objects, so the
   status is what the radio did by the time the next run starts. `reset()` clears them.
   `AgentRuntime.invoke(..., previous_calls=)` passes them on. `radio.py` is unchanged.
-- **Record**: `run_start.data.input` is now `v: 2` with `previous` (`message_id`,
-  `subject`, `lap`, `session_time`, `spoken_text`, `status`, `late_by_s`,
-  `expired_reason`). `model_input` reads versions 1 and 2 (`READABLE_VERSIONS`); a
-  version-1 record has no `previous` and rebuilds exactly as before. The first call is
-  still built from the record, so the rebuild stays byte-identical
-  (`tests/test_agent_input.py`, `tests/test_previous_calls.py`).
+- **Record**: `run_start.data.input.previous` (`message_id`, `subject`, `lap`,
+  `session_time`, `spoken_text`, `status`, `late_by_s`, `expired_reason`), written only
+  when the agent has an earlier call, like B3's `superseded`, so other runs' records and
+  rebuilds are unchanged and `v` stays 1. The first call is still built from the record,
+  so the rebuild stays byte-identical (`tests/test_agent_input.py`,
+  `tests/test_previous_calls.py`).
+- **With B3**: a call another agent's call replaced shows as `superseded` (`never aired,
+  replaced: <superseded_reason>`); the run that gets B3's one-off `NOT AIRED` line for it
+  does not list it again. Answers to driver questions (C1, `in_reply_to`) are not kept.
 - Prompt text only: role prompts and `GROUNDING_RULES` are unchanged, so `prompt_sha`
   and `spec_drift` do not move. The strategist has one subject (`pit_stop`), so it is
   shown one line.
