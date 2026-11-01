@@ -153,7 +153,12 @@ cannot cite them. The tool also writes a `plan_proposal_rejected` activity recor
 
 **Plan in the agents.** The strategist's slice has `plan` (`plan_view(state, "full")`:
 values, version, stops done, provenance, missing; no rationales), the engineer's and the
-coach's have `plan_view(state, "posture")` (posture and pace target). Plan numbers are
+coach's have `plan_view(state, "posture")` (posture and pace target). The engineer's slice
+also has `stint` (`plan.stint_horizon`, task R5): `laps_to_stint_end` whole laps to the
+plan's next stop, or to the flag when the plan has no stop left (`basis`), never the stop
+lap itself; unavailable with a reason when there is no plan. Its prompt quotes tyre trends
+as rates and never multiplies them out: on the Spa replay the lap-3 slope (4.2 kPa/lap)
+projected +42 kPa by the stop, and the RF actually levelled off about 10 kPa up. Plan numbers are
 citable as typed facts at `race_state.plan.*` (slice) and `get_race_plan.*` (tool); units
 follow the field suffixes as everywhere else. The strategist policy targets the plan's
 `next_stop_lap`, and a `plan_stop` with no `target_lap` is stamped with it for the B1

@@ -121,6 +121,8 @@ _PRESSURE_KPA_KEYS = frozenset(
     {
         "pressures",
         "pressure_trend",
+        # get_tyre_trend's name for race_state.tyres.pressure_trend (kPa per lap).
+        "pressure_trend_per_lap",
         "tyre_pressure",
         "pressure_change_since_stint_start",
         "pressure_change_vs_previous_lap",
