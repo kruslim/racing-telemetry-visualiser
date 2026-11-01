@@ -3883,5 +3883,16 @@ moves the prompt to `prompts/done/`.
   `test_the_no_key_debrief_of_the_real_race_references_only_recorded_laps` in
   `tests/test_real_ibt.py`. The `spa_run` real-eval baseline is unchanged: no validator or
   check the pitwall agents use was touched.
-- **Kimi.** A debrief of the recorded Spa run on Kimi, read by the user, is owed (kimi-queue).
+- **One corner numbering.** Layer-1 numbers the apexes of each lap pair T1..Tn afresh, so on
+  Spa "T3" is Les Combes on one pair and Bruxelles on the next (the first Kimi debrief mixed
+  the two and called Speaker's Corner T4 while the findings' T4 was Bruxelles). The digest
+  relabels every pair's corners onto the session corner map the live events use
+  (`RaceState.track` of the final state; else the first analysed pair's corners) by apex
+  position (within 0.014 of a lap), keeps the pair's own label as `pair_label`, takes the
+  bigger loss when two apexes land on one corner, and notes how many matched none.
+- **Kimi (2026-11-01).** The combined Spa replay journal (project files
+  `spa-kimi-run-combined/`), `kimi-k3` with thinking: 2 calls, 116 s, 6/6 sections kept.
+  The summary, plan, time lost and tyres/fuel passed first time; recurring and priorities
+  were repaired once (one quoted an unrecorded "lap 42"). The output is in
+  `spa-kimi-run-combined/debrief-D6b/`, with the run made before the relabelling kept next to it.
 

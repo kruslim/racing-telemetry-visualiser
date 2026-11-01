@@ -440,3 +440,12 @@ def test_the_no_key_debrief_of_the_real_race_references_only_recorded_laps(clien
     # Spa's corners carry their names into the debrief, as in the review.
     assert "La Source" in doc["references"]["corners"].values()
     assert det["recurring"], "19 laps of Spa repeat some losses"
+    # One numbering on every lap: the session corner map the live events use, so a label
+    # in the debrief is the same corner on every lap (Layer-1 numbers each lap pair anew).
+    track = client.get("/api/v1/racestate").json()["track"]
+    session_map = {c["label"]: c["name"] for c in track["corners"]}
+    for row in det["recurring"]:
+        assert session_map.get(row["corner"]) == row["name"], row
+    for lap in det["time_lost"]:
+        for top in lap["top"]:
+            assert session_map.get(top["corner"]) == top["name"], top

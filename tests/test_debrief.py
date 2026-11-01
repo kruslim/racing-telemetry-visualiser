@@ -407,3 +407,27 @@ def test_the_model_falls_back_to_the_reasoning_default():
     assert DebriefService(s, None, None).model() == "kimi-reasoning-x"
     s = Settings(llm_kimi_model_reasoning="kimi-reasoning-x", debrief_model="kimi-y")
     assert DebriefService(s, None, None).model() == "kimi-y"
+
+
+def test_lap_pair_corners_are_relabelled_onto_the_session_map():
+    """Layer-1 numbers each lap pair's apexes anew; the debrief counts one numbering."""
+    from rtv.debrief.inputs import _relabel
+
+    canon = [
+        {"label": "T1", "name": "La Source", "lap_dist_pct": 0.05},
+        {"label": "T2", "name": "Les Combes", "lap_dist_pct": 0.36},
+        {"label": "T3", "name": "Bruxelles", "lap_dist_pct": 0.44},
+    ]
+    pair = [  # this pair found an extra apex at 0.20, so Les Combes came out as T3
+        {"label": "T1", "distance": 50.0, "net_dt": 0.1},
+        {"label": "T2", "distance": 200.0, "net_dt": 0.3},
+        {"label": "T3", "distance": 361.0, "net_dt": 0.2},
+        {"label": "T4", "distance": 440.0, "net_dt": 0.4},
+    ]
+    out, dropped = _relabel(pair, 1000.0, canon)
+    assert dropped == 1
+    assert [(c["label"], c["name"], c["pair_label"]) for c in out] == [
+        ("T1", "La Source", "T1"),
+        ("T2", "Les Combes", "T3"),
+        ("T3", "Bruxelles", "T4"),
+    ]
