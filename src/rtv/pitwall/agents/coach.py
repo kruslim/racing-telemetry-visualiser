@@ -211,6 +211,8 @@ COACH = AgentSpec(
     ),
     max_tool_iterations=3,
     max_age_s=30.0,
+    # Held to the Layer-1 prose check whenever get_corner_detail returned a corner.
+    prose_check=True,
 )
 
 

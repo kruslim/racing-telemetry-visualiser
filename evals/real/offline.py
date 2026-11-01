@@ -124,13 +124,14 @@ def corner_issues(output: dict[str, Any], state: RaceState) -> list[str]:
 def _validator(case: dict[str, Any], answer: dict[str, Any], facts: FactSet,
                state: RaceState, event: RaceEvent) -> dict[str, Any]:
     output = answer["output"] or {}
+    spec = SPECS.get(case["agent"])
     report = validate_output(
         output.get("spoken_text") or "",
         output.get("detail_text") or "",
         facts,
         payload=payload_of(output),
+        prose_check=spec is not None and spec.prose_check,
     )
-    spec = SPECS.get(case["agent"])
     policy = None
     if spec is not None and spec.policy is not None:
         try:
@@ -143,6 +144,7 @@ def _validator(case: dict[str, Any], answer: dict[str, Any], facts: FactSet,
         "repaired": answer["repaired"],
         "ok": ok,
         "unsupported": list(report.unsupported),
+        "contradictions": list(report.contradictions),
         "over_word_limit": report.over_word_limit,
         "policy": policy,
         "same_as_recorded": (

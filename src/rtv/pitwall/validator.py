@@ -22,6 +22,14 @@ being numerically close. A bare figure ("2.5 a lap") keeps the looser any-fact m
 the small integers 0-3 are only waved through when bare. Units are read by
 :mod:`rtv.grounding.units`, which the Layer-3b prose check shares.
 
+The coach is held to that prose check too (task A2): when a tool result handed it a
+Layer-1 corner (``get_corner_detail`` with telemetry available), the fact set keeps the
+corner, and ``validate_output(..., prose_check=True)`` runs
+:func:`rtv.coaching.agent.prose.check_prose` in its live mode over everything the agent
+wrote about that corner. A brake direction the corner analysis contradicts ("brake later"
+where the driver already brakes late) is a :attr:`GroundingReport.contradictions` entry and
+goes through the same repair and refusal path as an invented figure.
+
 One check is about words, not numbers: a call that says rain or a wet track
 (:data:`WEATHER_CLAIM_RE`) needs a weather fact -- a ``weather_change`` event or the
 race director's injected weather condition (eval rehearsals), or a wet
@@ -79,6 +87,9 @@ class GroundingReport(BaseModel):
     unsupported: list[str] = Field(default_factory=list)
     #: The same figures with their unit and why they failed, for the repair turn and logs.
     unsupported_detail: list[str] = Field(default_factory=list)
+    #: Statements the Layer-1 corner analysis contradicts (the prose check), for the repair
+    #: turn, the audit and the refusal. Empty unless the run held a Layer-1 corner.
+    contradictions: list[str] = Field(default_factory=list)
     #: Whether figures said with a unit had to match a fact of that unit family.
     typed: bool = False
     word_count: int = 0
@@ -100,6 +111,9 @@ class FactSet:
         #: family -> [(value, unit it is reported in, path)], for figures said with a unit.
         self._typed: dict[str, list[tuple[float, str, str]]] = {}
         self.typed = _typed_default() if typed is None else bool(typed)
+        #: Layer-1 corner findings a tool returned, by label, in the shape the prose check
+        #: reads (:func:`layer1_corner`).
+        self.corners: dict[str, dict[str, Any]] = {}
         #: Sources that announce rain or a wet track (see :meth:`has_weather`).
         self.weather_sources: list[str] = []
 
@@ -111,6 +125,9 @@ class FactSet:
     def add(self, source: str, payload: Any) -> None:
         if _says_weather(payload):
             self.weather_sources.append(source)
+        corner = layer1_corner(payload)
+        if corner is not None:
+            self.corners.setdefault(corner["label"], corner)
         for value in _walk_numbers(payload):
             self._raw.setdefault(value, source)
             for variant in _variants(value):
@@ -511,18 +528,92 @@ def _payload_numbers(payload: Any, prefix: str = "") -> list[tuple[str, float]]:
     return out
 
 
+def layer1_corner(payload: Any) -> dict[str, Any] | None:
+    """The Layer-1 corner in a ``get_corner_detail`` result, as a ``CornerFinding`` dict.
+
+    ``None`` for any other payload, and when the telemetry half is unavailable. Field
+    names are mapped back to the findings' own (``min_speed_kmh`` -> ``min_main``), which
+    is what :func:`rtv.coaching.agent.prose.corner_facts` reads.
+    """
+    if not isinstance(payload, dict):
+        return None
+    telemetry = payload.get("telemetry")
+    if not isinstance(telemetry, dict) or telemetry.get("available") is not True:
+        return None
+    corner = telemetry.get("corner")
+    if not isinstance(corner, dict) or not corner.get("label"):
+        return None
+    return {
+        "label": str(corner["label"]),
+        "distance": corner.get("distance_m"),
+        "min_main": corner.get("min_speed_kmh"),
+        "min_ref": corner.get("ref_min_speed_kmh"),
+        "net_dt": corner.get("time_delta_s"),
+        "diags": [
+            {
+                "text": d.get("text", ""),
+                # Journals recorded before diagnostics carried distance_m have none; the
+                # brake direction only needs the text.
+                "distance": d.get("distance_m") or 0.0,
+                "time_loss": d.get("time_loss_s") or 0.0,
+            }
+            for d in corner.get("diagnostics") or []
+            if isinstance(d, dict)
+        ],
+    }
+
+
+#: Payload fields that are not prose: the corner label and the agents' enum fields.
+_NOT_PROSE = frozenset({"corner", "theme", "confidence", "priority", "kind", "action"})
+
+
+def prose_contradictions(
+    spoken_text: str, detail_text: str, facts: FactSet, payload: Any | None = None
+) -> list[str]:
+    """What the Layer-1 corners in ``facts`` contradict in the answer (the A2 prose check).
+
+    Runs only when the fact set holds a Layer-1 corner and the answer is about one of them
+    (its ``corner`` field names it, or names no corner). An answer about another corner of
+    the map, or about a provisional bucket, has nothing in the lap findings to be held to.
+    """
+    if not facts.corners:
+        return []
+    from rtv.coaching.agent.prose import check_prose  # no langgraph needed
+    from rtv.coaching.agent.validation import split_corner
+
+    if isinstance(payload, BaseModel):
+        payload = payload.model_dump(mode="json")
+    data = payload if isinstance(payload, dict) else {}
+    cited = data.get("corner")
+    owner = split_corner(cited)[0] if isinstance(cited, str) and cited.strip() else None
+    if owner is not None and owner not in facts.corners:
+        return []
+    texts: list[tuple[str, str | None, str]] = [
+        ("spoken_text", owner, spoken_text or ""),
+        ("detail_text", owner, detail_text or ""),
+    ]
+    for key, value in data.items():
+        if isinstance(value, str) and key not in _NOT_PROSE:
+            texts.append((key, owner, value))
+    report = check_prose(texts, {"corners": list(facts.corners.values())}, mode="live")
+    return list(dict.fromkeys(report.issues))
+
+
 def validate_output(
     spoken_text: str,
     detail_text: str,
     facts: FactSet,
     payload: Any | None = None,
+    *,
+    prose_check: bool = False,
 ) -> GroundingReport:
     """Check an agent's whole answer -- prose *and* structured payload.
 
     Both halves assert numbers, and a fabricated ``rejoin_position`` in the
     payload would reach the pitwall UI just as surely as one in the spoken call.
     Prose is matched tolerantly (rounding is speech); payload fields are matched
-    exactly (they are meant to be copied from a tool result).
+    exactly (they are meant to be copied from a tool result). ``prose_check``
+    (the coach) adds :func:`prose_contradictions`.
     """
     numbers: list[float] = []
     unsupported: list[str] = []
@@ -574,13 +665,18 @@ def validate_output(
         unsupported.append(written)
         detail.append(f"{written} (structured fields must be copied exactly from a tool result)")
 
+    contradictions = (
+        prose_contradictions(spoken_text, detail_text, facts, payload) if prose_check else []
+    )
+
     words = len((spoken_text or "").split())
     over = words > MAX_SPOKEN_WORDS
     return GroundingReport(
-        ok=not unsupported and not over,
+        ok=not unsupported and not contradictions and not over,
         numbers=numbers,
         unsupported=unsupported,
         unsupported_detail=detail,
+        contradictions=contradictions,
         typed=facts.typed,
         word_count=words,
         over_word_limit=over,
