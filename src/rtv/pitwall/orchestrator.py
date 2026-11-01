@@ -40,7 +40,7 @@ from typing import Any
 
 from rtv.director.engine import DirectorEngine, NoopDirector
 from rtv.logging import get_logger
-from rtv.pitwall import validity
+from rtv.pitwall import agent_input, validity
 from rtv.pitwall.activity import ActivityLog, safe_trace
 from rtv.pitwall.callers import DeterministicCaller, build_callers
 from rtv.pitwall.framework import (
@@ -51,6 +51,7 @@ from rtv.pitwall.framework import (
     RadioPriority,
     agent_max_age,
 )
+from rtv.pitwall.questions import QuestionCaller, is_question, route_question
 from rtv.pitwall.radio import RadioFeed
 from rtv.pitwall.tts import RadioTTS
 from rtv.racestate.engine import RaceStateEngine
@@ -59,6 +60,16 @@ from rtv.racestate.models import EventType, RaceEvent, RaceState, Severity
 log = get_logger("pitwall.orchestrator")
 
 DEFAULT_MAX_INFLIGHT = 2
+_KEEP = object()
+#: The lifecycle events autonomy follows (no agent trigger matches them).
+_LIFECYCLE_EVENTS = frozenset(
+    {
+        EventType.SESSION_START,
+        EventType.SESSION_GREEN,
+        EventType.SESSION_CHECKERED,
+        EventType.SESSION_END,
+    }
+)
 #: How much recent radio each agent is shown, for continuity between calls.
 RADIO_CONTEXT = 5
 #: How many recent events tools may reconstruct history from.
@@ -95,6 +106,9 @@ class PitwallOrchestrator:
         retry_backoff_s: float | None = None,
         activity: ActivityLog | None = None,
         vision_radio: bool = False,
+        autonomous: bool = False,
+        autonomous_sessions: Sequence[str] = ("race",),
+        rosters: Mapping[str, Sequence[str]] | None = None,
         callers: Sequence[DeterministicCaller] | None = None,
     ) -> None:
         self.engine = engine
@@ -168,18 +182,44 @@ class PitwallOrchestrator:
         #: session budget covers, by layer. See :meth:`record_call`.
         self._layer_calls: dict[str, int] = {}
         self._layer_lock = threading.Lock()
+        #: Each agent's newest model call per subject, newest subject last (D1).
+        self._own_calls: dict[str, dict[str, RadioMessage]] = {}
+        self._own_lock = threading.Lock()
         self._budget_announced = False
         #: Whether a live ``visual_observation`` may wake an agent. Off by
         #: default: a camera note arrives 25-40 s after the moment and is
         #: unproven on real footage, so it is review material (the timeline and
         #: the journal) until RTV_VISION_LIVE_RADIO says otherwise.
         self.vision_radio = vision_radio
+        #: Session lifecycle autonomy (RTV_PITWALL_AUTONOMOUS). A third flag next
+        #: to the kill switch and ``suspended``: standby holds the agents between
+        #: sessions and before the green flag. It never turns on anything the
+        #: operator switched off -- the kill switch and per-agent flags are checked
+        #: first and are never written here.
+        self.autonomous = bool(autonomous)
+        self.autonomous_sessions = {s.strip() for s in autonomous_sessions if s.strip()}
+        self.rosters = {
+            kind: {n.strip() for n in names if n.strip()}
+            for kind, names in dict(rosters or {}).items()
+        }
+        self._standby_reason: str | None = (
+            "waiting for a session" if self.autonomous else None
+        )
+        #: Agents armed for this segment; None = every mounted agent.
+        self._armed_roster: set[str] | None = None
+        self.session_type: str | None = None
+        #: The last arm / disarm decision, for status and the journal.
+        self.last_autonomy: dict[str, Any] | None = None
         #: Template calls (:mod:`rtv.pitwall.callers`): no model call, published
         #: from ``dispatch`` itself. ``None`` = the defaults (the spotter's).
         self.callers: list[DeterministicCaller] = (
             build_callers() if callers is None else list(callers)
         )
+        # Driver questions that are plain lookups are answered the same way.
+        if not any(isinstance(c, QuestionCaller) for c in self.callers):
+            self.callers.append(QuestionCaller())
         self.template_calls = 0
+        self.questions = 0
 
     def attach_activity(self, activity: ActivityLog | None) -> None:
         """Trace routing, every agent run and the radio into ``activity``."""
@@ -320,8 +360,57 @@ class PitwallOrchestrator:
         self.feed.publish(message)
         return message
 
+    def ask(self, text: str, *, source: str = "text") -> RadioMessage:
+        """The driver asks the pitwall something; returns their transcript.
+
+        The entry point for every way a question arrives: the desktop text box
+        (``source="text"``) and push-to-talk speech (``"voice"``, task C2). Three
+        things happen, none of them a model call:
+
+        1. The transcript goes on the channel at once (:meth:`driver_message`).
+        2. :func:`~rtv.pitwall.questions.route_question` picks the owner and, for a
+           plain lookup, the intent.
+        3. A ``driver_question`` event goes on the **race** bus, so the journal
+           records it and ``/ws/pitwall`` shows it. The pump dispatches it like any
+           event: a lookup is answered by the question template at once, anything
+           else wakes the owner's ``Trigger("driver_question")``. Either answer
+           carries ``in_reply_to`` = the transcript's ``message_id``.
+        """
+        text = text.strip()
+        route = route_question(text)
+        transcript = self._transcript(text, source, route.to_payload())
+        state = self.engine.snapshot()
+        event = RaceEvent(
+            event_type=EventType.DRIVER_QUESTION,
+            tick=state.tick,
+            session_time=state.session_time,
+            lap=state.player.lap,
+            severity=Severity.ADVISORY,
+            payload={
+                "text": text,
+                "source": source,
+                "question_id": transcript.message_id,
+                **route.to_payload(),
+            },
+            state_version=state.version,
+        )
+        self.questions += 1
+        log.info(
+            "Driver question -> %s (%s): %s",
+            route.owner, route.intent or "agent", text,
+        )
+        self.engine.bus.publish(event)
+        if not self._tasks:
+            # No pump (inline use, tests): route it here so lookups still answer.
+            self.dispatch(event, state)
+        return transcript
+
     def driver_message(self, text: str, *, source: str = "voice") -> RadioMessage:
-        """Record something the driver said onto the channel.
+        """Something the driver said: a question to the pitwall (see :meth:`ask`)."""
+        return self.ask(text, source=source)
+
+    def _transcript(self, text: str, source: str, route: dict[str, Any]) -> RadioMessage:
+        """Put the driver's own words on the channel.
 
         Emitted rather than queued: the driver has *already* used the airtime, so
         making the transcript wait behind an advisory would misrepresent when it
@@ -333,9 +422,9 @@ class PitwallOrchestrator:
         message = RadioMessage(
             agent="driver",
             priority=RadioPriority.INFO,
-            spoken_text=text.strip(),
+            spoken_text=text,
             detail_text=f"Driver push-to-talk ({source}).",
-            data={"source": source},
+            data={"source": source, "question": route},
             event_ref=EventRef(
                 event_type="driver_message",
                 key="driver_message",
@@ -353,6 +442,47 @@ class PitwallOrchestrator:
         log.info("Driver: %s", message.spoken_text)
         return message
 
+    def _reply_unanswered(self, event: RaceEvent, reason: str) -> RadioMessage | None:
+        """Tell the driver, honestly, that nobody can answer their question now."""
+        if not is_question(event):
+            return None
+        owner = str(event.payload.get("owner") or "pitwall")
+        who = owner.replace("_", " ")
+        spoken = {
+            "disabled": "Pitwall is switched off, no answers right now.",
+            "suspended": "No live telemetry, I can't answer that right now.",
+            "stale": "No live telemetry, I can't answer that right now.",
+            "budget_exhausted": "Pitwall AI budget reached, I can't answer that.",
+            "no_agent": f"No {who} on the pitwall to answer that.",
+            "agent_disabled": f"The {who} is off the air, no answer.",
+            "cooldown": f"The {who} is busy, ask again in a moment.",
+            "no_answer": f"No answer from the {who}, sorry.",
+            "standby": "Pitwall is on standby, ask again once the session is live.",
+            "roster": f"The {who} is not on the pitwall for this session.",
+        }.get(reason, "No answer to that right now.")
+        state = self.engine.snapshot()
+        message = RadioMessage(
+            agent="pitwall",
+            priority=RadioPriority.INFO,
+            spoken_text=spoken,
+            detail_text=(
+                f"The driver's question ({event.payload.get('text')!r}) was routed to "
+                f"{owner} and could not be answered: {reason}."
+            ),
+            data={"pitwall_notice": True, "unanswered": reason, "owner": owner},
+            event_ref=EventRef.of(event),
+            session_time=state.session_time,
+            subject=f"answer:{event.payload.get('question_id')}",
+            source="pitwall",
+            in_reply_to=event.payload.get("question_id"),
+            # Off with the kill switch: the operator asked for a silent radio.
+            speak=reason != "disabled",
+        )
+        if reason == "disabled":
+            self.feed.emit(message)
+            return message
+        return self.publish(message)
+
     # ---- routing ---------------------------------------------------------
     def dispatch(self, event: RaceEvent, state: RaceState | None = None) -> list[str]:
         """Route one event. Returns the agents that accepted it.
@@ -361,8 +491,11 @@ class PitwallOrchestrator:
         the async workers decide *when*. That makes trigger routing unit-testable
         without an event loop.
         """
+        self.observe_lifecycle(event)
         if not self._enabled or self._suspended:
-            self._trace_dispatch(event, [], {}, "disabled" if not self._enabled else "suspended")
+            blocked = "disabled" if not self._enabled else "suspended"
+            self._trace_dispatch(event, [], {}, blocked)
+            self._reply_unanswered(event, blocked)
             return []
         if event.event_type is EventType.VISUAL_OBSERVATION and not self.vision_radio:
             # Still on the bus, so the recorder journals it and the timeline and
@@ -374,19 +507,32 @@ class PitwallOrchestrator:
             # The numbers are the last known ones, not current ones. An agent
             # reasoning over them would be grounded in a race that has stopped.
             self._trace_dispatch(event, [], {}, "stale")
+            self._reply_unanswered(event, "stale")
             return []
         # Template calls first: no model, no budget, on the channel before any
         # agent has even been considered.
         templated = self._call_templates(event, state)
+        question = is_question(event) and not templated
+        if self._standby_reason is not None:
+            # Autonomy holds the model-backed agents only; templates cost nothing.
+            self._trace_dispatch(event, [], {}, "standby", templated)
+            if question:
+                self._reply_unanswered(event, "standby")
+            return []
         if self.budget_exhausted:
             self._announce_budget_exhausted()
             self._trace_dispatch(event, [], {}, "budget_exhausted", templated)
+            if question:
+                self._reply_unanswered(event, "budget_exhausted")
             return []
         accepted: list[str] = []
         skipped: dict[str, str] = {}
         for name, runtime in self.runtimes.items():
             if not self._agent_enabled.get(name, True):
                 skipped[name] = "disabled"
+                continue
+            if self._armed_roster is not None and name not in self._armed_roster:
+                skipped[name] = "roster"
                 continue
             trigger = runtime.match(event, state)
             if trigger is None:
@@ -400,6 +546,15 @@ class PitwallOrchestrator:
             if queue is not None:
                 self._offer(name, queue, event)
         self._trace_dispatch(event, accepted, skipped, None, templated)
+        if question and not accepted:
+            owner = event.payload.get("owner")
+            if owner not in self.runtimes:
+                reason = "no_agent"
+            else:
+                reason = "agent_disabled" if skipped.get(owner) == "disabled" else (
+                    skipped.get(owner) or "no_agent"
+                )
+            self._reply_unanswered(event, reason)
         return accepted
 
     def _call_templates(self, event: RaceEvent, state: RaceState) -> list[str]:
@@ -466,12 +621,8 @@ class PitwallOrchestrator:
             waiting = queue.get_nowait()
         except asyncio.QueueEmpty:  # pragma: no cover - raced with the worker
             waiting = None
-        if (
-            waiting is not None
-            and waiting.severity is Severity.CRITICAL
-            and event.severity is not Severity.CRITICAL
-        ):
-            queue.put_nowait(waiting)  # a critical event is never displaced
+        if waiting is not None and _holds_slot(waiting, event):
+            queue.put_nowait(waiting)  # a critical event or a question is never displaced
             self.skipped_busy += 1
             log.debug("%s busy on a critical event; dropped %s", name, event.key)
             safe_trace(
@@ -493,15 +644,22 @@ class PitwallOrchestrator:
         state = self.engine.snapshot()
         events = self.engine.bus.history(EVENT_CONTEXT)
         history = self.feed.history(RADIO_CONTEXT)
+        # Its last call another agent's call kept off the air, shown once.
+        superseded = self.feed.take_superseded(name)
+        # Its own last call per subject, minus the one that note already covers.
+        skip = {n.get("message_id") for n in superseded}
+        previous = [p for p in self.previous_calls(name) if p["message_id"] not in skip]
         sem = self._sem
         if sem is None:  # inline use (tests, smoke) without start()
             message = await runtime.invoke(
-                event, state, events=events, radio_history=history
+                event, state, events=events, radio_history=history, superseded=superseded,
+                previous_calls=previous,
             )
         else:
             async with sem:
                 message = await runtime.invoke(
-                    event, state, events=events, radio_history=history
+                    event, state, events=events, radio_history=history,
+                    superseded=superseded, previous_calls=previous,
                 )
         self._record_outcome(name, message is not None)
         if message is not None:
@@ -513,7 +671,47 @@ class PitwallOrchestrator:
                 max_age_s=self.max_age_s.get(name),
                 pit_entry_pct=getattr(self.engine, "pit_entry_pct", None),
             )
+            if is_question(event):
+                # Tied to the question, and its own subject: an answer must not
+                # supersede the standing pit call (or be superseded by it).
+                qid = event.payload.get("question_id")
+                message.in_reply_to = qid
+                message.subject = f"answer:{qid}"
+        elif is_question(event):
+            self._reply_unanswered(event, "no_answer")
+        if message is not None:
+            self._remember_call(message)
         return message
+
+    # ---- each agent's own earlier calls (task D1) ---------------------------
+    def _remember_call(self, message: RadioMessage) -> None:
+        """Keep an agent's newest call per subject, so its next run can revise it.
+
+        The message object itself is kept: the radio sets ``late`` / ``expired`` on
+        it at air time, so the next run sees what actually happened to the call.
+        Refusals and withheld calls are not calls the agent made to the driver.
+        """
+        if message.refused or not message.subject or message.source != "model":
+            return
+        if message.in_reply_to is not None:
+            return  # an answer to the driver is not a standing call
+        with self._own_lock:
+            calls = self._own_calls.setdefault(message.agent, {})
+            calls.pop(message.subject, None)  # re-insert: newest subject last
+            calls[message.subject] = message
+
+    def previous_calls(self, name: str) -> list[dict[str, Any]]:
+        """Agent ``name``'s last call on each of its last few subjects, oldest first,
+        with what the radio did with each (the ``previous`` of its run input)."""
+        with self._own_lock:
+            mine = list(self._own_calls.get(name, {}).values())
+        mine = mine[-agent_input.PREVIOUS_SUBJECTS :] if agent_input.PREVIOUS_SUBJECTS else []
+        if not mine:
+            return []
+        aired = {m.message_id for m in self.feed.history()}
+        return [
+            agent_input.previous_call(m, queued=_not_aired_yet(m, aired)) for m in mine
+        ]
 
     # ---- degradation notices --------------------------------------------
     def _notice(
@@ -676,6 +874,108 @@ class PitwallOrchestrator:
                 messages.append(message)
         return messages
 
+    # ---- session lifecycle autonomy -----------------------------------------
+    @property
+    def standby(self) -> bool:
+        return self._standby_reason is not None
+
+    @property
+    def standby_reason(self) -> str | None:
+        return self._standby_reason
+
+    def observe_lifecycle(self, event: RaceEvent) -> None:
+        """Follow the session lifecycle events; arm and disarm under autonomy.
+
+        Called from :meth:`dispatch` for every event, before the kill switch is
+        consulted, so standby tracks the session even while the operator has the
+        layer off. It only ever writes the standby flag and the armed roster.
+        """
+        kind = event.event_type
+        if kind not in _LIFECYCLE_EVENTS:
+            return
+        payload = event.payload or {}
+        if kind is EventType.SESSION_START:
+            self.session_type = payload.get("session_type")
+            if self.autonomous:
+                self._set_standby("waiting for the green flag", event, armed_roster=None)
+        elif not self.autonomous:
+            return
+        elif kind is EventType.SESSION_GREEN:
+            self.session_type = payload.get("session_type") or self.session_type
+            self._arm_for(self.session_type, event)
+        elif kind is EventType.SESSION_CHECKERED:
+            # Only once the player has the flag: the leader's flag is not ours.
+            if payload.get("player_finished") is not False and not self.standby:
+                self._set_standby("the player took the checkered flag", event)
+        elif kind is EventType.SESSION_END and not self.standby:
+            self._set_standby("the session ended", event)
+        elif kind is EventType.SESSION_END:
+            self._standby_reason = "waiting for a session"
+
+    def _arm_for(self, session_type: str | None, event: RaceEvent) -> None:
+        if session_type is None:
+            self._set_standby("the session type is unknown, so autonomy does not arm", event)
+        elif session_type in self.autonomous_sessions:
+            self._arm(None, event)
+        elif self.rosters.get(session_type):
+            self._arm(set(self.rosters[session_type]) & set(self.runtimes), event)
+        else:
+            self._set_standby(f"no agents are on the {session_type} roster", event)
+
+    def _arm(self, roster: set[str] | None, event: RaceEvent) -> None:
+        self._standby_reason = None
+        self._armed_roster = roster
+        names = sorted(roster) if roster is not None else list(self.runtimes)
+        log.info(
+            "Pitwall armed for %s at t=%.1fs: %s",
+            self.session_type or "an unknown session", event.session_time,
+            ", ".join(names) or "none",
+        )
+        self._trace_autonomy(event, armed=True, reason="green flag")
+
+    def _set_standby(
+        self, reason: str, event: RaceEvent, *, armed_roster: Any = _KEEP
+    ) -> None:
+        was_armed = self.autonomous and self._standby_reason is None
+        self._standby_reason = reason
+        if armed_roster is not _KEEP:
+            self._armed_roster = armed_roster
+        if was_armed:
+            limit = f"/{self._max_calls}" if self._max_calls else ""
+            log.info(
+                "Pitwall standing down (%s): %d%s model calls used this session.",
+                reason, self.calls_used, limit,
+            )
+        self._trace_autonomy(event, armed=False, reason=reason)
+
+    def _trace_autonomy(self, event: RaceEvent, *, armed: bool, reason: str) -> None:
+        self.last_autonomy = {
+            "armed": armed,
+            "reason": reason,
+            "event": event.event_type.value,
+            "session_time": event.session_time,
+            "session_type": self.session_type,
+            "roster": sorted(self._armed_roster) if self._armed_roster is not None else None,
+            "calls_used": self.calls_used,
+            "max_calls_per_session": self._max_calls or None,
+        }
+        data = {k: v for k, v in self.last_autonomy.items() if k != "session_time"}
+        safe_trace(
+            self.activity, "autonomy", event_key=event.key,
+            session_time=event.session_time, tick=event.tick, **data,
+        )
+
+    @property
+    def mode(self) -> str:
+        """One word for the UI: off, suspended, standby, armed (autonomy) or on."""
+        if not self._enabled:
+            return "off"
+        if self._suspended:
+            return "suspended"
+        if self._standby_reason is not None:
+            return "standby"
+        return "armed" if self.autonomous else "on"
+
     # ---- control ---------------------------------------------------------
     @property
     def enabled(self) -> bool:
@@ -769,6 +1069,8 @@ class PitwallOrchestrator:
         self.director.reset()
         for caller in self.callers:
             caller.reset()
+        with self._own_lock:
+            self._own_calls.clear()
         self.feed.clear()
 
     def healthy(self) -> bool:
@@ -782,11 +1084,24 @@ class PitwallOrchestrator:
             "healthy": self.healthy(),
             "suspended": self._suspended,
             "suspend_reason": self._suspend_reason,
+            "mode": self.mode,
+            "autonomous": self.autonomous,
+            "standby": self.standby,
+            "standby_reason": self._standby_reason,
+            "armed_roster": (
+                sorted(self._armed_roster) if self._armed_roster is not None else None
+            ),
+            "session_type": self.session_type,
+            "last_autonomy": self.last_autonomy,
             "max_inflight": self._max_inflight,
             "dispatched": self.dispatched,
             "skipped_busy": self.skipped_busy,
             "injected": self.injected,
             "template_calls": self.template_calls,
+            "questions": self.questions,
+            # False for the templates-only mount (no LLM key): spotter calls and
+            # lookup answers still run, nothing calls a model.
+            "agents_mounted": bool(self.runtimes),
             "callers": [caller.describe() for caller in self.callers],
             "failure_limit": self._failure_limit,
             "restarts": dict(self.restarts),
@@ -811,3 +1126,23 @@ class PitwallOrchestrator:
                 for name, runtime in self.runtimes.items()
             ],
         }
+
+
+def _not_aired_yet(message: RadioMessage, aired: set[str]) -> bool:
+    """Still waiting for the channel: neither aired nor dropped."""
+    if message.expired or message.air_session_time is not None:
+        return False
+    return message.message_id not in aired
+
+
+def _holds_slot(waiting: RaceEvent, incoming: RaceEvent) -> bool:
+    """Whether a queued event keeps its inbox slot against ``incoming``.
+
+    A critical event is never displaced by a lesser one, and a driver's question
+    is never displaced by a detector event short of critical: the driver asked.
+    """
+    if waiting.severity is Severity.CRITICAL:
+        return incoming.severity is not Severity.CRITICAL
+    if is_question(waiting):
+        return incoming.severity is not Severity.CRITICAL and not is_question(incoming)
+    return False

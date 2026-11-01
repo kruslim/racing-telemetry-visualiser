@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import threading
 import uuid
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -22,7 +22,16 @@ from rtv.pitwall.radio import RadioFeed
 from rtv.pitwall.tts import RadioTTS, build_radio_tts
 from rtv.racestate.detectors import DEFAULT_CONFIG
 from rtv.racestate.engine import RaceStateEngine
+from rtv.racestate.models import EventType, RaceEvent
 from rtv.racestate.replay import ReplayDriver
+from rtv.session_end import (
+    NullNotifier,
+    SessionEnded,
+    SessionEndHooks,
+    build_notifier,
+    notify_with,
+    store_run_summary,
+)
 from rtv.store.duck import Database
 from rtv.store.journal import SessionRecorder
 from rtv.store.repository import Repository
@@ -121,6 +130,12 @@ class AppServices:
     #: Onboard video and VLM visual notes (see docs/VISION.md). Always present;
     #: it makes no VLM call unless RTV_VISION_MODE allows it.
     vision: VisionService | None = None
+    #: Callbacks run once per closed journal run (one session segment), each
+    #: given a :class:`~rtv.session_end.SessionEnded`, on a worker thread. The
+    #: built-in one stores ``<run_id>.summary.json``; stage 09's debrief appends.
+    on_session_end: SessionEndHooks = field(default_factory=SessionEndHooks)
+    #: Cuts journal runs at session segment boundaries (None without a recorder).
+    segments: SegmentJournal | None = None
 
     def close(self) -> None:
         try:
@@ -128,13 +143,125 @@ class AppServices:
                 self.vision.close()
             if self.replay is not None:
                 self.replay.stop()
-            if self.recorder is not None:
+            if self.engine is not None:
+                self.engine.end_segment("shutdown")
+            if self.segments is not None:
+                self.segments.close("shutdown")
+            elif self.recorder is not None:
                 self.recorder.end(reason="shutdown")
+            self.on_session_end.close()
         finally:
             try:
                 self.poller.stop()
             finally:
                 self.db.close()
+
+
+class SegmentJournal:
+    """One journal run per session segment, and the session-end hook.
+
+    Sits between ``engine.bus`` and the recorder: a ``session_start`` resets the
+    agent layer and opens (or names) the run *before* the event is written, and a
+    ``session_end`` is written *before* the run closes, so each run holds its
+    own segment's lifecycle events. Every closed run fires ``hooks``.
+    """
+
+    def __init__(
+        self,
+        recorder: SessionRecorder,
+        engine: RaceStateEngine,
+        hooks: SessionEndHooks,
+        pitwall: PitwallOrchestrator | None = None,
+    ) -> None:
+        self.recorder = recorder
+        self.engine = engine
+        self.hooks = hooks
+        self.pitwall = pitwall
+        self._last: dict | None = None
+
+    def segment(self) -> dict | None:
+        """The open segment's journal fields, or None between segments."""
+        lc = self.engine.lifecycle
+        if not lc.open:
+            return None
+        return {
+            "session_num": lc.session_num,
+            "session_type": lc.session_type,
+            "segment": lc.segment,
+        }
+
+    def begin(self, session_id: str, source: str) -> None:
+        _begin_journal(self.recorder, self.pitwall, session_id, source, segment=self.segment())
+
+    def close(self, reason: str, *, state=None) -> None:
+        """Close the open run (final state, budget used) and fire the hook."""
+        extra: dict = {}
+        pitwall = self.pitwall
+        if pitwall is not None:
+            extra = {
+                "calls_used": pitwall.calls_used,
+                "calls_by_layer": pitwall.calls_by_layer,
+                "max_calls_per_session": pitwall.status().get("max_calls_per_session"),
+            }
+        try:
+            closed = self.recorder.end(state=state, reason=reason, **extra)
+        except Exception:  # pragma: no cover - recording must never stop a session
+            log.exception("Could not close the journal run (%s)", reason)
+            return
+        if closed is None:
+            return
+        self._last = closed
+        segment = closed.get("segment") or {}
+        self.hooks.fire(
+            SessionEnded(
+                session_id=closed["session_id"],
+                run_id=closed["run_id"],
+                journal_path=Path(closed["path"]),
+                source=closed["source"],
+                session_num=segment.get("session_num"),
+                session_type=segment.get("session_type"),
+                reason=reason,
+                calls_used=extra.get("calls_used"),
+                calls_by_layer=dict(extra.get("calls_by_layer") or {}),
+            )
+        )
+
+    def on_race_event(self, event: RaceEvent) -> None:
+        kind = event.event_type
+        if kind is EventType.SESSION_START:
+            self._on_start(event)
+        self.recorder.on_race_event(event)
+        if kind is EventType.SESSION_END:
+            self.close(
+                str(event.payload.get("reason") or "session_end"),
+                state=self.engine.pop_ended_state(),
+            )
+
+    def _on_start(self, event: RaceEvent) -> None:
+        segment = {k: event.payload.get(k) for k in ("session_num", "session_type", "segment")}
+        if self.pitwall is not None:
+            # A new session gets clean cooldowns, radio, breakers, director and
+            # call budget: the race must not inherit practice's spend.
+            try:
+                self.pitwall.reset()
+            except Exception:  # pragma: no cover - never break the frame path
+                log.exception("Could not reset the agent layer for a new session")
+        active = self.recorder.active_run()
+        try:
+            if active is not None and active.get("segment") is None:
+                self.recorder.annotate_segment(segment)
+                return
+            if active is not None:
+                self.close("session_changed")
+            last = active or self._last or {}
+            session_id = self.engine.state.session.session_id or last.get("session_id")
+            source = last.get("source")
+            if session_id and source:
+                _begin_journal(
+                    self.recorder, self.pitwall, session_id, source, segment=segment
+                )
+        except Exception:  # pragma: no cover - recording must never stop a session
+            log.exception("Could not open the journal run for a new session segment")
 
 
 def build_services(settings: Settings) -> AppServices:
@@ -151,6 +278,8 @@ def build_services(settings: Settings) -> AppServices:
     activity: ActivityLog | None = None
     recorder: SessionRecorder | None = None
     tts = build_radio_tts(settings)
+    hooks = SessionEndHooks()
+    segments: SegmentJournal | None = None
     if settings.pitwall:
         engine = RaceStateEngine(
             source="live",
@@ -184,10 +313,13 @@ def build_services(settings: Settings) -> AppServices:
             if running:
                 hub.publish_state(ConnectionState.REPLAY, session_id)
                 if session_id:
-                    _begin_journal(recorder, pitwall, session_id, "replay")
+                    segments.begin(session_id, "replay")
             else:
                 hub.publish_state(ConnectionState.DISCONNECTED, None)
-                recorder.end(reason="replay_finished")
+                # Ends the segment (session_end), which closes its run; the
+                # second call closes a run that never saw a frame.
+                engine.end_segment("replay_finished")
+                segments.close("replay_finished")
                 if vision.worker is not None and session_id:
                     vision.worker.end_session(session_id, "replay_finished")
 
@@ -212,8 +344,13 @@ def build_services(settings: Settings) -> AppServices:
             state_interval_s=settings.journal_state_interval_s,
             snapshot=engine.snapshot,
         )
-        engine.bus.subscribe_callback(recorder.on_race_event)
+        segments = SegmentJournal(recorder, engine, hooks, pitwall)
+        engine.bus.subscribe_callback(segments.on_race_event)
         activity.subscribe_callback(recorder.on_activity)
+        hooks.append(store_run_summary(repo))
+        notifier = build_notifier(settings.pitwall_session_end_notifier)
+        if not isinstance(notifier, NullNotifier):
+            hooks.append(notify_with(notifier))
         if pitwall is not None:
             pitwall.feed.subscribe_callback(recorder.on_radio)
 
@@ -248,13 +385,21 @@ def build_services(settings: Settings) -> AppServices:
         # or four minutes old. Flag it, and stand the agents down so none of them
         # reasons over a race that has stopped.
         try:
-            if recorder is not None:
+            if state is ConnectionState.IN_SESSION and session_id:
+                # A different session id ends the open segment (session_end ->
+                # its journal run closes) before the new one is named.
+                engine.set_session_id(session_id)
+            if segments is not None:
                 active = recorder.active
                 if state is ConnectionState.IN_SESSION and session_id:
-                    if active is None or active["session_id"] != session_id:
-                        _begin_journal(recorder, pitwall, session_id, "live")
+                    if active is not None and active["session_id"] != session_id:
+                        segments.close("session_changed")
+                        active = None
+                    if active is None:
+                        segments.begin(session_id, "live")
                 elif active is not None and active["source"] == "live":
-                    recorder.end(reason=f"iRacing telemetry {state.value}")
+                    # The segment stays open: a reconnect resumes it in a new run.
+                    segments.close(f"iRacing telemetry {state.value}")
         except Exception:  # pragma: no cover - never break the live feed
             log.exception("Could not update the race journal for %s", state)
         try:
@@ -308,6 +453,8 @@ def build_services(settings: Settings) -> AppServices:
         activity=activity,
         recorder=recorder,
         vision=vision,
+        on_session_end=hooks,
+        segments=segments,
     )
 
 
@@ -335,6 +482,8 @@ def _begin_journal(
     pitwall: PitwallOrchestrator | None,
     session_id: str,
     source: str,
+    *,
+    segment: dict | None = None,
 ) -> None:
     """Open a journal run, noting which agents (if any) were listening."""
     if recorder is None:
@@ -349,6 +498,7 @@ def _begin_journal(
         recorder.begin(
             session_id,
             source,
+            segment=segment,
             agents=agents,
             agents_enabled=bool(pitwall is not None and pitwall.enabled),
         )
@@ -386,13 +536,14 @@ def build_pitwall(
     from rtv.pitwall.agents import build_agents
     from rtv.pitwall.callers import build_callers
 
+    only = [n.strip() for n in settings.pitwall_agents_only.split(",") if n.strip()]
     if not is_configured(settings):
         log.info(
-            "Pitwall agents disabled: %s is not set. "
-            "The deterministic race-state engine is unaffected.",
+            "Pitwall agents disabled: %s is not set. Template calls (spotter, "
+            "driver-question lookups) still run; nothing calls a model.",
             key_env_var(settings),
         )
-        return None
+        return build_template_pitwall(engine, settings, only=only, tts=tts)
     try:
         from rtv.pitwall.provider import KimiProvider
 
@@ -400,11 +551,10 @@ def build_pitwall(
     except Exception:  # pragma: no cover - the ai extra is optional
         log.warning(
             "Pitwall agents disabled: the 'ai' extra is not installed "
-            '(pip install -e ".[ai]").'
+            '(pip install -e ".[ai]"). Template calls still run.'
         )
-        return None
+        return build_template_pitwall(engine, settings, only=only, tts=tts)
 
-    only = [n.strip() for n in settings.pitwall_agents_only.split(",") if n.strip()]
     # Each agent's model: RTV_PITWALL_<NAME>_MODEL, else the rtv.llm tier default.
     agents = build_agents(only=only or None, settings=settings)
     if not agents:
@@ -429,6 +579,12 @@ def build_pitwall(
         max_calls_per_session=settings.pitwall_max_calls_per_session,
         retry_backoff_s=settings.pitwall_retry_backoff_s,
         vision_radio=settings.vision_live_radio,
+        autonomous=settings.pitwall_autonomous,
+        autonomous_sessions=_names(settings.pitwall_autonomous_sessions),
+        rosters={
+            "practice": _names(settings.pitwall_roster_practice),
+            "qualify": _names(settings.pitwall_roster_qualify),
+        },
         # The spotter's per-event calls are templates: instant, no model call.
         callers=build_callers(settings, only=only or None),
         tool_config={
@@ -443,6 +599,36 @@ def build_pitwall(
         tool_extras={"coaching": coaching, "repo": repo},
         tts=tts,
     )
+
+
+def build_template_pitwall(
+    engine: RaceStateEngine,
+    settings: Settings,
+    *,
+    only: list[str] | None = None,
+    tts: RadioTTS | None = None,
+) -> PitwallOrchestrator:
+    """The radio with its deterministic callers only: no agents, no provider, no key.
+
+    The spotter's template calls and the answers to driver lookup questions
+    (:mod:`rtv.pitwall.questions`) need no model, so they must not need a key
+    either. Questions that need an agent get an honest "no one to answer" reply.
+    """
+    from rtv.pitwall.callers import build_callers
+
+    return PitwallOrchestrator(
+        engine,
+        None,
+        [],
+        feed=RadioFeed(history=settings.pitwall_radio_history),
+        enabled=settings.pitwall_agents_live,
+        callers=build_callers(settings, only=only or None),
+        tts=tts,
+    )
+
+
+def _names(value: str) -> list[str]:
+    return [n.strip().lower() for n in (value or "").split(",") if n.strip()]
 
 
 def build_director(settings: Settings) -> NoopDirector:

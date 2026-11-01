@@ -71,6 +71,20 @@ class EventType(StrEnum):
     #: flagged, number-free, ``payload.source == "vision"``. Spotter and coach may
     #: take it, always at the lowest radio priority.
     VISUAL_OBSERVATION = "visual_observation"
+    #: Session lifecycle (see :mod:`rtv.racestate.lifecycle`). Emitted by the
+    #: engine from SessionNum, SessionState, the flag phase and the lap counter.
+    #: No agent is woken by them; the orchestrator uses them to arm and disarm
+    #: under RTV_PITWALL_AUTONOMOUS, and services uses them to cut journal runs.
+    SESSION_START = "session_start"
+    SESSION_GREEN = "session_green"
+    SESSION_CHECKERED = "session_checkered"
+    SESSION_END = "session_end"
+    #: Not a detector event: the driver asked the pitwall something (push-to-talk
+    #: or the desktop text box). ``payload.text`` is the question, ``payload.owner``
+    #: the agent the router chose, ``payload.intent`` a template lookup or ``None``,
+    #: ``payload.question_id`` the driver transcript's radio ``message_id``. See
+    #: :mod:`rtv.pitwall.questions`. On the bus so the journal records it.
+    DRIVER_QUESTION = "driver_question"
 
 
 class FlagPhase(StrEnum):
@@ -131,6 +145,10 @@ class Capabilities(BaseModel):
     wheelspin: bool = False
     offtrack: bool = False
     incidents: bool = False
+    #: Session lifecycle: SessionNum, SessionState and SessionFlags all present.
+    #: Without them a transition the catalog cannot back leaves the lifecycle
+    #: state "unknown" (see :mod:`rtv.racestate.lifecycle`).
+    lifecycle: bool = False
     #: ``CarLeftRight`` is present (live sessions only), so ``car_alongside`` fires.
     car_alongside: bool = False
     #: Channels the engine looked for and did not find, for operator diagnosis.
@@ -148,6 +166,30 @@ class SessionSummary(BaseModel):
     track_id: str | None = None
     track_name: str | None = None
     lap_length_m: float | None = None
+
+
+class LifecycleSummary(BaseModel):
+    """Where the current session segment is (:mod:`rtv.racestate.lifecycle`)."""
+
+    #: idle | practice | qualify | race | pre_green | green | checkered |
+    #: cool_down | ended | unknown
+    state: str = "idle"
+    #: Segments started since the engine was last reset (1 = the first).
+    segment: int = 0
+    session_num: int | None = None
+    #: practice | qualify | race, or None when the session-info document does
+    #: not say (``notes`` explains).
+    session_type: str | None = None
+    #: The SessionType string iRacing wrote ("Open Qualify", "Warmup", ...).
+    session_type_raw: str | None = None
+    #: iRacing's decoded SessionState label.
+    session_state: str | None = None
+    green_at: float | None = None
+    checkered_at: float | None = None
+    #: True once the player crossed the line after the checkered flag.
+    player_finished: bool | None = None
+    ended_reason: str | None = None
+    notes: list[str] = Field(default_factory=list)
 
 
 class FlagState(BaseModel):
@@ -321,6 +363,7 @@ class RaceState(BaseModel):
     stale_reason: str | None = None
     session: SessionSummary = Field(default_factory=SessionSummary)
     flags: FlagState = Field(default_factory=FlagState)
+    lifecycle: LifecycleSummary = Field(default_factory=LifecycleSummary)
     standings: StandingsState = Field(default_factory=StandingsState)
     player: PlayerState = Field(default_factory=PlayerState)
     fuel: FuelState = Field(default_factory=FuelState)

@@ -174,7 +174,12 @@ def test_a_reconnect_produces_no_phantom_events():
 
     # The whole scripted race. (19 before the fuel margin counted from the car's
     # position: a phantom fuel_margin_low fired just after the stop.)
-    assert len(quiet.bus.history()) == 18
+    # Stage 07 added three lifecycle events (session_start, session_state_change
+    # and session_green on the first frame); the race itself is unchanged.
+    lifecycle = {"session_start", "session_state_change", "session_green"}
+    keys = [e.key for e in quiet.bus.history()]
+    assert len([k for k in keys if k not in lifecycle]) == 18
+    assert sorted(k for k in keys if k in lifecycle) == sorted(lifecycle)
     assert [e.key for e in interrupted.bus.history()] == [
         e.key for e in quiet.bus.history()
     ]

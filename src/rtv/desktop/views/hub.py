@@ -268,11 +268,21 @@ class Hub(QObject):
             err=lambda _s, d: self.notice.emit(d),
         )
 
-    def send_driver(self, text: str, on_unheard=None) -> None:
+    def ask(self, text: str, source: str = "text", on_unheard=None) -> None:
+        """Ask the pitwall a question. ``source`` is ``"text"`` or ``"voice"`` (C2).
+
+        The transcript and its answer arrive on the radio socket; the answer's
+        ``in_reply_to`` ties it to the transcript.
+        """
+
         def err(status, detail):
             if status == 503 and on_unheard:
                 on_unheard(text)
             else:
                 self.notice.emit(detail)
 
-        self.api.post("/pitwall/driver-message", {"text": text, "source": "text"}, err=err)
+        self.api.post("/pitwall/driver-message", {"text": text, "source": source}, err=err)
+
+    def send_driver(self, text: str, on_unheard=None) -> None:
+        """Typed text from the radio box: :meth:`ask` with ``source="text"``."""
+        self.ask(text, "text", on_unheard)

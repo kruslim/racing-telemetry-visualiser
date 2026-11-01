@@ -67,6 +67,9 @@ def run_stats(records: Iterable[dict[str, Any]]) -> dict[str, Any]:
     lifecycle: dict[str, Any] = {}
     radio_by_agent: Counter[str] = Counter()
     runs_with_input = 0
+    # B3: supersedes that name their rule (journals before it do not).
+    superseded_rules: Counter[str] = Counter()
+    superseded_cross = 0
 
     for rec in records:
         kind = rec.get("kind")
@@ -91,6 +94,10 @@ def run_stats(records: Iterable[dict[str, Any]]) -> dict[str, Any]:
             validates.append({"agent": agent, "run_id": run_id, **data})
         elif kind == "radio_aired":
             radio_by_agent[agent] += 1
+        elif kind == "radio_superseded" and data.get("rule"):
+            superseded_rules[data["rule"]] += 1
+            if data.get("by_agent") and data.get("by_agent") != agent:
+                superseded_cross += 1
 
     def trigger_of(item: dict[str, Any]) -> str:
         return run_trigger.get(item.get("run_id") or "", "unknown")
@@ -191,6 +198,10 @@ def run_stats(records: Iterable[dict[str, Any]]) -> dict[str, Any]:
         "radio_superseded": kinds.get("radio_superseded", 0),
         "radio_late": optional("radio_late"),
         "radio_expired": optional("radio_expired"),
+        # Cross-agent decision groups (B3): n/a for journals recorded before them.
+        "radio_superseded_cross_agent": superseded_cross if superseded_rules else None,
+        "radio_conflicts": superseded_rules.get("conflict", 0) if superseded_rules else None,
+        "radio_superseded_by_rule": dict(sorted(superseded_rules.items())),
         "agents": by_agent,
         "calls_by_trigger": dict(sorted(calls_by_trigger.items())),
         "runs_by_trigger": dict(sorted(runs_by_trigger.items())),
@@ -271,6 +282,8 @@ _SUMMARY_ROWS: list[tuple[str, Any, str]] = [
     ("radio superseded", lambda s: s["radio_superseded"], ""),
     ("radio late", lambda s: s["radio_late"], ""),
     ("radio expired", lambda s: s["radio_expired"], ""),
+    ("radio superseded across agents", lambda s: s.get("radio_superseded_cross_agent"), ""),
+    ("radio conflicts dropped", lambda s: s.get("radio_conflicts"), ""),
 ]
 
 _AGENT_ROWS: list[tuple[str, Any, str]] = [

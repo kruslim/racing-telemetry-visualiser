@@ -129,16 +129,28 @@ def aired_times(records: list[dict] | None) -> dict:
     return out
 
 
+#: Badge kinds of a call that never aired.
+NOT_AIRED = ("expired", "superseded")
+
+
 def air_badge(message: dict | None) -> dict | None:
     """What the radio decided at air time, for a badge: late, dropped, or nothing.
 
     ``{"kind": "late", "text": "late +27s"}`` for a call aired after its agent's
     limit, ``{"kind": "expired", "text": "not aired", "reason": ...}`` for one
-    dropped because it had stopped being true. ``None`` for an ordinary call and
-    for anything recorded before the radio checked air time.
+    dropped because it had stopped being true, ``{"kind": "superseded", "text":
+    "not aired", "reason": ...}`` for one another call on the same decision replaced.
+    ``None`` for an ordinary call and for anything recorded before the radio checked
+    air time.
     """
     if not isinstance(message, dict):
         return None
+    if message.get("superseded"):
+        return {
+            "kind": "superseded",
+            "text": "not aired",
+            "reason": message.get("superseded_reason") or "superseded",
+        }
     if message.get("expired"):
         return {
             "kind": "expired",
@@ -153,7 +165,7 @@ def air_badge(message: dict | None) -> dict | None:
 
 def _radio_when(data: dict, aired: dict, t: Any) -> Any:
     """When a call reached the channel: aired, or (for a dropped one) dropped."""
-    if data.get("expired") and is_num(data.get("air_session_time")):
+    if (data.get("expired") or data.get("superseded")) and is_num(data.get("air_session_time")):
         return data["air_session_time"]
     return aired.get(data.get("message_id"), t)
 
@@ -251,7 +263,7 @@ def lane_items(records: list[dict] | None, laps: list[dict] | None) -> dict:
         elif kind == "radio":
             badge = air_badge(data)
             note = ""
-            if badge and badge["kind"] == "expired":
+            if badge and badge["kind"] in NOT_AIRED:
                 note = f" (not aired: {badge['reason']})"
             elif badge:
                 note = f" ({badge['text']})"
@@ -267,6 +279,7 @@ def lane_items(records: list[dict] | None, laps: list[dict] | None) -> dict:
                     "refused": bool(data.get("refused")),
                     "late": bool(data.get("late")),
                     "expired": bool(data.get("expired")),
+                    "superseded": bool(data.get("superseded")),
                     "record": rec,
                 }
             )

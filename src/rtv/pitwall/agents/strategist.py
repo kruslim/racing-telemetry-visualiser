@@ -25,6 +25,7 @@ from rtv.pitwall.framework import (
     RadioPriority,
     Trigger,
 )
+from rtv.pitwall.questions import question_trigger
 from rtv.pitwall.validity import box_call_rules
 from rtv.racestate.models import EventType, FlagPhase, RaceEvent, RaceState
 from rtv.racestate.strategy_math import (
@@ -183,6 +184,8 @@ STRATEGIST_TRIGGERS: tuple[Trigger, ...] = (
         label="stint lap milestone",
         cooldown_s=60.0,
     ),
+    # A question the driver asked that needs judgement (rtv.pitwall.questions).
+    question_trigger(AGENT_NAME),
 )
 
 

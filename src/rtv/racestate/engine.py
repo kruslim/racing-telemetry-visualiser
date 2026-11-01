@@ -30,6 +30,7 @@ from rtv.logging import get_logger
 from rtv.racestate import channels as ch
 from rtv.racestate import detectors as det
 from rtv.racestate.bus import EventBus
+from rtv.racestate.lifecycle import SessionLifecycle, Signal
 from rtv.racestate.models import (
     Capabilities,
     CarState,
@@ -142,6 +143,7 @@ class RaceStateEngine:
         self._session_info: dict[str, Any] = {}
         #: The venue reference resolved from the session info (corner names), if any.
         self._track_ref: TrackReference | None = None
+        self._has_session_num = self._has_session_state = self._has_flags = False
         self.reset()
 
     # ------------------------------------------------------------------
@@ -216,6 +218,70 @@ class RaceStateEngine:
             self._cond_hist: deque[tuple[float, float | None, float | None]] = deque()
             self._last_cond_sample = -1e9
 
+            # session lifecycle (one segment per practice / qualifying / race)
+            self._lifecycle = SessionLifecycle()
+            self._ended_state: RaceState | None = None
+
+    def reset_segment(self) -> None:
+        """Clear the accumulators for a new session segment, keeping the binding.
+
+        Unlike :meth:`bind_catalog` the catalog, the session-info document, the
+        session's name and source, the lifecycle (its segment counter) and the
+        engine's own frame metrics survive: only what one session must not
+        inherit from the previous one (fuel model, lap history, latches, stint,
+        tyres, standings) starts again.
+        """
+        with self._lock:
+            lifecycle, ended = self._lifecycle, self._ended_state
+            old = self._state
+            frames, avg, worst, faults = self._frames, self._avg_ms, self._max_ms, self._faults
+            self.reset()
+            self._lifecycle, self._ended_state = lifecycle, ended
+            self._frames, self._avg_ms, self._max_ms, self._faults = frames, avg, worst, faults
+            state = self._state
+            state.version = old.version
+            state.metrics = old.metrics.model_copy()
+            state.stale, state.stale_reason = old.stale, old.stale_reason
+            keep = old.session
+            state.session.session_id = keep.session_id
+            state.session.source = keep.source
+            state.session.track_name = keep.track_name
+            state.session.lap_length_m = keep.lap_length_m
+            state.standings.lap_length_m = keep.lap_length_m
+            state.lifecycle = lifecycle.summary()
+
+    def end_segment(self, reason: str) -> RaceEvent | None:
+        """Close the open session segment (the feed ended); publishes ``session_end``.
+
+        Idempotent: with no open segment it does nothing and returns None. The
+        next frame opens a new segment with fresh accumulators.
+        """
+        with self._lock:
+            events = self._lifecycle_events(self._lifecycle.end(reason))
+            if not events:
+                return None
+            self._state.lifecycle = self._lifecycle.summary()
+            self._ended_state = self._state.model_copy(deep=True)
+        for event in events:
+            self.bus.publish(event)
+        return events[0]
+
+    def pop_ended_state(self) -> RaceState | None:
+        """The final state of the segment that just ended (once), else None."""
+        with self._lock:
+            state, self._ended_state = self._ended_state, None
+            return state
+
+    @property
+    def lifecycle(self) -> SessionLifecycle:
+        return self._lifecycle
+
+    def _lifecycle_events(self, signals: list[Signal], **extra: Any) -> list[RaceEvent]:
+        return [
+            self._event(sig.event_type, Severity.INFO, {**sig.payload, **extra})
+            for sig in signals
+        ]
+
     def bind_catalog(self, catalog: Catalog, *, session_id: str | None = None) -> None:
         """Probe the catalog for capabilities and reset accumulators."""
         with self._lock:
@@ -285,7 +351,18 @@ class RaceStateEngine:
         Distinct from :meth:`bind_catalog`, which resets every accumulator: a
         session id arriving from the poller must not throw away the fuel model.
         It is what lets ``get_corner_detail`` find this session in the store.
+
+        A *different* id while a segment is open is a new session, though: the
+        open segment ends (``session_end``, reason ``session_changed``) and the
+        next frame starts a clean one.
         """
+        with self._lock:
+            current = self._state.session.session_id
+            changed = (
+                current is not None and session_id is not None and session_id != current
+            )
+        if changed:
+            self.end_segment("session_changed")
         with self._lock:
             self._state.session.session_id = session_id
 
@@ -371,6 +448,9 @@ class RaceStateEngine:
             self._tyre_press_ch = {
                 c: n for c, n in ch.TYRE_PRESSURE_FLAT.items() if n in cols
             }
+        self._has_session_num = ch.SESSION_NUM in catalog
+        self._has_session_state = ch.SESSION_STATE in catalog
+        self._has_flags = ch.SESSION_FLAGS in catalog
         self._wheel_front = [c for c in ch.FRONT_WHEELS if ch.WHEEL_SPEED[c] in catalog]
         self._wheel_rear = [c for c in ch.REAR_WHEELS if ch.WHEEL_SPEED[c] in catalog]
 
@@ -396,6 +476,7 @@ class RaceStateEngine:
             pit=has_all(ch.REQUIRED["pit"]),
             incidents=has_all(ch.REQUIRED["incidents"]),
             offtrack=has_all(ch.REQUIRED["offtrack"]),
+            lifecycle=has_all(ch.REQUIRED["lifecycle"]),
             car_alongside=has_all(ch.REQUIRED["car_alongside"]),
             tyres=bool(self._tyre_temp_ch or self._tyre_press_ch),
             car_health=any(n in catalog for n in ch.CAR_HEALTH_ANY),
@@ -536,6 +617,25 @@ class RaceStateEngine:
             # here rather than only in mark_live() so a resume works even when
             # nothing announces it -- the frame *is* the announcement.
             self.mark_live()
+        # Session segments: a SessionNum change, a session clock that went back,
+        # or the first frame after a segment ended starts a clean one.
+        events: list[RaceEvent] = []
+        session_num = (
+            det.as_int(values, ch.SESSION_NUM) if self._has_session_num else None
+        )
+        boundary = self._lifecycle.boundary(session_num, frame.session_time)
+        if boundary is not None:
+            if boundary != "start":
+                # Stamped with the previous frame: that is where the segment ended.
+                events.extend(
+                    self._lifecycle_events(
+                        self._lifecycle.end("session_changed"), cause=boundary
+                    )
+                )
+                self._state.lifecycle = self._lifecycle.summary()
+                self._ended_state = self._state.model_copy(deep=True)
+            if self._lifecycle.segment > 0:
+                self.reset_segment()
         self._window.append(dict(values))
         if len(self._window) > _WINDOW_TRIM_AT:
             del self._window[:-_WINDOW_KEEP]
@@ -546,14 +646,35 @@ class RaceStateEngine:
         state.session_time = frame.session_time
         state.wall_time = frame.wall_time
 
-        events: list[RaceEvent] = []
         caps = state.capabilities
+        if boundary is not None:
+            events.extend(
+                self._lifecycle_events(
+                    self._lifecycle.begin(
+                        session_num,
+                        self._session_info,
+                        has_state=self._has_session_state,
+                        has_flags=self._has_flags,
+                        reason=boundary,
+                    )
+                )
+            )
 
         self._update_session(values)
         if caps.flags:
             self._update_flags(values, events)
         if caps.player:
             self._update_player(values)
+        signals = self._lifecycle.observe(
+            session_state=state.session.state if self._has_session_state else None,
+            flag_phase=state.flags.phase,
+            lap=det.as_int(values, ch.LAP),
+            session_time=frame.session_time,
+        )
+        if signals:
+            events.extend(self._lifecycle_events(signals))
+        if signals or boundary is not None:
+            state.lifecycle = self._lifecycle.summary()
         if caps.fuel:
             self._update_fuel_level(values)
             if state.version % self._fuel_interval == 0:

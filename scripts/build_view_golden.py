@@ -47,6 +47,12 @@ TRACK_POINT_STRIDE = 5
 LATE_ID = "fd8c4e03a6c93cb1"
 EXPIRED_ID = "386c95aadfe737d5"
 EXPIRED_REASON = "lap 3 has passed (now lap 4)"
+# Task B3: an engineer "box now" queued at the same yellow is replaced by the
+# strategist's real critical box call when that is published. Test data only.
+SUPERSEDED_BY_ID = "13dfdf18da914f37"
+SUPERSEDED_ID = "b3e0c2d9f1a7e440"
+SUPERSEDED_REASON = "replaced by the strategist's critical pit_stop call"
+SUPERSEDED_AT = 540.0
 
 
 def _air_journal(journal: list[dict]) -> list[dict]:
@@ -85,6 +91,41 @@ def _air_journal(journal: list[dict]) -> list[dict]:
                 air_session_time=aired[mid],
             )
         out.append(rec)
+    template = next(
+        r for r in out if r["kind"] == "radio" and r["data"]["message_id"] == SUPERSEDED_BY_ID
+    )
+    seq = max(r.get("seq") or 0 for r in out)
+    engineer = copy.deepcopy(template)
+    engineer["seq"] = seq + 1
+    engineer["agent"] = "vehicle_engineer"
+    engineer["data"].update(
+        agent="vehicle_engineer",
+        priority="advisory",
+        subject="damage_stop",
+        spoken_text="Box this lap, the front-left is losing pressure.",
+        detail_text="Front-left pressure falling.",
+        data={"finding": "damage", "pit_request": "box_now"},
+        message_id=SUPERSEDED_ID,
+        superseded=True,
+        superseded_by=SUPERSEDED_BY_ID,
+        superseded_reason=SUPERSEDED_REASON,
+        speak=False,
+        air_session_time=SUPERSEDED_AT,
+    )
+    out.append(engineer)
+    out.append({
+        **{k: template.get(k) for k in ("wall_ms", "tick", "event_key")},
+        "seq": seq + 2,
+        "session_time": SUPERSEDED_AT,
+        "kind": "radio_superseded",
+        "agent": "vehicle_engineer",
+        "data": {
+            "agent": "vehicle_engineer", "message_id": SUPERSEDED_ID, "priority": "advisory",
+            "subject": "damage_stop", "by_message_id": SUPERSEDED_BY_ID,
+            "by_agent": "strategist", "by_priority": "critical", "rule": "critical",
+            "group": "pit_stop", "reason": SUPERSEDED_REASON,
+        },
+    })
     return out
 
 
@@ -370,6 +411,8 @@ def _cases(inputs: dict) -> dict[str, list[dict]]:
         case("activity", "reduce the agents-on activity", "reduce", _ref("activity")),
         case("activity", "reduce up to 600 s", "reduce", _ref("activity"), 600),
         case("activity", "reduce the journal slice", "reduce", _ref("journal")),
+        case("activity", "reduce the journal with a superseded call", "reduce",
+             _ref("journal_air")),
         case("activity", "recentRuns", "recentRuns", {"$model": _ref("activity")}, 5),
         case("activity", "meanLatency", "meanLatency", {"$model": _ref("activity")}),
         case("activity", "meanLatency of nothing", "meanLatency", {"$model": []}),
@@ -439,6 +482,12 @@ def _cases(inputs: dict) -> dict[str, list[dict]]:
              {"expired": True, "expired_reason": EXPIRED_REASON}),
         case("review", "airBadge of a dropped call without a reason", "airBadge",
              {"expired": True}),
+        case("review", "airBadge of a superseded call", "airBadge",
+             {"superseded": True, "superseded_reason": SUPERSEDED_REASON}),
+        case("review", "airBadge of a superseded call without a reason", "airBadge",
+             {"superseded": True}),
+        case("review", "radioUpTo 530 s, before the superseded call was dropped", "radioUpTo",
+             _ref("journal_air"), 530.0),
         case("review", "airBadge of an ordinary call", "airBadge", {"late": False}),
         case("review", "airBadge of nothing", "airBadge", None),
         case("review", "toMetres", "toMetres", [0, 0.25, 0.5, 1], 6930.0),
