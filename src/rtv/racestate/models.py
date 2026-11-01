@@ -13,7 +13,7 @@ which groups were backed by real channels. Nothing is estimated into existence.
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -79,6 +79,10 @@ class EventType(StrEnum):
     SESSION_GREEN = "session_green"
     SESSION_CHECKERED = "session_checkered"
     SESSION_END = "session_end"
+    #: The race plan changed (:mod:`rtv.racestate.plan`): a derived refresh or an
+    #: accepted strategist proposal. ``payload`` says what changed, why, and the old
+    #: and new plan version. No agent is woken by it.
+    PLAN_REVISED = "plan_revised"
 
 
 class FlagPhase(StrEnum):
@@ -335,6 +339,85 @@ class TrackState(BaseModel):
     corners: list[CornerRef] = Field(default_factory=list)
 
 
+class LapRecord(BaseModel):
+    """One completed lap of the player's, as the projection layer reads it."""
+
+    lap: int
+    lap_time: float | None = None
+    stint: int = 1
+    #: 1-based position of this lap inside its stint (the out-lap is 1).
+    stint_lap: int = 1
+    #: Every frame of the lap was green.
+    green: bool = True
+    #: The car was on pit road at some point in the lap (an in- or out-lap).
+    pit: bool = False
+    session_time: float | None = None
+
+
+#: Where a plan element came from. ``derived``: the engine worked it out from the
+#: deterministic data. ``agent_proposed``: the strategist proposed it and the
+#: proposal passed the FactSet and sanity checks. ``operator_set``: a person set it.
+PlanProvenance = Literal["derived", "agent_proposed", "operator_set"]
+TyrePosture = Literal["push", "neutral", "conserve"]
+
+
+class PlanElement(BaseModel):
+    """One number (or posture) of the race plan, with where it came from."""
+
+    value: int | float | str | None = None
+    #: ``lap`` (a lap number), ``laps``, ``L``, ``L/lap``, ``s`` or None for a count/word.
+    unit: str | None = None
+    provenance: PlanProvenance = "derived"
+    rationale: str = ""
+    #: The plan version this element was set in.
+    version: int = 0
+    set_by: str = "engine"
+    set_at_lap: int | None = None
+
+
+class PlanRevision(BaseModel):
+    """One change to the plan, or one proposal that was turned down."""
+
+    version: int
+    accepted: bool
+    provenance: PlanProvenance = "derived"
+    agent: str | None = None
+    #: element -> {"from": old value, "to": new value}
+    changes: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    rationale: str = ""
+    #: Why a proposal was rejected (``None`` when accepted).
+    reason: str | None = None
+    lap: int | None = None
+    session_time: float = 0.0
+    state_version: int = 0
+
+
+class RacePlan(BaseModel):
+    """The pitwall's persistent, versioned race plan (:mod:`rtv.racestate.plan`).
+
+    Exists only in race segments, from the first lap the data supports any element.
+    An element left ``None`` has no grounding; ``missing`` says why. A revision is a
+    proposal, not a write: see :class:`rtv.racestate.plan.PlanKeeper`.
+    """
+
+    version: int = 0
+    segment: int = 0
+    #: Stops still to make before the flag.
+    stop_count: PlanElement | None = None
+    next_stop_lap: PlanElement | None = None
+    #: Litres to add at the next stop (the next stint's fuel load).
+    fuel_to_add_l: PlanElement | None = None
+    #: Consumption the current stint is run at (lower than learned = fuel save).
+    fuel_per_lap_target_l: PlanElement | None = None
+    pace_target_s: PlanElement | None = None
+    tyre_posture: PlanElement | None = None
+    stops_done: int = 0
+    #: element -> why it has no value.
+    missing: dict[str, str] = Field(default_factory=dict)
+    #: Accepted and rejected changes, oldest first (the last 40).
+    revisions: list[PlanRevision] = Field(default_factory=list)
+
+
 class RaceState(BaseModel):
     """The single continuously-updated object the pitwall reasons over."""
 
@@ -358,6 +441,10 @@ class RaceState(BaseModel):
     car_health: CarHealthState = Field(default_factory=CarHealthState)
     conditions: ConditionsState = Field(default_factory=ConditionsState)
     track: TrackState = Field(default_factory=TrackState)
+    #: The player's completed laps in this segment (the projection layer's input).
+    laps: list[LapRecord] = Field(default_factory=list)
+    #: The race plan; ``None`` outside race segments and before the data supports one.
+    plan: RacePlan | None = None
     capabilities: Capabilities = Field(default_factory=Capabilities)
     metrics: EngineMetrics = Field(default_factory=EngineMetrics)
 

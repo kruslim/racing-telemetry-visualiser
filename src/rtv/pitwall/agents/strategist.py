@@ -27,6 +27,7 @@ from rtv.pitwall.framework import (
 )
 from rtv.pitwall.validity import box_call_rules
 from rtv.racestate.models import EventType, FlagPhase, RaceEvent, RaceState
+from rtv.racestate.plan import plan_view
 from rtv.racestate.strategy_math import (
     CAUTION_FLAGS,
     standings_around_player,
@@ -73,6 +74,20 @@ Recommendation values:
 - extend: stay out past the planned lap; say how many laps.
 - stay_out: no stop is called for.
 - hold: you do not have the data to decide. Use it. It is a real answer.
+
+THE RACE PLAN. The RACE STATE carries 'plan': the standing plan for the race
+(stops left, next stop lap, fuel to add, consumption and pace targets, tyre
+posture), each element with its provenance and the plan version. You own it; the
+engineer and the coach drive to its tyre posture and pace target.
+- Your call should agree with the plan. When the numbers say the plan is wrong
+  (a cheap caution, an undercut that pays, a fuel save that saves a stop), revise
+  it with propose_plan_revision: only the elements you change, with a one-line
+  rationale, every number copied from the stop plan, simulate_pit_outcome,
+  get_fuel_save_options, get_lap_time_degradation or get_undercut_overcut.
+- A proposal is checked, not trusted. accepted=false means nothing changed: do
+  not announce it. A plan value never backs a new proposal; the data does.
+- get_traffic_projection is ungrounded without live gaps; then say nothing about
+  catching anyone.
 
 If a tool reports grounded=false or unavailable, choose 'hold' and say which
 number you are missing. Never invent a rejoin position, a lap number or a fuel
@@ -205,6 +220,9 @@ def strategist_slice(state: RaceState) -> dict:
         "stop_plan": stop_plan(state).to_tool(),
         "tyres": state.tyres.model_dump(mode="json"),
         "standings": standings_around_player(state, window=3),
+        # The race plan, whole: the strategist owns it. Typed facts at
+        # race_state.plan.* (next_stop_lap is a lap number, pace_target_s seconds).
+        "plan": plan_view(state, "full"),
         "capabilities": state.capabilities.model_dump(mode="json"),
     }
 
@@ -260,13 +278,24 @@ def strategist_policy(output: AgentOutput, state: RaceState, event: RaceEvent) -
     )
     if rec in ("box_now", "box_next_lap") and not (plan.caution_stop_available or covering):
         stop_lap = lap if rec == "box_now" else (lap or 0) + 1
-        if plan.target_lap is not None and stop_lap < plan.target_lap - 1:
+        # A stop lap the race plan already accepted (a priced undercut, say) stands
+        # in for the fuel-only target.
+        planned = _plan_stop_lap(state)
+        target = plan.target_lap if planned is None else min(planned, plan.target_lap or planned)
+        if target is not None and stop_lap < target - 1:
             return (
                 f"{rec} stops on lap {stop_lap}, but stop_plan.target_lap is "
                 f"{plan.target_lap}: answer plan_stop with that lap, or price a "
                 "caution or a rival's stop to stop early"
             )
     return None
+
+
+def _plan_stop_lap(state: RaceState) -> int | None:
+    element = state.plan.next_stop_lap if state.plan is not None else None
+    if element is None or not isinstance(element.value, int | float):
+        return None
+    return int(element.value)
 
 
 def strategist_validity(
@@ -287,7 +316,8 @@ def strategist_validity(
         stop_lap = lap + 1 if lap is not None else None
     elif rec == "plan_stop":
         target = data.get("target_lap")
-        stop_lap = int(target) if isinstance(target, int | float) else None
+        # A plan_stop with no lap of its own is about the race plan's stop lap.
+        stop_lap = int(target) if isinstance(target, int | float) else _plan_stop_lap(state)
     else:
         return {}
     return box_call_rules(stop_lap, pit_entry_pct)
@@ -310,6 +340,13 @@ STRATEGIST = AgentSpec(
         T.GET_STANDINGS_AROUND_PLAYER,
         T.GET_STINT_HISTORY,
         T.SIMULATE_PIT_OUTCOME,
+        T.GET_RACE_PLAN,
+        T.GET_LAP_TIME_DEGRADATION,
+        T.GET_FUEL_SAVE_OPTIONS,
+        T.GET_TRAFFIC_PROJECTION,
+        T.GET_UNDERCUT_OVERCUT,
+        # The one writer of the race plan, and only as a checked proposal.
+        T.PROPOSE_PLAN_REVISION,
     ),
     triggers=STRATEGIST_TRIGGERS,
     # Strategy is the one place in the pitwall worth a reasoning model: it is

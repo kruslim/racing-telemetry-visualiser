@@ -15,7 +15,10 @@ from __future__ import annotations
 from typing import Any
 
 from rtv.logging import get_logger
+from rtv.pitwall.activity import safe_trace
 from rtv.pitwall.framework import ToolContext, ToolSpec
+from rtv.racestate import plan as race_plan
+from rtv.racestate import projection as pj
 from rtv.racestate import strategy_math as sm
 from rtv.racestate.detectors import DEFAULT_CONFIG, corner_label
 from rtv.racestate.models import RaceState
@@ -120,6 +123,9 @@ def _event_row(event: Any) -> dict[str, Any]:
     }
 
 
+_NOT_DETECTOR_EVENTS = frozenset({"plan_revised"})
+
+
 def _get_recent_detector_events(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
     types = args.get("types")
     if isinstance(types, str):
@@ -134,7 +140,10 @@ def _get_recent_detector_events(ctx: ToolContext, args: dict[str, Any]) -> dict[
     rows = [
         _event_row(e)
         for e in ctx.events
-        if wanted is None or e.event_type.value in wanted
+        # The plan is read with get_race_plan; its revision log is not a detector
+        # finding, and an agent-written rationale in it must not become citable.
+        if (wanted is None or e.event_type.value in wanted)
+        and e.event_type.value not in _NOT_DETECTOR_EVENTS
     ]
     out: dict[str, Any] = {
         "requested_types": sorted(wanted) if wanted else "all",
@@ -354,6 +363,200 @@ def _get_corner_detail(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]
     return out
 
 
+# ---- stage 08: the race plan and the projection layer --------------------
+#: agent -> which part of the plan its get_race_plan returns. The strategist owns
+#: the plan; the engineer and the coach read how the stint is to be driven.
+PLAN_SCOPES = {"strategist": "full", "vehicle_engineer": "posture", "coach": "posture"}
+
+
+def _get_race_plan(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
+    return race_plan.plan_view(ctx.state, PLAN_SCOPES.get(ctx.agent, "posture"))
+
+
+def _int_arg(args: dict[str, Any], name: str, default: int | None) -> int | None:
+    raw = args.get(name)
+    if raw is None:
+        return default
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return default
+
+
+def _get_lap_time_degradation(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
+    horizon = _int_arg(args, "horizon_laps", pj.DEFAULT_HORIZON_LAPS) or 0
+    return pj.lap_time_degradation(ctx.state, horizon_laps=max(0, min(horizon, 30))).to_tool()
+
+
+def _get_fuel_save_options(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
+    extra = args.get("extra_laps")
+    if isinstance(extra, int | float) and not isinstance(extra, bool):
+        laps: tuple[int, ...] = (int(extra),)
+    else:
+        laps = (1, 2, 3)
+    laps = tuple(n for n in laps if 0 < n <= 10) or (1, 2, 3)
+    return pj.fuel_save_options(ctx.state, extra_laps=laps).to_tool()
+
+
+def _get_traffic_projection(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
+    return pj.traffic_projection(ctx.state).to_tool()
+
+
+def _get_undercut_overcut(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
+    loss = float(ctx.config.get("pit_lane_loss_s", sm.DEFAULT_PIT_LANE_LOSS_S))
+    return pj.undercut_overcut(
+        ctx.state,
+        early_lap=_int_arg(args, "early_lap", None),
+        late_lap=_int_arg(args, "late_lap", None),
+        pit_lane_loss_s=loss,
+    ).to_tool()
+
+
+def _propose_plan_revision(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
+    """Hand a proposal to the engine; it lands only if grounded and feasible.
+
+    A rejected proposal comes back with its reason and *without* the proposed
+    numbers (a tool result is citable), and is recorded as a
+    ``plan_proposal_rejected`` activity record for the review's audit.
+    """
+    engine = ctx.extras.get("engine")
+    propose = getattr(engine, "propose_plan_revision", None)
+    if propose is None:
+        return {
+            "accepted": False,
+            "unavailable": "No race-state engine is attached, so the plan cannot be revised.",
+        }
+    outcome = propose(dict(args), agent=ctx.agent or "strategist", state=ctx.state,
+                      events=list(ctx.events))
+    if not outcome.accepted:
+        rev = outcome.revision
+        safe_trace(
+            ctx.extras.get("activity"),
+            "plan_proposal_rejected",
+            agent=ctx.agent or "strategist",
+            event_key=ctx.event.key,
+            plan_version=rev.version,
+            reason=rev.reason,
+            proposal=outcome.proposal,
+            changes=rev.changes,
+            lap=rev.lap,
+            state_version=rev.state_version,
+        )
+    return outcome.to_tool(engine.snapshot())
+
+
+GET_RACE_PLAN = ToolSpec(
+    name="get_race_plan",
+    description=(
+        "The current race plan: stops left, next stop lap, fuel to add, the consumption "
+        "and pace the stint is run at, and the tyre posture (push / neutral / conserve), "
+        "each with its provenance (derived, agent_proposed, operator_set) and the plan "
+        "version it was set in. A null element has no grounding: 'missing' says why."
+    ),
+    input_schema={"type": "object", "properties": {}},
+    fn=_get_race_plan,
+)
+
+GET_LAP_TIME_DEGRADATION = ToolSpec(
+    name="get_lap_time_degradation",
+    description=(
+        "Lap time against stint lap over this stint's clean laps: seconds lost per lap, "
+        "its error, the fitted lap time now and N laps ahead, and the sample count. "
+        "grounded=false (too few clean laps) means there is no degradation figure."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "horizon_laps": {
+                "type": "integer",
+                "description": "How many laps ahead to project the lap time (0-30). Default 5.",
+            }
+        },
+    },
+    fn=_get_lap_time_degradation,
+)
+
+GET_FUEL_SAVE_OPTIONS = ToolSpec(
+    name="get_fuel_save_options",
+    description=(
+        "Litres per lap that make the fuel aboard last N more laps, the saving per lap "
+        "and as a fraction, the lap each reaches, and the saving that reaches the flag "
+        "with no stop. grounded=false until consumption is learned."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "extra_laps": {
+                "type": "integer",
+                "description": "Stretch by this many laps (1-10). Omit for 1, 2 and 3.",
+            }
+        },
+    },
+    fn=_get_fuel_save_options,
+)
+
+GET_TRAFFIC_PROJECTION = ToolSpec(
+    name="get_traffic_projection",
+    description=(
+        "When we catch the car ahead or the car behind catches us, from the gaps and the "
+        "last-lap pace. grounded=false with no gap basis (a replayed .ibt has no other "
+        "cars): then say nothing about catching anyone."
+    ),
+    input_schema={"type": "object", "properties": {}},
+    fn=_get_traffic_projection,
+)
+
+GET_UNDERCUT_OVERCUT = ToolSpec(
+    name="get_undercut_overcut",
+    description=(
+        "Price an earlier stop against a later one with simulate_pit_outcome: rejoin "
+        "positions, extra fuel, and the tyre gain of stopping early from this stint's "
+        "degradation fit (net_s > 0 favours the early stop). Defaults: this lap against "
+        "the stop plan's target lap."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "early_lap": {"type": "integer", "description": "The earlier stop lap."},
+            "late_lap": {"type": "integer", "description": "The later stop lap."},
+        },
+    },
+    fn=_get_undercut_overcut,
+)
+
+PROPOSE_PLAN_REVISION = ToolSpec(
+    name="propose_plan_revision",
+    description=(
+        "Propose a change to the race plan. It is a proposal, not a write: it lands only "
+        "if every number in it matches the deterministic data (fuel window, stop plan, "
+        "simulate_pit_outcome, the projections; never an earlier plan value) and the "
+        "plan stays feasible (stop lap inside the fuel window, enough stops, the tank "
+        "fits the fuel). Send only the elements you change, plus a one-line rationale. "
+        "accepted=false comes with the reason and changes nothing."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "stop_count": {"type": "integer", "description": "Stops still to make."},
+            "next_stop_lap": {"type": "integer", "description": "Lap to stop on."},
+            "fuel_to_add_l": {"type": "number", "description": "Litres to add at that stop."},
+            "fuel_per_lap_target_l": {
+                "type": "number",
+                "description": "Consumption to run at (from get_fuel_save_options).",
+            },
+            "pace_target_s": {
+                "type": "number",
+                "description": "Target lap time (from get_lap_time_degradation).",
+            },
+            "tyre_posture": {"type": "string", "enum": list(race_plan.POSTURES)},
+            "rationale": {"type": "string", "description": "Why, in one line."},
+        },
+        "required": ["rationale"],
+    },
+    fn=_propose_plan_revision,
+)
+
+
 GET_RECENT_DETECTOR_EVENTS = ToolSpec(
     name="get_recent_detector_events",
     description=(
@@ -536,6 +739,12 @@ ALL_TOOLS: tuple[ToolSpec, ...] = (
     GET_CAR_HEALTH,
     GET_SETUP_SNAPSHOT,
     GET_CORNER_DETAIL,
+    GET_RACE_PLAN,
+    GET_LAP_TIME_DEGRADATION,
+    GET_FUEL_SAVE_OPTIONS,
+    GET_TRAFFIC_PROJECTION,
+    GET_UNDERCUT_OVERCUT,
+    PROPOSE_PLAN_REVISION,
 )
 
 TOOLS_BY_NAME: dict[str, ToolSpec] = {t.name: t for t in ALL_TOOLS}

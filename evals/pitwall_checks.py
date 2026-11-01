@@ -19,6 +19,11 @@ rejoin_ok                    its rejoin position matches simulate_pit_outcome
 decision_ok                  the call matches what the state actually demands
 radio_ok                     spoken_text is short enough to be radio
 refusal_ok                   it held rather than guessed when data was missing
+plan_ok                      every plan revision it got accepted lies inside the
+                             deterministic feasible band (stage 08)
+projection_ok                it states no projected figure (a catch, a lap-time
+                             loss, a fuel save) the projection layer marked
+                             ungrounded (stage 08; every agent is held to it)
 ===========================  ================================================
 
 ``decision_ok`` is a *band*, not a single right answer -- there are usually two
@@ -28,9 +33,12 @@ an empty tank). The band is what we score.
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from rtv.pitwall.validator import FactSet, validate_output
+from rtv.racestate import plan as race_plan
+from rtv.racestate import projection as pj
 from rtv.racestate.models import FlagPhase, RaceState
 from rtv.racestate.strategy_math import simulate_pit_outcome, stop_plan
 
@@ -83,12 +91,88 @@ def expected_calls(state: RaceState) -> set[str]:
     return {"stay_out", "extend"}
 
 
+# --------------------------------------------------------------------------
+# stage 08: the race plan and the projection layer
+# --------------------------------------------------------------------------
+_NUM = r"\d+(?:\.\d+)?|one|two|three|four|five|six|seven|eight|nine|ten"
+#: "catch him in 4 laps", "caught by lap 12", "closing, three laps to his gearbox".
+_CATCH_RE = re.compile(
+    rf"\b(?:catch\w*|caught|reel\w*|on (?:his|her|their) gearbox)\b[^.]*?"
+    rf"(?:\bin (?:{_NUM}) laps?\b|\bby lap \d+\b|\b(?:{_NUM}) laps? (?:to|until)\b)"
+    rf"|(?:\bin (?:{_NUM}) laps?\b|\bby lap \d+\b)[^.]*?\b(?:catch\w*|caught)\b",
+    re.IGNORECASE,
+)
+#: "losing three tenths a lap", "0.2 s per lap of degradation", "dropping off 0.3 a lap".
+_LOSS_RE = re.compile(
+    rf"\b(?:los\w*|drop\w*|degrad\w*|fall\w* off|slower)\b[^.]*?"
+    rf"(?:{_NUM})\s*(?:s|sec\w*|tenths?|hundredths?)?\s*(?:a|per|each) lap",
+    re.IGNORECASE,
+)
+#: "save 0.2 litres a lap", "lift to 3.6 L per lap".
+_SAVE_RE = re.compile(
+    rf"\b(?:sav\w*|lift\w*|short-?shift\w*|fuel target)\b[^.]*?(?:{_NUM})\s*"
+    r"(?:l|litres?|liters?)\s*(?:a|per|each) lap",
+    re.IGNORECASE,
+)
+
+
+def projection_check(result: dict[str, Any], state: RaceState) -> tuple[bool, list[str]]:
+    """Did the answer state a projected figure the projection layer marked ungrounded?
+
+    Only claims of the projection's own shape count: a catch in N laps (traffic), a
+    lap-time loss per lap (degradation), litres per lap to save (fuel save). Each is
+    judged against the projection computed from the same state; a grounded one is
+    the validator's business, an ungrounded one is invention.
+    """
+    text = " ".join(
+        str(result.get(k) or "") for k in ("spoken_text", "detail_text")
+    )
+    issues: list[str] = []
+    traffic = pj.traffic_projection(state)
+    if not traffic.grounded and _CATCH_RE.search(text):
+        issues.append(f"projected a catch but traffic is ungrounded ({traffic.reason})")
+    deg = pj.lap_time_degradation(state)
+    if not deg.grounded and _LOSS_RE.search(text):
+        issues.append(
+            f"quoted a lap-time loss per lap but degradation is ungrounded ({deg.reason})"
+        )
+    save = pj.fuel_save_options(state)
+    if not save.grounded and _SAVE_RE.search(text):
+        issues.append(f"quoted a fuel save per lap but it is ungrounded ({save.reason})")
+    return not issues, issues
+
+
+def plan_check(
+    state: RaceState, revisions: list[dict[str, Any]] | None
+) -> tuple[bool, list[str]]:
+    """Every accepted revision must lie inside the deterministic feasible band.
+
+    ``revisions`` are the run's ``propose_plan_revision`` outcomes as the plan records
+    them (``accepted``, ``changes: {element: {from, to}}``). A rejected proposal is
+    not scored here: the plan refused it, which is the system working.
+    """
+    issues: list[str] = []
+    for rev in revisions or []:
+        if not rev.get("accepted"):
+            continue
+        values = {
+            name: change.get("to")
+            for name, change in (rev.get("changes") or {}).items()
+            if name in race_plan.ELEMENTS and change.get("to") is not None
+        }
+        problem = race_plan.sanity_check(state, values, base=state.plan)
+        if problem:
+            issues.append(f"accepted plan revision outside the feasible band: {problem}")
+    return not issues, issues
+
+
 def cross_check(
     result: dict[str, Any],
     state: RaceState,
     *,
     facts: FactSet | None = None,
     pit_lane_loss_s: float = 25.0,
+    revisions: list[dict[str, Any]] | None = None,
 ) -> dict:
     """Score one strategist call against the deterministic race state."""
     issues: list[str] = []
@@ -165,6 +249,10 @@ def cross_check(
     if data_missing and not refusal_ok:
         issues.append("data for a pit call is missing but the agent still made one")
 
+    plan_ok, plan_issues = plan_check(state, revisions)
+    projection_ok, projection_issues = projection_check(result, state)
+    issues.extend(plan_issues + projection_issues)
+
     checks = {
         "grounding_ok": grounding_ok,
         "radio_ok": radio_ok,
@@ -172,6 +260,8 @@ def cross_check(
         "window_ok": window_ok,
         "rejoin_ok": rejoin_ok,
         "refusal_ok": refusal_ok,
+        "plan_ok": plan_ok,
+        "projection_ok": projection_ok,
     }
     return {
         **checks,
@@ -277,10 +367,13 @@ def _base_checks(result: dict, facts: FactSet | None, state: RaceState) -> tuple
         )
     if report.over_word_limit:
         issues.append(f"spoken_text is {report.word_count} words; radio limit is 25")
+    projection_ok, projection_issues = projection_check(result, state)
+    issues.extend(projection_issues)
     return (
         {
             "grounding_ok": not report.unsupported,
             "radio_ok": not report.over_word_limit,
+            "projection_ok": projection_ok,
             "_report": report,
             "_spoken": spoken,
         },
@@ -475,6 +568,7 @@ def check_for_agent(
 ) -> dict:
     """Score one answer with whichever checker that agent's role calls for."""
     if agent in ROLE_CHECKS:
+        kwargs.pop("revisions", None)
         return ROLE_CHECKS[agent](result, state, event, **kwargs)
     kwargs.pop("setup_available", None)
     kwargs.pop("telemetry_available", None)

@@ -245,6 +245,76 @@ def degraded_cases() -> list[EvalCase]:
 
 
 # --------------------------------------------------------------------------
+# stage 08: the race plan's degraded states
+# --------------------------------------------------------------------------
+#: The scripted race as a race segment, so the engine keeps a race plan.
+RACE_SCENARIO = ScenarioSpec(session_num=0, sessions=("Race",))
+
+
+def plan_degraded_cases() -> list[EvalCase]:
+    """States where a projection is ungrounded, so a confident strategist is wrong.
+
+    A set where everything is knowable cannot tell a grounded strategist from a
+    confident one. Here the plan exists and the stop is owed, but (1) too few clean
+    laps for a degradation fit and (2) no gap basis for a traffic projection.
+    """
+    base = _end_of_scenario_state(spec=replace(RACE_SCENARIO, laps=4, end_pct=0.5))
+    out: list[EvalCase] = []
+
+    no_fit = base.model_copy(deep=True)
+    out.append(
+        EvalCase(
+            name="plan-degraded-no-degradation-fit",
+            event=_synthetic_event(no_fit, "stint_lap_milestone"),
+            state=no_fit,
+            note=(
+                "Two clean laps: no lap-time degradation, so no pace target and no "
+                "'losing N a lap'. The plan's stop is still callable."
+            ),
+        )
+    )
+
+    no_gaps = base.model_copy(deep=True)
+    no_gaps.standings.gap_basis = None
+    for car in no_gaps.standings.cars:
+        car.gap_ahead = car.gap_behind = car.gap_to_player = None
+    out.append(
+        EvalCase(
+            name="plan-degraded-no-gap-basis",
+            event=_synthetic_event(no_gaps, "pit_window_open"),
+            state=no_gaps,
+            note="No gap basis (as in a replayed .ibt): no catch, no rejoin, no undercut net.",
+        )
+    )
+    return out
+
+
+class PlanSandbox:
+    """Stands in for the engine behind ``propose_plan_revision`` in an eval run.
+
+    A live eval has no race-state engine, so the plan tool would say unavailable.
+    This applies proposals to a copy of the case's state with the same deterministic
+    rules, and keeps every outcome for :func:`evals.pitwall_checks.plan_check`.
+    """
+
+    def __init__(self, state: RaceState) -> None:
+        self.state = state.model_copy(deep=True)
+        self.revisions: list[dict[str, Any]] = []
+
+    def propose_plan_revision(self, proposal, *, agent="strategist", state=None, events=()):
+        from rtv.racestate import plan as race_plan
+
+        outcome = race_plan.propose_revision(
+            self.state, proposal, agent=agent, events=events, check_state=state
+        )
+        self.revisions.append(outcome.revision.model_dump(mode="json"))
+        return outcome
+
+    def snapshot(self) -> RaceState:
+        return self.state.model_copy(deep=True)
+
+
+# --------------------------------------------------------------------------
 # stage 3: the role agents' degraded states
 # --------------------------------------------------------------------------
 def engineer_degraded_cases() -> list[EvalCase]:
@@ -507,8 +577,12 @@ def coach_degraded_cases() -> list[EvalCase]:
 # assembly
 # --------------------------------------------------------------------------
 def build_cases(spec: ScenarioSpec | None = None) -> list[EvalCase]:
-    """The strategist's golden set: the scripted race plus the degraded states."""
-    return scenario_cases(spec) + degraded_cases()
+    """The strategist's golden set: the scripted race plus the degraded states.
+
+    The stage-08 plan cases sit before the stage-2 degraded ones, which keep their
+    place at the end of the set.
+    """
+    return scenario_cases(spec) + plan_degraded_cases() + degraded_cases()
 
 
 #: agent name -> the spec, its scenario config, and its degraded-case builder.
@@ -647,6 +721,23 @@ _SWAPS: dict[str, tuple[str, str, tuple[str, str], str, tuple[str, ...], dict]] 
 }
 
 
+#: Stage 08: plan figures are typed facts too (``race_state.plan.next_stop_lap`` is a
+#: lap number), so a plan figure said in the wrong unit is caught the same way.
+_PLAN_SWAPS: list[tuple[str, tuple[str, str, tuple[str, str], str, tuple[str, ...], dict]]] = [
+    (
+        "strategist",
+        (
+            "plan-degraded-no-gap-basis",
+            "Stop is planned for the end of lap {v}.",
+            ("lap", "lap"),
+            "race_state.plan.next_stop_lap",
+            ("race_state.plan.fuel_to_add_l", "race_state.fuel.level", "race_state.fuel.capacity"),
+            {"recommendation": "plan_stop", "confidence": "high", "rationale": "", "risks": []},
+        ),
+    ),
+]
+
+
 def _lookup(facts, path: str) -> tuple[float, str, str] | None:
     from rtv.grounding.units import FAMILIES
 
@@ -671,7 +762,8 @@ def swapped_fact_cases() -> list[SwappedFactCase]:
 
     specs = {spec.name: spec for spec in AGENT_REGISTRY}
     out: list[SwappedFactCase] = []
-    for agent, (wanted, template, (family, unit), right, candidates, data) in _SWAPS.items():
+    swaps = [*_SWAPS.items(), *_PLAN_SWAPS]
+    for agent, (wanted, template, (family, unit), right, candidates, data) in swaps:
         spec = specs[agent]
         cases = build_agent_cases(agent)
         case = next(c for c in cases if c.name == wanted or c.event.key == wanted)

@@ -22,6 +22,7 @@ from pydantic import Field
 from rtv.pitwall import tools as T
 from rtv.pitwall.framework import AgentOutput, AgentSpec, RadioPriority, Trigger
 from rtv.racestate.models import EventType, FlagPhase, RaceEvent, RaceState
+from rtv.racestate.plan import plan_view
 from rtv.vision.live import COACH_KINDS
 
 AGENT_NAME = "coach"
@@ -54,6 +55,9 @@ How to think:
   lost. Quote those figures; they are measured. When it reports available=false,
   you still have the live detector events, but say your cue is from the pattern
   rather than from the trace.
+- The state's 'plan' carries the strategist's tyre posture and pace target. A
+  cue should fit them: under "conserve", a cue that saves the tyres ("off the
+  kerbs in T4") beats one that finds a tenth. You cannot change the plan.
 - A visual_observation trigger is the onboard camera's description of a moment the
   telemetry flagged (kerb use, the line, a slide): words only, no figures. Use it
   for the *how* of a cue, mark confidence low, and never take a number from it.
@@ -167,6 +171,8 @@ def coach_slice(state: RaceState) -> dict:
         "player": state.player.model_dump(mode="json"),
         "tyres": state.tyres.model_dump(mode="json"),
         "track": state.track.model_dump(mode="json"),
+        # Read-only: the tyre posture and pace target the stint is driven to.
+        "plan": plan_view(state, "posture"),
         "capabilities": state.capabilities.model_dump(mode="json"),
     }
 
@@ -185,6 +191,8 @@ COACH = AgentSpec(
         T.GET_RECENT_DETECTOR_EVENTS,
         T.GET_STINT_HISTORY,
         T.GET_TYRE_TREND,
+        T.GET_RACE_PLAN,
+        T.GET_LAP_TIME_DEGRADATION,
     ),
     triggers=COACH_TRIGGERS,
     tier="fast",

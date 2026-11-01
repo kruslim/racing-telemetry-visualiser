@@ -216,8 +216,11 @@ class PitwallOrchestrator:
     def attach_activity(self, activity: ActivityLog | None) -> None:
         """Trace routing, every agent run and the radio into ``activity``."""
         self.activity = activity
+        # The plan tool records rejected proposals into the same trace.
+        self.tool_extras["activity"] = activity
         for runtime in self.runtimes.values():
             runtime.tracer = activity
+            runtime.tool_extras["activity"] = activity
         self.feed.tracer = activity
 
     # ---- lifecycle -------------------------------------------------------
