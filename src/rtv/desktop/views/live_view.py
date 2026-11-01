@@ -2,7 +2,7 @@
 
 Layout (the "Live pitwall" artboard): flag band, status strip, replay bar, then
 three columns: pitwall at work (flow graph, timeline, agent runs, raw telemetry);
-strategy and the timing tower; the radio. The ticker runs along the bottom.
+strategy, the race plan and the timing tower; the radio. The ticker runs along the bottom.
 Painting is throttled to 10 Hz; socket frames only update the stored state.
 """
 
@@ -39,8 +39,9 @@ from ..widgets.live import (
     TowerPanel,
 )
 from ..widgets.live_onboard import LiveOnboardPanel
+from ..widgets.plan import PlanPanel
 from ..widgets.radio import RadioFeed
-from .hub import Hub
+from .hub import Hub, bind_voice
 
 RENDER_MS = 100
 TIMELINE_S = 120.0
@@ -122,9 +123,11 @@ class LiveView(QWidget):
         b.setContentsMargins(0, 12, 0, 12)
         b.setSpacing(12)
         self.strategy = StrategyPanel()
+        self.plan = PlanPanel()
         self.tower = TowerPanel()
         self.tower.on_toggle = self._mark
         b.addWidget(self.strategy)
+        b.addWidget(self.plan)
         b.addWidget(self.tower, 1)
         splitter.addWidget(_scroll(col_b))
 
@@ -175,6 +178,7 @@ class LiveView(QWidget):
         self.replay.start_live.connect(hub.start_live)
         self.replay.stop_live.connect(hub.stop_live)
         self.radio.send_text.connect(self._send)
+        bind_voice(hub, self.radio, self._unheard)
         self.radio.volume_changed.connect(hub.radio.set_volume)
         self.radio.master_toggled.connect(lambda on: hub.radio.set_master_muted(not on))
         self.radio.mute_toggled.connect(hub.radio.set_agent_muted)
@@ -243,19 +247,19 @@ class LiveView(QWidget):
                 return
         self.hub.start_replay(session_id, speed)
 
-    def _send(self, text: str) -> None:
-        def unheard(message: str) -> None:
-            self.radio.add(
-                {
-                    "agent": "driver",
-                    "spoken_text": message,
-                    "speak": False,
-                    "session_time": self.hub.now(),
-                    "heard": False,
-                }
-            )
+    def _unheard(self, message: str) -> None:
+        self.radio.add(
+            {
+                "agent": "driver",
+                "spoken_text": message,
+                "speak": False,
+                "session_time": self.hub.now(),
+                "heard": False,
+            }
+        )
 
-        self.hub.send_driver(text, unheard)
+    def _send(self, text: str) -> None:
+        self.hub.send_driver(text, self._unheard)
 
     def _timeline_item(self, item: dict) -> None:
         run_id = (item.get("record") or {}).get("run_id")
@@ -348,6 +352,7 @@ class LiveView(QWidget):
             vm.strategy_view(state), hub.fuel_history.points(), frozen=socket_down
         )
         self.strategy.set_recommendation(vm.recommendation_view(latest_strategist(hub.messages)))
+        self.plan.set_view(state)
         self.tower.set_view(
             vm.tower_view(
                 state, expanded=self.tower.expanded, trends=hub.gaps, warnings=hub.warnings

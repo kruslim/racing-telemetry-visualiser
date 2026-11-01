@@ -205,3 +205,69 @@ def test_aggregate_rolls_up(open_window):
 
 def test_aggregate_of_nothing_is_not_a_crash():
     assert aggregate([]) == {"cases": 0}
+
+
+# --------------------------------------------------------------------------
+# stage 08: plan_ok, projection_ok and the plan's degraded cases
+# --------------------------------------------------------------------------
+def _plan_case(name):
+    from evals.pitwall_cases import plan_degraded_cases
+
+    return next(c for c in plan_degraded_cases() if c.name == name)
+
+
+def test_the_plan_degraded_cases_have_a_plan_and_an_ungrounded_projection():
+    from rtv.racestate import projection as pj
+
+    no_fit = _plan_case("plan-degraded-no-degradation-fit")
+    assert no_fit.state.plan is not None and no_fit.state.plan.next_stop_lap.value == 5
+    assert not pj.lap_time_degradation(no_fit.state).grounded
+    no_gaps = _plan_case("plan-degraded-no-gap-basis")
+    assert not pj.traffic_projection(no_gaps.state).grounded
+
+
+def test_projection_ok_flags_a_figure_the_projection_marked_ungrounded():
+    case = _plan_case("plan-degraded-no-gap-basis")
+    result = {"spoken_text": "Box next lap, we catch P4 in three laps after.",
+              "detail_text": "", "data": {"recommendation": "box_next_lap"}}
+    score = cross_check(result, case.state)
+    assert not score["projection_ok"] and any("traffic is ungrounded" in i for i in score["issues"])
+
+    no_fit = _plan_case("plan-degraded-no-degradation-fit")
+    loss = {"spoken_text": "Box next lap, you're losing three tenths a lap.",
+            "detail_text": "", "data": {"recommendation": "box_next_lap"}}
+    assert not cross_check(loss, no_fit.state)["projection_ok"]
+    plain = {"spoken_text": "Box next lap, fuel only.", "detail_text": "",
+             "data": {"recommendation": "box_next_lap"}}
+    assert cross_check(plain, no_fit.state)["projection_ok"]
+
+
+def test_projection_ok_holds_every_role_agent_to_it():
+    from evals.pitwall_checks import check_for_agent
+
+    case = _plan_case("plan-degraded-no-gap-basis")
+    result = {"spoken_text": "Car ahead, you'll catch him in two laps.", "detail_text": "",
+              "data": {"threat": "car_closing", "side": "ahead"}}
+    assert not check_for_agent("spotter", result, case.state, case.event)["projection_ok"]
+
+
+def test_plan_ok_scores_accepted_revisions_against_the_feasible_band():
+    from evals.pitwall_cases import PlanSandbox
+
+    case = _plan_case("plan-degraded-no-degradation-fit")
+    sandbox = PlanSandbox(case.state)
+    assert sandbox.propose_plan_revision(
+        {"next_stop_lap": 4, "rationale": "Early."}, state=case.state
+    ).accepted
+    assert not sandbox.propose_plan_revision(
+        {"next_stop_lap": 9, "rationale": "Late."}, state=case.state
+    ).accepted
+    assert [r["accepted"] for r in sandbox.revisions] == [True, False]
+    result = {"spoken_text": "Box this lap.", "detail_text": "",
+              "data": {"recommendation": "box_now"}}
+    assert cross_check(result, case.state, revisions=sandbox.revisions)["plan_ok"]
+    # An "accepted" revision outside the band (as a broken plan check would let
+    # through) is what plan_ok exists to catch.
+    forged = [{"accepted": True, "changes": {"next_stop_lap": {"from": 5, "to": 9}}}]
+    score = cross_check(result, case.state, revisions=forged)
+    assert not score["plan_ok"] and any("feasible band" in i for i in score["issues"])

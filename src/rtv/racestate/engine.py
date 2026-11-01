@@ -29,6 +29,7 @@ from rtv.ingest.frame import Frame
 from rtv.logging import get_logger
 from rtv.racestate import channels as ch
 from rtv.racestate import detectors as det
+from rtv.racestate import plan as race_plan
 from rtv.racestate.bus import EventBus
 from rtv.racestate.lifecycle import SessionLifecycle, Signal
 from rtv.racestate.models import (
@@ -37,17 +38,21 @@ from rtv.racestate.models import (
     CornerRef,
     EventType,
     FlagPhase,
+    LapRecord,
     RaceEvent,
     RaceState,
     Severity,
     TrackState,
 )
-from rtv.racestate.strategy_math import lap_left
+from rtv.racestate.strategy_math import DEFAULT_PIT_LANE_LOSS_S, lap_left
 from rtv.tracks.live import LiveCornerMap, place_of
 from rtv.tracks.reference import TrackReference
 from rtv.tracks.session import reference_for
 
 log = get_logger("racestate.engine")
+
+#: Completed laps kept in ``RaceState.laps`` (a segment longer than this keeps the newest).
+MAX_LAP_RECORDS = 400
 
 #: Events that say where on the lap something happened. Each gets a ``place`` payload entry:
 #: ``{label, name, lap_dist_pct, provisional}`` (see :mod:`rtv.tracks.live`).
@@ -131,6 +136,9 @@ class RaceStateEngine:
         self._fuel_interval = max(1, gap_interval * 10)
         self._trend_window_s = trend_window_s
         self._event_cooldown_s = event_cooldown_s
+        #: Pit-lane loss the race plan prices stops with (services sets it from
+        #: ``RTV_PITWALL_PIT_LANE_LOSS_S``, the same figure the strategist's tool uses).
+        self.pit_lane_loss_s = DEFAULT_PIT_LANE_LOSS_S
 
         self._lock = threading.RLock()
         self._state = RaceState()
@@ -1219,6 +1227,64 @@ class RaceStateEngine:
                     {"stint": p.stint, "lap": p.lap},
                 )
             )
+            self._refresh_plan(events, pit_exit=True)
+
+    # ---- race plan -------------------------------------------------------
+    def _refresh_plan(self, events: list[RaceEvent], *, pit_exit: bool = False) -> None:
+        """Derive or refresh the race plan (race segments only); emit ``plan_revised``."""
+        state = self._state
+        old = state.plan.version if state.plan is not None else None
+        revision = race_plan.refresh_plan(
+            state, pit_exit=pit_exit, pit_lane_loss_s=self.pit_lane_loss_s
+        )
+        if revision is not None:
+            events.append(self._plan_event(revision, old))
+
+    def _plan_event(self, revision: Any, old_version: int | None) -> RaceEvent:
+        return self._event(
+            EventType.PLAN_REVISED,
+            Severity.INFO,
+            {
+                "old_version": old_version,
+                "new_version": revision.version,
+                "provenance": revision.provenance,
+                "agent": revision.agent,
+                "changes": revision.changes,
+                "rationale": revision.rationale,
+                "lap": revision.lap,
+            },
+        )
+
+    def propose_plan_revision(
+        self,
+        proposal: Mapping[str, Any],
+        *,
+        agent: str = "strategist",
+        state: RaceState | None = None,
+        events: list[RaceEvent] | tuple[RaceEvent, ...] = (),
+    ) -> race_plan.ProposalOutcome:
+        """Check a plan proposal and apply it if it passes (:func:`race_plan.propose_revision`).
+
+        ``state`` is the snapshot the proposing agent was shown; the checks run against
+        it, the write goes to the live plan. An accepted revision publishes a
+        ``plan_revised`` event on :attr:`bus`; a rejected one changes nothing.
+        """
+        with self._lock:
+            old = self._state.plan.version if self._state.plan is not None else None
+            outcome = race_plan.propose_revision(
+                self._state,
+                proposal,
+                agent=agent,
+                events=events,
+                pit_lane_loss_s=self.pit_lane_loss_s,
+                check_state=state,
+            )
+            event = self._plan_event(outcome.revision, old) if outcome.accepted else None
+            if event is not None:
+                event.state_version = self._state.version
+        if event is not None:
+            self.bus.publish(event)
+        return outcome
 
     # ---- lap boundary ----------------------------------------------------
     def _check_lap_boundary(self, frame: Frame, events: list[RaceEvent]) -> None:
@@ -1246,6 +1312,19 @@ class RaceStateEngine:
                 },
             )
         )
+
+        self._state.laps.append(
+            LapRecord(
+                lap=lap,
+                lap_time=lap_time,
+                stint=p.stint,
+                stint_lap=1 + sum(1 for r in self._state.laps if r.stint == p.stint),
+                green=self._lap_all_green,
+                pit=self._lap_had_pit,
+                session_time=round(frame.session_time, 3),
+            )
+        )
+        del self._state.laps[:-MAX_LAP_RECORDS]
 
         if lap_time:
             if self._player_best is None or lap_time < self._player_best:
@@ -1282,6 +1361,7 @@ class RaceStateEngine:
         self._roll_fuel(lap, clean, events)
         self._roll_tyres(lap, clean)
         self._check_tyre_band(events)
+        self._refresh_plan(events)
 
         # A stint milestone is a *lap-count* event, not a timer: it is the
         # deterministic cadence the strategist is allowed to wake up on.

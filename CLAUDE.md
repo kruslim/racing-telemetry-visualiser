@@ -8,7 +8,8 @@ a multi-agent orchestrator, Layer 3b a LangGraph coach with grounded refusal and
 in-loop citation checks, plus a hermetic eval harness. v2 adds a live pitwall: a
 deterministic race-state engine, four event-driven agents (strategist, vehicle engineer,
 spotter, coach) on one prioritised radio feed, browser TTS, and a live pit-stand UI.
-`README.md` has the full tour; `docs/COACHING.md`, `docs/PITWALL.md`, `docs/TRACKS.md`,
+`README.md` is the public overview and `docs/DESIGN.md` the system design (`docs/API.md`
+is the route reference); `docs/COACHING.md`, `docs/PITWALL.md`, `docs/TRACKS.md`,
 `docs/VISION.md`, `docs/VARIABLES.md` and `docs/WEEKLY_EVAL.md` go deeper.
 
 ## Commands
@@ -103,7 +104,7 @@ files that were already formatted and sorts imports in every edited file.
   never re-runs the agents.
 - Pitwall agents never assert a number that isn't traceable to deterministic data; the
   race-state engine has no LLM in it. `docs/PITWALL.md` records the v2 interfaces and
-  the pending build stages (`prompts/08-10`; done ones are in `prompts/done/`).
+  the pending build stages (`prompts/09-10`; done ones are in `prompts/done/`).
 - Commit messages: one imperative sentence-case subject, no prefix (see `git log`).
 
 ## Environment
@@ -137,7 +138,7 @@ the hermetic eval runner, `--dry-run` and `--findings-only` are free.
 
 ## Staged pitwall build
 
-The v2 pitwall was built by headless prompts in `prompts/` (01-07 done, 08-10 pending),
+The v2 pitwall was built by headless prompts in `prompts/` (01-08 done, 09-10 pending),
 run by `run_pitwall.ps1` / `run_pitwall.sh`. When running one of those stages, read
 `docs/PITWALL.md` first (it is the shared state between stages) and finish by updating
 it with what was built, the interfaces exposed and any deviations. Each stage must leave

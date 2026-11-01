@@ -653,6 +653,13 @@ class FindingsPanel(Panel):
 OUTCOMES = ["", "radio", "refused", "error", "unfinished"]
 
 
+def _plan_cell(note: str | None) -> tuple[str, str | None]:
+    """The audit's Plan column: blank for a run that proposed nothing."""
+    if not note:
+        return "", None
+    return note, t.GOOD if "accepted" in note and "rejected" not in note else "#ffd27a"
+
+
 class AuditPanel(Panel):
     """One row per agent run, with filters and sorts; an honest empty state."""
 
@@ -694,6 +701,7 @@ class AuditPanel(Panel):
                 "Validator",
                 "Outcome",
                 "Latency",
+                "Plan",
                 "What aired",
             ]
         )
@@ -708,7 +716,15 @@ class AuditPanel(Panel):
             "sort": self.sort.currentData() or "time",
         }
 
-    def set_rows(self, rows: list[dict], total: int, agents_recorded: bool) -> None:
+    def set_rows(
+        self,
+        rows: list[dict],
+        total: int,
+        agents_recorded: bool,
+        plan_notes: dict[str, str] | None = None,
+    ) -> None:
+        """``plan_notes`` (run_id -> what its plan proposals did) fills the Plan column."""
+        plan_notes = plan_notes or {}
         self.meta.setText(f"{total} runs")
         if not total:
             self.table.hide()
@@ -751,10 +767,11 @@ class AuditPanel(Panel):
                     t.OUTCOME.get(outcome, t.OUTCOME["unfinished"])[1],
                 ),
                 (f"{latency / 1000:.1f} s" if is_num(latency) else NA, None),
+                _plan_cell(plan_notes.get(str(row.get("run_id")))),
                 (row.get("spoken") or "", t.SOFT),
             ]
             for c, (text, color) in enumerate(values):
-                item = _item(text, color, mono=c not in (3, 10))
+                item = _item(text, color, mono=c not in (3, 10, 11))
                 if (text, color) == (validator, vcolor) and row.get("reasons"):
                     # The validator's reasons, rounded, on hover (task A3).
                     item.setToolTip("\n".join(row["reasons"]))

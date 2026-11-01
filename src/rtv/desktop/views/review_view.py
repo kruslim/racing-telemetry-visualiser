@@ -26,6 +26,7 @@ from PySide6.QtWidgets import (
 )
 
 from ..model import activity, review, vision
+from ..model import plan as plan_model
 from ..model import view_model as vm
 from ..model.format import NA, clock, is_num, lap_time, thousands
 from ..theme import tokens as t
@@ -610,9 +611,25 @@ class ReviewView(QWidget):
                 [
                     {**i, "color": t.severity_color(i.get("severity"))}
                     for i in lanes.get("events", [])
+                    if not plan_model.is_plan_item(i)
                 ],
             )
         )
+        plan_items = plan_model.timeline_items(self.records)
+        if plan_items:
+            rows.append(
+                (
+                    "race plan",
+                    t.MUTED,
+                    [
+                        {
+                            **i,
+                            "color": t.GOOD if i["accepted"] else t.SEVERITY["advisory"],
+                        }
+                        for i in plan_items
+                    ],
+                )
+            )
         for name in activity.AGENTS:
             rows.append(
                 (
@@ -726,6 +743,7 @@ class ReviewView(QWidget):
             review.filter_audit(rows, **self.audit.filters()),
             len(rows),
             bool(meta.get("has_agents")),
+            plan_model.audit_notes(self.records),
         )
 
     # ---- record a run / import -----------------------------------------

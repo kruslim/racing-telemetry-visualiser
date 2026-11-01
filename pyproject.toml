@@ -65,6 +65,11 @@ judge = [
 desktop = [
     "PySide6>=6.7",
 ]
+# Push-to-talk speech-to-text in RTV Desktop (rtv.desktop.voice): faster-whisper on the
+# CPU, so no audio leaves the PC. Imported lazily; without it the talk button says so.
+voice = [
+    "faster-whisper>=1.0",
+]
 
 [project.scripts]
 rtv = "rtv.__main__:main"
