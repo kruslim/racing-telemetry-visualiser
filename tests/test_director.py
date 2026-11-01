@@ -854,6 +854,72 @@ def test_the_hazard_reaches_the_driver_through_the_template_not_the_llm(rehearsa
     assert aired["source"] == "template" and "ahead" in aired["spoken_text"]
 
 
+def test_a_same_tick_template_airs_on_time_behind_a_slow_model_call():
+    """A template never queues behind a model answer to the same tick (R4).
+
+    The restart wakes the strategist (a slow model with a long call at the template's
+    priority) on the same poll the hazard fires the spotter's template. In the app the
+    model call is still in flight when the template airs; the rehearsal must match, or
+    the 3 s template ages past its max age behind the strategist's airtime and expires.
+    """
+    example = ScenarioScript.load(EXAMPLE)
+    entries = {i.id: i for i in example.injections}
+    fcy = entries["fcy_lap_3"].model_copy(update={"when": InjectionTrigger(at_session_time=120.0)})
+    green = entries["green_again"].model_copy(
+        update={"when": InjectionTrigger(after="fcy_lap_3", delay_s=30.0)}
+    )
+    hazard = entries["debris_hazard"].model_copy(
+        update={"when": InjectionTrigger(at_session_time=150.0, while_flag="green")}
+    )
+    script = ScenarioScript(name="same-tick hazard", injections=[fcy, green, hazard])
+
+    calls: list[str] = []
+
+    class SlowModel(ScriptedProvider):
+        async def complete(self, **kw):
+            calls.append(kw["agent"])
+            await asyncio.sleep(0.05)  # a slow model call: the race clock must not care
+            return await super().complete(**kw)
+
+    def answer(*, agent, messages, **kw):
+        if agent == "strategist" and "flag_change:green" in str(messages[0].get("content")):
+            return {
+                "priority": "advisory",
+                "spoken_text": "Green again, the caution is over, we stay out and keep "
+                "the plan as it stands, nothing changes for us this lap or the next one.",
+                "detail_text": "Restart; the stop plan is unchanged.",
+                "recommendation": "stay_out",
+                "confidence": "medium",
+                "rationale": "stop_plan says no_stop_needed.",
+            }
+        return rehearsal_answer(agent=agent, messages=messages, **kw)
+
+    rehearsal = asyncio.run(rehearse(script, provider=SlowModel(answer)))
+    by_id = {r.id: r for r in rehearsal.injections}
+    assert by_id["green_again"].tick == by_id["debris_hazard"].tick  # the same tick
+    assert "strategist" in calls
+    restart = [a for a in by_id["green_again"].aired if a["agent"] == "strategist"]
+    assert restart and restart[0]["spoken_text"].startswith("Green again")
+    (aired,) = by_id["debris_hazard"].aired
+    assert aired["source"] == "template"
+    assert not aired["late"] and not aired["expired"], aired
+    assert not aired["spoken_text"].startswith("Late call")
+    assert by_id["debris_hazard"].checks["radio_ok"]
+    # It aired on its own tick, ahead of the strategist's answer to that tick.
+    spotter, strategist = (
+        next(
+            m for m in rehearsal.radio
+            if m["agent"] == name and (m.get("event_ref") or {}).get("tick") == hazard_tick
+        )
+        for name, hazard_tick in (
+            ("spotter", by_id["debris_hazard"].tick),
+            ("strategist", by_id["green_again"].tick),
+        )
+    )
+    assert spotter["air_session_time"] == pytest.approx(by_id["debris_hazard"].session_time)
+    assert spotter["air_session_time"] < strategist["air_session_time"]
+
+
 def test_the_mandatory_stop_revises_the_plan_through_the_strategist(rehearsal):
     reg = next(r for r in rehearsal.injections if r.id == "mandatory_stop")
     (revision,) = [r for r in reg.plan_revisions if r.get("agent") == "strategist"]
