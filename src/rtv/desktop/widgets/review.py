@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
 )
 
 from ..model import review
+from ..model import session as session_model
 from ..model.activity import AGENTS
 from ..model.format import (
     NA,
@@ -166,19 +167,9 @@ class SessionBar(QFrame):
         if not runs:
             self.runs.addItem("No pitwall runs yet — record one", None)
         for run in runs:
-            started = run.get("started_wall_ms")
-            from datetime import datetime
-
-            when = (
-                datetime.fromtimestamp(started / 1000).strftime("%d %b %H:%M")
-                if is_num(started)
-                else "?"
-            )
-            agents = "agents on" if run.get("has_agents") else "agents off"
-            done = "complete" if run.get("complete") else "incomplete"
-            self.runs.addItem(
-                f"{run.get('source')} · {when} · {agents} · {done}", run.get("run_id")
-            )
+            # Labelled with its session type: one live session holds practice,
+            # qualifying and race runs (stage 07).
+            self.runs.addItem(session_model.run_label(run), run.get("run_id"))
         if selected:
             index = self.runs.findData(selected)
             if index >= 0:
@@ -408,13 +399,14 @@ class MiniList(QFrame):
         layout.addLayout(self.lines)
         layout.addStretch(1)
 
-    def set_lines(self, rows: list[tuple[str, str, str]], count: int, empty: str) -> None:
-        """rows: (header, text, colour)."""
+    def set_lines(self, rows: list[tuple], count: int, empty: str) -> None:
+        """rows: (header, text, colour) or (header, text, colour, struck)."""
         self.title.setText(f"{self.base} · {count}")
         clear_layout(self.lines)
         if not rows:
             self.lines.addWidget(label(empty, "muted", wrap=True))
-        for head, text, color in rows:
+        for head, text, color, *rest in rows:
+            struck = bool(rest and rest[0])
             box = QFrame()
             box.setObjectName("mini")
             box.setStyleSheet(f"#mini {{ border-left: 3px solid {color}; }}")
@@ -423,7 +415,12 @@ class MiniList(QFrame):
             bl.setSpacing(1)
             if head:
                 bl.addWidget(label(head, "muted", mono=True, size=11))
-            bl.addWidget(label(text, wrap=True, size=12))
+            body = label(text, wrap=True, size=12, color=t.SOFT if struck else None)
+            if struck:
+                font = body.font()
+                font.setStrikeOut(True)
+                body.setFont(font)
+            bl.addWidget(body)
             self.lines.addWidget(box)
 
 
@@ -757,5 +754,9 @@ class AuditPanel(Panel):
                 (row.get("spoken") or "", t.SOFT),
             ]
             for c, (text, color) in enumerate(values):
-                self.table.setItem(r, c, _item(text, color, mono=c not in (3, 10)))
+                item = _item(text, color, mono=c not in (3, 10))
+                if (text, color) == (validator, vcolor) and row.get("reasons"):
+                    # The validator's reasons, rounded, on hover (task A3).
+                    item.setToolTip("\n".join(row["reasons"]))
+                self.table.setItem(r, c, item)
         fit_height(self.table, 40)

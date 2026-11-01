@@ -16,6 +16,7 @@ from __future__ import annotations
 SESSION_TIME = "SessionTime"
 SESSION_TICK = "SessionTick"
 SESSION_STATE = "SessionState"
+SESSION_NUM = "SessionNum"
 SESSION_TIME_REMAIN = "SessionTimeRemain"
 SESSION_LAPS_REMAIN = "SessionLapsRemainEx"
 SESSION_LAPS_REMAIN_FALLBACK = "SessionLapsRemain"
@@ -38,6 +39,9 @@ PLAYER_CAR_CLASS_POSITION = "PlayerCarClassPosition"
 PLAYER_TRACK_SURFACE = "PlayerTrackSurface"
 PLAYER_TRACK_SURFACE_MATERIAL = "PlayerTrackSurfaceMaterial"
 PLAYER_INCIDENTS = "PlayerCarMyIncidentCount"
+
+# iRacing's spotter sensor: is a car alongside, left or right (irsdk_CarLeftRight).
+CAR_LEFT_RIGHT = "CarLeftRight"
 
 # --- flags ---------------------------------------------------------------
 SESSION_FLAGS = "SessionFlags"
@@ -105,6 +109,8 @@ REQUIRED: dict[str, tuple[str, ...]] = {
     "pit": (ON_PIT_ROAD,),
     "incidents": (PLAYER_INCIDENTS,),
     "offtrack": (PLAYER_TRACK_SURFACE,),
+    "lifecycle": (SESSION_NUM, SESSION_STATE, SESSION_FLAGS),
+    "car_alongside": (CAR_LEFT_RIGHT,),
 }
 
 # Health/conditions are "any-of" groups rather than "all-of".

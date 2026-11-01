@@ -11,8 +11,8 @@ import math
 from bisect import bisect_left
 from typing import Any
 
-from .activity import AGENTS
-from .format import NA, is_num
+from .activity import AGENTS, round_figures
+from .format import NA, integer, is_num
 
 OWN_LANE = {"lap_completed", "flag_change"}
 
@@ -129,6 +129,47 @@ def aired_times(records: list[dict] | None) -> dict:
     return out
 
 
+#: Badge kinds of a call that never aired.
+NOT_AIRED = ("expired", "superseded")
+
+
+def air_badge(message: dict | None) -> dict | None:
+    """What the radio decided at air time, for a badge: late, dropped, or nothing.
+
+    ``{"kind": "late", "text": "late +27s"}`` for a call aired after its agent's
+    limit, ``{"kind": "expired", "text": "not aired", "reason": ...}`` for one
+    dropped because it had stopped being true, ``{"kind": "superseded", "text":
+    "not aired", "reason": ...}`` for one another call on the same decision replaced.
+    ``None`` for an ordinary call and for anything recorded before the radio checked
+    air time.
+    """
+    if not isinstance(message, dict):
+        return None
+    if message.get("superseded"):
+        return {
+            "kind": "superseded",
+            "text": "not aired",
+            "reason": message.get("superseded_reason") or "superseded",
+        }
+    if message.get("expired"):
+        return {
+            "kind": "expired",
+            "text": "not aired",
+            "reason": message.get("expired_reason") or "no longer valid",
+        }
+    if message.get("late"):
+        by = message.get("late_by_s")
+        return {"kind": "late", "text": f"late +{integer(by)}s" if is_num(by) else "late"}
+    return None
+
+
+def _radio_when(data: dict, aired: dict, t: Any) -> Any:
+    """When a call reached the channel: aired, or (for a dropped one) dropped."""
+    if (data.get("expired") or data.get("superseded")) and is_num(data.get("air_session_time")):
+        return data["air_session_time"]
+    return aired.get(data.get("message_id"), t)
+
+
 def lane_items(records: list[dict] | None, laps: list[dict] | None) -> dict:
     """Every timeline lane as items: laps, flags, events, one per agent, radio.
 
@@ -220,15 +261,25 @@ def lane_items(records: list[dict] | None, laps: list[dict] | None) -> dict:
             if data.get("outcome") and data["outcome"] != "radio":
                 item["cls"] += " run-quiet"
         elif kind == "radio":
+            badge = air_badge(data)
+            note = ""
+            if badge and badge["kind"] in NOT_AIRED:
+                note = f" (not aired: {badge['reason']})"
+            elif badge:
+                note = f" ({badge['text']})"
             lanes["radio"].append(
                 {
-                    "t0": aired.get(data.get("message_id"), t),
+                    "t0": _radio_when(data, aired, t),
                     "event_t": t,
-                    "label": f"{data.get('agent')}: {data.get('spoken_text') or ''}",
+                    "label": f"{data.get('agent')}{note}: {data.get('spoken_text') or ''}",
                     "cls": f"agent-{data.get('agent')}"
-                    + (" refused" if data.get("refused") else ""),
+                    + (" refused" if data.get("refused") else "")
+                    + (f" {badge['kind']}" if badge else ""),
                     "agent": data.get("agent"),
                     "refused": bool(data.get("refused")),
+                    "late": bool(data.get("late")),
+                    "expired": bool(data.get("expired")),
+                    "superseded": bool(data.get("superseded")),
                     "record": rec,
                 }
             )
@@ -270,6 +321,7 @@ def audit_rows(records: list[dict] | None) -> list[dict]:
                 "tool_errors": 0,
                 "validations": 0,
                 "unsupported": [],
+                "reasons": [],
                 "repaired": False,
                 "outcome": None,
                 "latency_ms": None,
@@ -294,7 +346,14 @@ def audit_rows(records: list[dict] | None) -> list[dict]:
         elif kind == "validate":
             row["validations"] += 1
             if not data.get("ok"):
-                row["unsupported"].extend(data.get("unsupported") or [])
+                for u in data.get("unsupported") or []:
+                    shown = round_figures(u)
+                    if shown not in row["unsupported"]:
+                        row["unsupported"].append(shown)
+                for r in data.get("unsupported_detail") or []:
+                    shown = round_figures(r)
+                    if shown not in row["reasons"]:
+                        row["reasons"].append(shown)
             if data.get("repaired"):
                 row["repaired"] = True
         elif kind == "run_end":
@@ -342,7 +401,7 @@ def radio_up_to(records: list[dict] | None, t: float | None, limit: int = 40) ->
     aired = aired_times(records)
 
     def when(rec: dict) -> Any:
-        return aired.get((rec.get("data") or {}).get("message_id"), rec.get("session_time"))
+        return _radio_when(rec.get("data") or {}, aired, rec.get("session_time"))
 
     out = [
         rec

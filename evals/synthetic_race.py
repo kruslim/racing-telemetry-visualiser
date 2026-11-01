@@ -90,6 +90,18 @@ class ScenarioSpec:
     #: blue-flag tests). Empty by default, which keeps the grid constant and the
     #: ground-truth scenario byte-identical.
     closing: tuple[tuple[int, float], ...] = ()
+    #: ``(lap, from_pct, to_pct, CarLeftRight)`` spans of iRacing's proximity
+    #: sensor (2 car left, 3 car right, ...); outside them it reads 1 (clear).
+    #: Empty by default, and then the channel is not in the catalog at all, as
+    #: in a real ``.ibt`` -- so the ground-truth scenario stays byte-identical.
+    alongside: tuple[tuple[int, float, float, int], ...] = ()
+
+    #: iRacing's SessionNum for this stream, and the session list the
+    #: session-info document carries (SessionType strings, indexed by number).
+    #: None / empty by default, which keeps the ground-truth scenario (no
+    #: SessionNum channel) byte-identical. See ``evals/synthetic_weekend.py``.
+    session_num: int | None = None
+    sessions: tuple[str, ...] = ()
 
     #: Channels to omit from the catalog, for degradation tests.
     exclude: tuple[str, ...] = field(default=())
@@ -102,7 +114,7 @@ class ScenarioSpec:
 # --------------------------------------------------------------------------
 # catalog
 # --------------------------------------------------------------------------
-def _headers() -> list[RawHeader]:
+def _headers(spec: ScenarioSpec | None = None) -> list[RawHeader]:
     f, d, i, b, bf = IRType.FLOAT, IRType.DOUBLE, IRType.INT, IRType.BOOL, IRType.BITFIELD
     heads = [
         RawHeader("SessionTime", d, unit="s"),
@@ -151,6 +163,8 @@ def _headers() -> list[RawHeader]:
         ("CarIdxTrackSurface", i),
     ):
         heads.append(RawHeader(name, typ, count=64))
+    if spec is not None and spec.alongside:
+        heads.append(RawHeader("CarLeftRight", IRType.INT))
     return heads
 
 
@@ -158,7 +172,9 @@ def scenario_catalog(spec: ScenarioSpec | None = None) -> Catalog:
     """Build the scenario's runtime catalog, minus any ``spec.exclude`` channels."""
     spec = spec or ScenarioSpec()
     excluded = set(spec.exclude)
-    heads = [h for h in _headers() if h.name not in excluded]
+    heads = [h for h in _headers(spec) if h.name not in excluded]
+    if spec.session_num is not None and "SessionNum" not in excluded:
+        heads.insert(3, RawHeader("SessionNum", IRType.INT))
     cat = build_catalog(heads, source="ibt", flatten_max=6)
     cat.car_id = "synthetic-gt3"
     cat.track_id = "synthetic-circuit"
@@ -173,7 +189,7 @@ def scenario_session_info(spec: ScenarioSpec | None = None) -> dict:
     vehicle engineer's ``get_setup_snapshot`` reads.
     """
     spec = spec or ScenarioSpec()
-    return {
+    info = {
         "WeekendInfo": {
             "TrackName": "synthetic-circuit",
             "TrackDisplayName": "Synthetic Circuit",
@@ -197,6 +213,14 @@ def scenario_session_info(spec: ScenarioSpec | None = None) -> dict:
             "TiresAero": {"AeroSettings": {"RearWingSetting": "7"}},
         },
     }
+    if spec.sessions:
+        info["SessionInfo"] = {
+            "Sessions": [
+                {"SessionNum": i, "SessionType": kind, "SessionName": kind.upper()}
+                for i, kind in enumerate(spec.sessions)
+            ]
+        }
+    return info
 
 
 # --------------------------------------------------------------------------
@@ -381,7 +405,14 @@ def scenario_frames(spec: ScenarioSpec | None = None) -> Iterator[Frame]:
             values["CarIdxLastLapTime"] = last_arr
             values["CarIdxOnPitRoad"] = pit_arr
             values["CarIdxTrackSurface"] = surf_arr
+            if spec.alongside:
+                values["CarLeftRight"] = next(
+                    (raw for at, lo, hi, raw in spec.alongside if _in_span(lap, pct, at, lo, hi)),
+                    1,
+                )
 
+            if spec.session_num is not None:
+                values["SessionNum"] = spec.session_num
             for name in excluded:
                 values.pop(name, None)
 

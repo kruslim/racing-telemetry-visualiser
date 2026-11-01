@@ -186,6 +186,36 @@ class Settings(BaseSettings):
     pitwall_coach_model: str = Field(
         default="", description="Override the live coach's model. Empty = RTV_LLM_KIMI_MODEL_FAST."
     )
+    pitwall_strategist_max_age_s: float | None = Field(
+        default=None,
+        description=(
+            "Seconds a strategist call may wait for the radio before it airs "
+            "tagged late. Unset = the agent's default (30 s); 0 = never tagged late."
+        ),
+    )
+    pitwall_vehicle_engineer_max_age_s: float | None = Field(
+        default=None,
+        description=(
+            "Seconds a vehicle engineer call may wait for the radio before it airs "
+            "tagged late. Unset = the agent's default (20 s); 0 = never tagged late."
+        ),
+    )
+    pitwall_spotter_max_age_s: float | None = Field(
+        default=None,
+        description=(
+            "Seconds a spotter template call (car left, closing, blue flag) may wait "
+            "for the radio before it airs tagged late. Unset = 3 s; 0 = never tagged "
+            "late. When set it also applies to the LLM spotter's lap-line summaries, "
+            "which by default are never tagged late and expire after 60 s."
+        ),
+    )
+    pitwall_coach_max_age_s: float | None = Field(
+        default=None,
+        description=(
+            "Seconds a coach call may wait for the radio before it airs "
+            "tagged late. Unset = the agent's default (30 s); 0 = never tagged late."
+        ),
+    )
     pitwall_agents_only: str = Field(
         default="",
         description="Comma-separated agent names to mount. Empty mounts all of them; "
@@ -218,6 +248,33 @@ class Settings(BaseSettings):
         gt=0,
         description="Session seconds between race-state snapshots in the race journal.",
     )
+    pitwall_autonomous: bool = Field(
+        default=False,
+        description="Arm the agents at each session's green flag and stand them down at "
+        "the player's checkered flag or the session end (standby in between). Never "
+        "overrides the kill switch or a per-agent switch: the operator always wins.",
+    )
+    pitwall_autonomous_sessions: str = Field(
+        default="race",
+        description="Comma-separated session types (practice, qualify, race) that arm "
+        "the full roster under RTV_PITWALL_AUTONOMOUS.",
+    )
+    pitwall_roster_practice: str = Field(
+        default="",
+        description="Agents armed in practice when practice is not an autonomous "
+        "session type. Empty = none, so nothing bills for a practice session.",
+    )
+    pitwall_roster_qualify: str = Field(
+        default="",
+        description="Agents armed in qualifying when qualify is not an autonomous "
+        "session type. Empty = none.",
+    )
+    pitwall_session_end_notifier: str = Field(
+        default="none",
+        description="What happens with the summary when a session segment ends: "
+        "'none', or 'file' (log a one-line result and write "
+        "<run_id>.notice.txt next to the journal run).",
+    )
     pitwall_max_calls_per_session: int = Field(
         default=400,
         ge=0,
@@ -225,6 +282,12 @@ class Settings(BaseSettings):
         "across every agent and the live VLM. Generous on purpose: it is a runaway guard, not a "
         "budget (a normal race hour is a low-tens number). 0 = unlimited. The "
         "counter is exposed on GET /api/v1/pitwall/status.",
+    )
+    pitwall_typed_grounding: bool = Field(
+        default=True,
+        description="Typed grounding in the pitwall validator: a figure said with a unit "
+        "('6 laps', 'P4', '28 psi') must match a fact of that unit family, not just any "
+        "nearby number. false restores the old any-number check (a rollback switch).",
     )
     pitwall_retry_backoff_s: float = Field(
         default=0.5,
@@ -369,6 +432,27 @@ class Settings(BaseSettings):
         ge=0,
         description="Live events closer than this (session s) to the last analysed one "
         "are merged into it.",
+    )
+
+    # --- push-to-talk voice questions (RTV Desktop, docs/DESKTOP.md) -------
+    # Speech-to-text runs on this PC (faster-whisper, the [voice] extra): no audio
+    # leaves it. The transcript goes to /pitwall/driver-message with source "voice".
+    voice_enabled: bool = Field(
+        default=False,
+        description="Push-to-talk questions in RTV Desktop. Off by default: the key is "
+        "watched system-wide (so it works while iRacing has focus).",
+    )
+    voice_key: str = Field(
+        default="ScrollLock",
+        description="The push-to-talk key: a key name (ScrollLock, Pause, F13, Space, "
+        "RCtrl, Numpad0, A...) or a wheel / button-box button as joy<device>:<button> "
+        "(joy1:5 = button 5 of the first game controller, numbered as in joy.cpl). "
+        "`python -m rtv.desktop.voice --find-button` prints the one you press.",
+    )
+    voice_model: str = Field(
+        default="base.en",
+        description="faster-whisper model (base.en, small.en, small, tiny.en...), run on "
+        "the CPU with int8. Downloaded on first use to <data dir>/models/whisper.",
     )
 
     # --- server ----------------------------------------------------------

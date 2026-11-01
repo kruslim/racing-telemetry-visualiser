@@ -39,7 +39,14 @@ from rtv.coaching.agent.validation import (
     POSITION_TOL_M,
     PROSE_SPEED_TOL,
     corner_map,
+    split_corner,
 )
+from rtv.grounding.units import G_RE as _G_RE
+from rtv.grounding.units import GEAR_PROSE_RE as _GEAR_PROSE_RE
+from rtv.grounding.units import KMH_RE as _KMH_RE
+from rtv.grounding.units import METRES_RE as _METRES_RE
+from rtv.grounding.units import ORDINALS as _ORDINALS
+from rtv.grounding.units import SECONDS_RE as _SECONDS_RE
 
 __all__ = ["CornerFacts", "ProseReport", "check_prose", "corner_facts", "result_prose"]
 
@@ -120,18 +127,6 @@ def _lap_seconds(findings: dict[str, Any]) -> list[float]:
 
 
 # ------------------------------------------------------------------ reading the prose
-_APPROX = r"(?P<approx>~|≈|about |around |roughly |approx\.? |approximately |some )?"
-_NUM = r"(?P<num>\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)"
-_METRES_RE = re.compile(_APPROX + r"[+-]?" + _NUM + r"\s?(?:m|metres|meters)\b(?!/)")
-_KMH_RE = re.compile(_APPROX + r"[+-]?" + _NUM + r"\s?(?:km/h|kph|kmh)\b")
-_SECONDS_RE = re.compile(_APPROX + r"[+-]?" + _NUM + r"\s?(?:s|sec|secs|seconds)\b")
-_G_RE = re.compile(_APPROX + r"(?P<num>\d\.\d+)\s?g\b")
-_ORDINALS = {"first": 1, "second": 2, "third": 3, "fourth": 4, "fifth": 5, "sixth": 6}
-_GEAR_PROSE_RE = re.compile(
-    r"\bgear\s+(?P<a>\d)\b|\b(?P<b>\d)(?:st|nd|rd|th)?\s+gear\b"
-    r"|\b(?P<c>first|second|third|fourth|fifth|sixth)\s+gear\b",
-    re.IGNORECASE,
-)
 _LABEL_RE = re.compile(r"\b(?:T|Turn\s)(\d+)\b")
 _FROM_TO_RE = re.compile(
     r"from\s+(?:~|about |around )?" + r"(?P<a>\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)\s?(?:m\b)?"
@@ -252,6 +247,7 @@ def _check_sentence(
     scope = [facts[lb] for lb in labels if lb in facts]
     if labels and not scope:
         return  # only a hallucinated corner: already flagged, nothing true to check against
+    owner = split_corner(owner)[0]
     if not scope and owner in facts:
         scope = [facts[owner]]
     if not scope:

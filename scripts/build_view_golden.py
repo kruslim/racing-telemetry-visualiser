@@ -41,6 +41,114 @@ STATE_EVERY_S = 30.0
 TRACK_POINT_STRIDE = 5
 
 
+# Task B1: the same slice as the radio would now record it. The strategist's real
+# "box this lap" (computed 229.7 s, aired 317.8 s) airs tagged late, and the coach's
+# real hairpin cue is dropped at its air time as no longer true. Test data only.
+LATE_ID = "fd8c4e03a6c93cb1"
+EXPIRED_ID = "386c95aadfe737d5"
+EXPIRED_REASON = "lap 3 has passed (now lap 4)"
+# Task B3: an engineer "box now" queued at the same yellow is replaced by the
+# strategist's real critical box call when that is published. Test data only.
+SUPERSEDED_BY_ID = "13dfdf18da914f37"
+SUPERSEDED_ID = "b3e0c2d9f1a7e440"
+SUPERSEDED_REASON = "replaced by the strategist's critical pit_stop call"
+SUPERSEDED_AT = 540.0
+
+
+def _air_journal(journal: list[dict]) -> list[dict]:
+    out = []
+    aired = {
+        (r.get("data") or {}).get("message_id"): r["session_time"]
+        for r in journal
+        if r["kind"] == "radio_aired"
+    }
+    for rec in journal:
+        rec = copy.deepcopy(rec)
+        data = rec.get("data") or {}
+        mid = data.get("message_id")
+        if rec["kind"] == "radio_aired" and mid == EXPIRED_ID:
+            out.append({**rec, "kind": "radio_expired", "data": {
+                **data, "reason": EXPIRED_REASON, "age_s": round(rec["session_time"] - 367.7, 1),
+            }})
+            continue
+        if rec["kind"] == "radio_aired" and mid == LATE_ID:
+            out.append({**rec, "kind": "radio_late", "data": {**data, "late_by_s": 88.1,
+                                                                "max_age_s": 30.0}})
+            rec["data"] = {**data, "late": True, "late_by_s": 88.1}
+        if rec["kind"] == "radio" and mid == LATE_ID:
+            data.update(
+                late=True,
+                late_by_s=round(aired[mid] - data["session_time"], 1),
+                max_age_s=30.0,
+                air_session_time=aired[mid],
+                spoken_text="Late call: " + data["spoken_text"],
+            )
+        if rec["kind"] == "radio" and mid == EXPIRED_ID:
+            data.update(
+                expired=True,
+                expired_reason=EXPIRED_REASON,
+                speak=False,
+                air_session_time=aired[mid],
+            )
+        out.append(rec)
+    template = next(
+        r for r in out if r["kind"] == "radio" and r["data"]["message_id"] == SUPERSEDED_BY_ID
+    )
+    seq = max(r.get("seq") or 0 for r in out)
+    engineer = copy.deepcopy(template)
+    engineer["seq"] = seq + 1
+    engineer["agent"] = "vehicle_engineer"
+    engineer["data"].update(
+        agent="vehicle_engineer",
+        priority="advisory",
+        subject="damage_stop",
+        spoken_text="Box this lap, the front-left is losing pressure.",
+        detail_text="Front-left pressure falling.",
+        data={"finding": "damage", "pit_request": "box_now"},
+        message_id=SUPERSEDED_ID,
+        superseded=True,
+        superseded_by=SUPERSEDED_BY_ID,
+        superseded_reason=SUPERSEDED_REASON,
+        speak=False,
+        air_session_time=SUPERSEDED_AT,
+    )
+    out.append(engineer)
+    out.append({
+        **{k: template.get(k) for k in ("wall_ms", "tick", "event_key")},
+        "seq": seq + 2,
+        "session_time": SUPERSEDED_AT,
+        "kind": "radio_superseded",
+        "agent": "vehicle_engineer",
+        "data": {
+            "agent": "vehicle_engineer", "message_id": SUPERSEDED_ID, "priority": "advisory",
+            "subject": "damage_stop", "by_message_id": SUPERSEDED_BY_ID,
+            "by_agent": "strategist", "by_priority": "critical", "rule": "critical",
+            "group": "pit_stop", "reason": SUPERSEDED_REASON,
+        },
+    })
+    return out
+
+
+def _refusal_records() -> list[dict]:
+    """One coach run the validator refused twice, as the journal records it (A3)."""
+    base = {"agent": "coach", "run_id": "coach-1", "event_key": "offtrack", "tick": 201300}
+    detail = "27.74091339111328 km/h (no speed figure in the data matches)"
+    return [
+        {**base, "seq": 1, "wall_ms": 1000, "session_time": 367.7, "kind": "run_start",
+         "data": {"model": "kimi-k3"}},
+        {**base, "seq": 2, "wall_ms": 1100, "session_time": 367.7, "kind": "validate",
+         "data": {"ok": False, "unsupported": ["4.66", "4.6610630306531675"],
+                  "unsupported_detail": [detail, "4.6610630306531675 (no figure in the data "
+                                                 "matches)"],
+                  "word_count": 17, "repaired": False}},
+        {**base, "seq": 3, "wall_ms": 1200, "session_time": 367.7, "kind": "validate",
+         "data": {"ok": False, "unsupported": ["4.66"], "unsupported_detail": [detail],
+                  "word_count": 15, "repaired": True}},
+        {**base, "seq": 4, "wall_ms": 1300, "session_time": 367.7, "kind": "run_end",
+         "data": {"outcome": "refused", "latency_ms": 12000.5}},
+    ]
+
+
 def _inputs() -> dict:
     running = spa.load("racestate_running.json")
     journal = []
@@ -125,10 +233,12 @@ def _inputs() -> dict:
         "radio": spa.load("agents-on/pitwall-radio.json")["messages"],
         "events": spa.load("racestate_events_end.json")["events"],
         "activity": spa.load("agents-on/pitwall-activity.json")["records"],
+        "refusal": _refusal_records(),
         "laps": spa.load("laps.json")["laps"],
         "corners": spa.load("lap_findings.json")["corners"],
         "track_points": spa.load("trackmap.json")["points"][::TRACK_POINT_STRIDE],
         "journal": journal,
+        "journal_air": _air_journal(journal),
         "replay_running": spa.load("replay_status_running.json"),
     }
 
@@ -301,6 +411,8 @@ def _cases(inputs: dict) -> dict[str, list[dict]]:
         case("activity", "reduce the agents-on activity", "reduce", _ref("activity")),
         case("activity", "reduce up to 600 s", "reduce", _ref("activity"), 600),
         case("activity", "reduce the journal slice", "reduce", _ref("journal")),
+        case("activity", "reduce the journal with a superseded call", "reduce",
+             _ref("journal_air")),
         case("activity", "recentRuns", "recentRuns", {"$model": _ref("activity")}, 5),
         case("activity", "meanLatency", "meanLatency", {"$model": _ref("activity")}),
         case("activity", "meanLatency of nothing", "meanLatency", {"$model": []}),
@@ -330,6 +442,17 @@ def _cases(inputs: dict) -> dict[str, list[dict]]:
         )
     )
     act.append(case("activity", "edgesFor nothing", "edgesFor", None))
+    # Task A3: the validator's figures and reasons are shown rounded.
+    for name, text in [
+        ("a raw float", "withheld 4.66, 4.6610630306531675"),
+        ("a reason", "27.74091339111328 km/h (no speed figure in the data matches)"),
+        ("a lap time stays", "1:32.418 and 0.9674"),
+        ("short decimals stay", "2.5 laps, 0.97 and 12"),
+        ("a tiny negative", "-0.0001 s"),
+        ("nothing", None),
+    ]:
+        act.append(case("activity", f"roundFigures of {name}", "roundFigures", text))
+    act.append(case("activity", "reduce a refused run with reasons", "reduce", _ref("refusal")))
 
     rev = [
         case("review", "defaultLaps of the Spa laps", "defaultLaps", _ref("laps")),
@@ -340,9 +463,33 @@ def _cases(inputs: dict) -> dict[str, list[dict]]:
         case("review", "bounds of nothing", "bounds", None, []),
         case("review", "laneItems of the journal", "laneItems", _ref("journal"), _ref("laps")),
         case("review", "auditRows of the journal", "auditRows", _ref("journal")),
+        case("review", "auditRows of a refused run with reasons", "auditRows", _ref("refusal")),
         case("review", "radioUpTo 400 s", "radioUpTo", _ref("journal"), 400.0, 5),
         case("review", "radioUpTo everything", "radioUpTo", _ref("journal"), None),
         case("review", "eventsUpTo 300 s", "eventsUpTo", _ref("journal"), 300.0),
+        case("review", "laneItems with late and dropped calls", "laneItems",
+             _ref("journal_air"), _ref("laps")),
+        case("review", "radioUpTo with late and dropped calls", "radioUpTo",
+             _ref("journal_air"), None),
+        case("review", "radioUpTo 420 s, before the dropped call's air time", "radioUpTo",
+             _ref("journal_air"), 420.0),
+        case("review", "airBadge of a late call", "airBadge",
+             {"late": True, "late_by_s": 88.1}),
+        case("review", "airBadge rounds a half up", "airBadge",
+             {"late": True, "late_by_s": 2.5}),
+        case("review", "airBadge of a late call without its age", "airBadge", {"late": True}),
+        case("review", "airBadge of a dropped call", "airBadge",
+             {"expired": True, "expired_reason": EXPIRED_REASON}),
+        case("review", "airBadge of a dropped call without a reason", "airBadge",
+             {"expired": True}),
+        case("review", "airBadge of a superseded call", "airBadge",
+             {"superseded": True, "superseded_reason": SUPERSEDED_REASON}),
+        case("review", "airBadge of a superseded call without a reason", "airBadge",
+             {"superseded": True}),
+        case("review", "radioUpTo 530 s, before the superseded call was dropped", "radioUpTo",
+             _ref("journal_air"), 530.0),
+        case("review", "airBadge of an ordinary call", "airBadge", {"late": False}),
+        case("review", "airBadge of nothing", "airBadge", None),
         case("review", "toMetres", "toMetres", [0, 0.25, 0.5, 1], 6930.0),
         case("review", "toMetres without a length", "toMetres", [0, 0.5], 0),
         case("review", "cornerSpan without bounds", "cornerSpan", {"distance": 400.0}),

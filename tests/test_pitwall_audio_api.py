@@ -252,11 +252,13 @@ def test_a_driver_message_joins_the_log_but_is_never_read_back(agent_client):
     assert message["priority"] == "info"
     assert message["event_ref"]["key"] == "driver_message"
 
-    # Emitted, not queued: the driver already used the airtime.
+    # Emitted, not queued: the driver already used the airtime. (C1: the question
+    # also gets a reply -- here "no vehicle engineer", which is queued.)
     body = agent_client.get("/api/v1/pitwall/radio").json()
-    assert body["count"] == 1
-    assert body["pending"] == []
-    assert body["messages"][0]["message_id"] == message["message_id"]
+    driver = [m for m in body["messages"] if m["agent"] == "driver"]
+    assert len(driver) == 1
+    assert all(m["agent"] != "driver" for m in body["pending"])
+    assert driver[0]["message_id"] == message["message_id"]
 
 
 def test_a_driver_message_never_carries_backend_audio(voiced_client):

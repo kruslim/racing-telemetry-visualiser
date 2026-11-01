@@ -23,7 +23,7 @@ from collections.abc import Iterable, Sequence
 from pathlib import Path
 from typing import Any
 
-from rtv.store.journal import iter_records
+from rtv.store.journal import iter_records, schema_version_of
 
 #: Agent order in tables; any other agent follows alphabetically.
 AGENT_ORDER = ("strategist", "vehicle_engineer", "spotter", "coach")
@@ -66,6 +66,10 @@ def run_stats(records: Iterable[dict[str, Any]]) -> dict[str, Any]:
     validates: list[dict[str, Any]] = []
     lifecycle: dict[str, Any] = {}
     radio_by_agent: Counter[str] = Counter()
+    runs_with_input = 0
+    # B3: supersedes that name their rule (journals before it do not).
+    superseded_rules: Counter[str] = Counter()
+    superseded_cross = 0
 
     for rec in records:
         kind = rec.get("kind")
@@ -80,6 +84,8 @@ def run_stats(records: Iterable[dict[str, Any]]) -> dict[str, Any]:
         elif kind == "run_start" and run_id:
             run_trigger[run_id] = data.get("trigger") or rec.get("event_key") or "unknown"
             run_agent[run_id] = agent
+            if isinstance(data.get("input"), dict):
+                runs_with_input += 1
         elif kind == "llm_call_end":
             calls.append({"agent": agent, "run_id": run_id, **data})
         elif kind == "run_end":
@@ -88,6 +94,10 @@ def run_stats(records: Iterable[dict[str, Any]]) -> dict[str, Any]:
             validates.append({"agent": agent, "run_id": run_id, **data})
         elif kind == "radio_aired":
             radio_by_agent[agent] += 1
+        elif kind == "radio_superseded" and data.get("rule"):
+            superseded_rules[data["rule"]] += 1
+            if data.get("by_agent") and data.get("by_agent") != agent:
+                superseded_cross += 1
 
     def trigger_of(item: dict[str, Any]) -> str:
         return run_trigger.get(item.get("run_id") or "", "unknown")
@@ -177,6 +187,9 @@ def run_stats(records: Iterable[dict[str, Any]]) -> dict[str, Any]:
         "agents_enabled": lifecycle.get("agents_enabled"),
         "session_id": lifecycle.get("session_id"),
         "source": lifecycle.get("source"),
+        "schema_version": schema_version_of(lifecycle),
+        # Agent runs whose whole model input is on run_start (schema 2 on).
+        "runs_with_input": runs_with_input,
         **overall,
         "dispatches": kinds.get("dispatch", 0),
         "inbox_superseded": kinds.get("inbox_superseded", 0),
@@ -185,6 +198,10 @@ def run_stats(records: Iterable[dict[str, Any]]) -> dict[str, Any]:
         "radio_superseded": kinds.get("radio_superseded", 0),
         "radio_late": optional("radio_late"),
         "radio_expired": optional("radio_expired"),
+        # Cross-agent decision groups (B3): n/a for journals recorded before them.
+        "radio_superseded_cross_agent": superseded_cross if superseded_rules else None,
+        "radio_conflicts": superseded_rules.get("conflict", 0) if superseded_rules else None,
+        "radio_superseded_by_rule": dict(sorted(superseded_rules.items())),
         "agents": by_agent,
         "calls_by_trigger": dict(sorted(calls_by_trigger.items())),
         "runs_by_trigger": dict(sorted(runs_by_trigger.items())),
@@ -221,6 +238,8 @@ def _ratio(num: Any, den: Any) -> str:
 
 #: (label, getter, unit) rows of the summary table.
 _SUMMARY_ROWS: list[tuple[str, Any, str]] = [
+    ("journal schema", lambda s: s.get("schema_version"), ""),
+    ("runs with recorded input", lambda s: s.get("runs_with_input"), ""),
     ("model calls", lambda s: s["model_calls"], ""),
     ("agent runs", lambda s: s["agent_runs"], ""),
     ("runs that aired radio", lambda s: s["radio_runs"], ""),
@@ -263,6 +282,8 @@ _SUMMARY_ROWS: list[tuple[str, Any, str]] = [
     ("radio superseded", lambda s: s["radio_superseded"], ""),
     ("radio late", lambda s: s["radio_late"], ""),
     ("radio expired", lambda s: s["radio_expired"], ""),
+    ("radio superseded across agents", lambda s: s.get("radio_superseded_cross_agent"), ""),
+    ("radio conflicts dropped", lambda s: s.get("radio_conflicts"), ""),
 ]
 
 _AGENT_ROWS: list[tuple[str, Any, str]] = [

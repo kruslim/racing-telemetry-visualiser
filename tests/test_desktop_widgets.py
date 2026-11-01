@@ -147,6 +147,70 @@ def test_radio_feed_variants_from_the_real_agents_on_run(qapp):
     assert_plain(feed)
 
 
+def test_radio_feed_shows_the_answer_under_the_question(qapp):
+    """C1: the answer is tagged and nested; an unanswered question says who it went to."""
+    from rtv.desktop.widgets.radio import RadioFeed
+
+    asked = {
+        "agent": "driver", "message_id": "q1", "spoken_text": "How many laps of fuel?",
+        "speak": False, "session_time": 100,
+        "data": {"question": {"owner": "strategist", "intent": "fuel_laps"}},
+    }
+    waiting = {
+        **asked, "message_id": "q2", "spoken_text": "Where am I losing time?",
+        "session_time": 400, "data": {"question": {"owner": "coach", "intent": None}},
+    }
+    answer = {
+        "agent": "strategist", "message_id": "a1", "priority": "advisory",
+        "spoken_text": "7.6 laps of fuel.", "session_time": 100, "in_reply_to": "q1",
+        "source": "template", "detail_text": "fuel.laps_remaining 7.552.",
+    }
+    feed = RadioFeed()
+    assert feed.send.text() == "Ask"
+    feed.seed([asked, answer, waiting])
+    feed.grab()
+    shown = texts(feed)
+    assert "ANSWER" in shown
+    assert "7.6 laps of fuel." in shown
+    assert "asked the coach · waiting for the answer" in shown
+    assert_plain(feed)
+
+
+def test_radio_feed_shows_late_and_dropped_calls(qapp):
+    """B1: a late call carries a "late +Ns" badge; a dropped one is struck, with why."""
+    from rtv.desktop.widgets.radio import RadioFeed
+
+    calls = spa.load("agents-on/pitwall-radio.json")["messages"]
+    strategist = next(m for m in calls if m["agent"] == "strategist")
+    late = {
+        **strategist,
+        "spoken_text": "Late call: " + strategist["spoken_text"],
+        "late": True,
+        "late_by_s": 88.1,
+    }
+    dropped = {
+        **next(m for m in calls if m["agent"] == "coach"),
+        "expired": True,
+        "expired_reason": "lap 3 has passed (now lap 4)",
+        "speak": False,
+        "air_session_time": 423.5,
+    }
+    feed = RadioFeed()
+    feed.seed([late, dropped])
+    feed.grab()
+    shown = texts(feed)
+    assert "LATE +88S" in shown
+    assert "NOT AIRED" in shown
+    assert "Dropped before airing: lap 3 has passed (now lap 4)." in shown
+    struck = [
+        lab for lab in feed.findChildren(QLabel)
+        if lab.text() == dropped["spoken_text"] and lab.font().strikeOut()
+    ]
+    assert struck
+    assert any("→ dropped" in s for s in shown)
+    assert_plain(feed)
+
+
 def test_review_panels_on_real_summary_findings_and_journal(qapp):
     from rtv.desktop.widgets.review import AuditPanel, FindingsPanel, LapTable, SummaryPanel
 
@@ -242,6 +306,7 @@ def test_quota_dialog_copy_and_ai_controls_off(qapp):
     status_on = spa.load("agents-on/pitwall-status.json")
     status_off = spa.load("pitwall_status_idle.json")
     assert agents_will_run(status_on) and not agents_will_run(status_off)
+    assert not agents_will_run({**status_on, "agents_mounted": False})  # C1: templates only
     dialog = QuotaDialog(status_on)
     assert QUOTA_TEXT in texts(dialog) and "75 / 400" in texts(dialog)
     controls = AiControls()

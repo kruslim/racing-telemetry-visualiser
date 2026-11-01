@@ -8,7 +8,7 @@
  * Tested under node by review-model.test.js.
  */
 
-import { AGENTS } from '../shared/activity-model.js';
+import { AGENTS, roundFigures } from '../shared/activity-model.js';
 
 /** Race events that already have a lane of their own (laps, flags) or are noise there. */
 const OWN_LANE = new Set(['lap_completed', 'flag_change']);
@@ -58,6 +58,35 @@ export function airedTimes(records) {
     if (id && Number.isFinite(rec.session_time) && !out.has(id)) out.set(id, rec.session_time);
   }
   return out;
+}
+
+/**
+ * What the radio decided at air time: {kind: 'late', text: 'late +27s'} for a call
+ * aired after its agent's limit, {kind: 'expired', text: 'not aired', reason} for
+ * one dropped because it had stopped being true, {kind: 'superseded', text: 'not
+ * aired', reason} for one another call on the same decision replaced, else null.
+ */
+export function airBadge(message) {
+  if (!message || typeof message !== 'object') return null;
+  if (message.superseded) {
+    return { kind: 'superseded', text: 'not aired', reason: message.superseded_reason || 'superseded' };
+  }
+  if (message.expired) {
+    return { kind: 'expired', text: 'not aired', reason: message.expired_reason || 'no longer valid' };
+  }
+  if (message.late) {
+    const by = message.late_by_s;
+    return { kind: 'late', text: Number.isFinite(by) ? `late +${Math.round(by)}s` : 'late' };
+  }
+  return null;
+}
+
+/** When a call reached the channel: aired, or (for a dropped one) dropped. */
+function radioWhen(data, aired, t) {
+  if ((data.expired || data.superseded) && Number.isFinite(data.air_session_time)) {
+    return data.air_session_time;
+  }
+  return aired.has(data.message_id) ? aired.get(data.message_id) : t;
 }
 
 /** A lap is "clean" when it is valid and neither an in- nor an out-lap. */
@@ -173,10 +202,19 @@ export function laneItems(records, laps) {
       item.label += ` → ${data.outcome || '?'}`;
       if (data.outcome && data.outcome !== 'radio') item.cls += ' run-quiet';
     } else if (rec.kind === 'radio') {
+      const badge = airBadge(data);
+      let note = '';
+      if (badge && (badge.kind === 'expired' || badge.kind === 'superseded')) {
+        note = ` (not aired: ${badge.reason})`;
+      }
+      else if (badge) note = ` (${badge.text})`;
       lanes.radio.push({
-        t0: aired.has(data.message_id) ? aired.get(data.message_id) : t,
-        label: `${data.agent}: ${data.spoken_text || ''}`,
-        cls: `agent-${data.agent}${data.refused ? ' refused' : ''}`,
+        t0: radioWhen(data, aired, t),
+        label: `${data.agent}${note}: ${data.spoken_text || ''}`,
+        cls: `agent-${data.agent}${data.refused ? ' refused' : ''}${badge ? ` ${badge.kind}` : ''}`,
+        late: !!data.late,
+        expired: !!data.expired,
+        superseded: !!data.superseded,
         record: rec,
       });
     }
@@ -218,6 +256,7 @@ export function auditRows(records) {
         toolErrors: 0,
         validations: 0,
         unsupported: [],
+        reasons: [],
         repaired: false,
         outcome: null,
         latencyMs: null,
@@ -242,7 +281,16 @@ export function auditRows(records) {
         break;
       case 'validate':
         row.validations += 1;
-        if (!data.ok) row.unsupported.push(...(data.unsupported || []));
+        if (!data.ok) {
+          for (const u of data.unsupported || []) {
+            const shown = roundFigures(u);
+            if (!row.unsupported.includes(shown)) row.unsupported.push(shown);
+          }
+          for (const r of data.unsupported_detail || []) {
+            const shown = roundFigures(r);
+            if (!row.reasons.includes(shown)) row.reasons.push(shown);
+          }
+        }
         if (data.repaired) row.repaired = true;
         break;
       case 'run_end':
@@ -280,10 +328,7 @@ export function filterAudit(rows, { agent = '', outcome = '', sort = 'time' } = 
 /** Radio calls that had aired at or before t, newest first. */
 export function radioUpTo(records, t, limit = 40) {
   const aired = airedTimes(records);
-  const when = (rec) => {
-    const id = (rec.data || {}).message_id;
-    return aired.has(id) ? aired.get(id) : rec.session_time;
-  };
+  const when = (rec) => radioWhen(rec.data || {}, aired, rec.session_time);
   const out = [];
   for (const rec of records || []) {
     if (rec.kind !== 'radio') continue;

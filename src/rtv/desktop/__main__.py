@@ -85,6 +85,13 @@ def main(argv: list[str] | None = None) -> int:
 
     api = Api(base_url)
     hub = Hub(api)
+    from rtv.config import get_settings
+
+    from .voice import build_push_to_talk
+
+    voice, keys = build_push_to_talk(get_settings(), parent=hub)
+    if voice is not None:
+        hub.attach_voice(voice, keys)
     reduced = reduced_motion_default() if args.reduced_motion is None else args.reduced_motion
     window = MainWindow(
         hub, embedded=embedded is not None, reduced_motion=reduced, server_note=note

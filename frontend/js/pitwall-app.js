@@ -205,6 +205,8 @@ function onState(state) {
 }
 
 function onRadio(message) {
+  // Dropped before airing (no longer true, or superseded on its decision): never said.
+  if (message.expired || message.superseded) return;
   const result = manager.push(message);
   radioPanel.push(message, result);
   if (message.agent === 'strategist' && !message.refused) {

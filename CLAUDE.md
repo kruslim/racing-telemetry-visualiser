@@ -8,8 +8,9 @@ a multi-agent orchestrator, Layer 3b a LangGraph coach with grounded refusal and
 in-loop citation checks, plus a hermetic eval harness. v2 adds a live pitwall: a
 deterministic race-state engine, four event-driven agents (strategist, vehicle engineer,
 spotter, coach) on one prioritised radio feed, browser TTS, and a live pit-stand UI.
-`README.md` has the full tour; `docs/COACHING.md`, `docs/PITWALL.md`, `docs/TRACKS.md`,
-`docs/VISION.md` and `docs/VARIABLES.md` go deeper.
+`README.md` is the public overview and `docs/DESIGN.md` the system design (`docs/API.md`
+is the route reference); `docs/COACHING.md`, `docs/PITWALL.md`, `docs/TRACKS.md`,
+`docs/VISION.md`, `docs/VARIABLES.md` and `docs/WEEKLY_EVAL.md` go deeper.
 
 ## Commands
 
@@ -65,6 +66,9 @@ files that were already formatted and sorts imports in every edited file.
 - `evals/` checks shared with the in-loop validator, fixtures, cases, runner, LLM judge,
   `run.py` (the live, paid eval), and the test-only generated data
   (`synthetic_race.py`, `synthetic_session.py`).
+  `evals/real/` holds eval cases cut from a real race journal (`spa_run`, built by
+  `scripts/build_real_evals.py`): offline in pytest against `baseline.json`, live via
+  `evals/run_pitwall.py --real spa_run` (paid).
 - `tests/` pytest suite; `conftest.py` has the `ScriptedModel` that drives the coach.
 - `scripts/` build, smoke, import and deep-coach helpers.
 
@@ -100,7 +104,7 @@ files that were already formatted and sorts imports in every edited file.
   never re-runs the agents.
 - Pitwall agents never assert a number that isn't traceable to deterministic data; the
   race-state engine has no LLM in it. `docs/PITWALL.md` records the v2 interfaces and
-  the pending build stages (`prompts/07-10`; done ones are in `prompts/done/`).
+  the pending build stages (`prompts/08-10`; done ones are in `prompts/done/`).
 - Commit messages: one imperative sentence-case subject, no prefix (see `git log`).
 
 ## Environment
@@ -125,7 +129,7 @@ files that were already formatted and sorts imports in every edited file.
 
 Anything that calls Kimi uses the user's Kimi Code quota and needs the user's go-ahead
 first: `evals/run.py` (coach on Kimi plus the judge on Gemini; `--no-judge`
-still calls the coach), `evals/run_pitwall.py` without `--dry-run`,
+still calls the coach), `evals/run_pitwall.py` without `--dry-run`, `scripts/weekly_eval.py` without `--dry-run` (the weekly scheduled task, `docs/WEEKLY_EVAL.md`),
 `scripts/deep_coach.py` without `--findings-only`, `scripts/check_llm.py`, the
 `orchestrator`, the pitwall agents (`RTV_PITWALL_AGENTS=true`), vision analyses
 (`POST .../vision/analyses` with `RTV_VISION_MODE` on; the `/vision/plan` dry run is free), and
@@ -134,7 +138,7 @@ the hermetic eval runner, `--dry-run` and `--findings-only` are free.
 
 ## Staged pitwall build
 
-The v2 pitwall was built by headless prompts in `prompts/` (01-06 done, 07-10 pending),
+The v2 pitwall was built by headless prompts in `prompts/` (01-07 done, 08-10 pending),
 run by `run_pitwall.ps1` / `run_pitwall.sh`. When running one of those stages, read
 `docs/PITWALL.md` first (it is the shared state between stages) and finish by updating
 it with what was built, the interfaces exposed and any deviations. Each stage must leave

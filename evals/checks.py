@@ -18,7 +18,7 @@ from __future__ import annotations
 from typing import Any
 
 from rtv.coaching.agent.prose import check_prose, result_prose
-from rtv.coaching.agent.validation import GAIN_TOL, corner_map, gain_issue
+from rtv.coaching.agent.validation import GAIN_TOL, corner_map, gain_issue, split_corner
 
 __all__ = ["GAIN_TOL", "cross_check", "aggregate"]
 
@@ -43,7 +43,8 @@ def cross_check(
     priorities = plan.get("priorities", []) if plan else []
 
     picked_top = priorities[0]["corner"] if priorities else None
-    outcome_ok = picked_top == truth_top
+    # "T7 — Campus" picks T7; whether Campus is T7's name is checked with the gain below.
+    outcome_ok = split_corner(picked_top)[0] == truth_top
     if not outcome_ok:
         issues.append(
             f"Top priority is {picked_top!r} but the data's biggest loss is {truth_top!r}."

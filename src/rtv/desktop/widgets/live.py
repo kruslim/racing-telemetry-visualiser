@@ -149,6 +149,20 @@ class StatusStrip(QFrame):
         cell(self.track, self.air)
         layout.addStretch(1)
 
+        # Stage 07: where the session is, and whether the agents are armed.
+        cycle = QWidget()
+        cl = QVBoxLayout(cycle)
+        cl.setContentsMargins(14, 8, 14, 8)
+        cl.setSpacing(4)
+        cl.addWidget(label("LIFECYCLE", "label"))
+        self.cycle_pill = pill("NO SESSION YET", "#1c222a", t.SOFT)
+        self.arm_pill = pill("AGENTS OFF", "#1c222a", t.SOFT)
+        cl.addLayout(_row(self.cycle_pill, self.arm_pill))
+        self.cycle_detail = label("", "muted")
+        self.cycle_detail.setMaximumWidth(320)
+        cl.addWidget(self.cycle_detail)
+        layout.addWidget(cycle)
+
         feed = QWidget()
         fl = QVBoxLayout(feed)
         fl.setContentsMargins(14, 8, 14, 8)
@@ -207,6 +221,27 @@ class StatusStrip(QFrame):
         bg, fg, text = colors.get(state, colors["idle"])
         set_pill(self.feed_pill, text, bg, fg)
         self.feed_detail.setText(detail)
+
+    def set_lifecycle(self, view: dict) -> None:
+        """``rtv.desktop.model.session.lifecycle_view``: session phase and arming."""
+        green = view.get("phase") == "green"
+        set_pill(
+            self.cycle_pill,
+            view.get("text", "").upper(),
+            "#13301f" if green else "#1c222a",
+            t.GOOD if green else t.SOFT,
+        )
+        bg, fg = {
+            "ok": ("#13301f", t.GOOD),
+            "warn": ("#33280f", t.SEVERITY_TEXT["advisory"]),
+        }.get(view.get("tone"), ("#1c222a", t.SOFT))
+        set_pill(self.arm_pill, view.get("agents_label") or "", bg, fg)
+        detail = view.get("agents_detail") or ""
+        if view.get("detail"):
+            detail = f"{detail} · {view['detail']}" if detail else view["detail"]
+        short = detail if len(detail) <= 56 else detail[:54].rstrip() + "…"
+        self.cycle_detail.setText(short)
+        self.cycle_detail.setToolTip(detail)
 
     def set_ai(self, llm: dict) -> None:
         if not llm.get("available"):

@@ -30,18 +30,28 @@ from rtv.logging import get_logger
 from rtv.racestate import channels as ch
 from rtv.racestate import detectors as det
 from rtv.racestate.bus import EventBus
+from rtv.racestate.lifecycle import SessionLifecycle, Signal
 from rtv.racestate.models import (
     Capabilities,
     CarState,
+    CornerRef,
     EventType,
     FlagPhase,
     RaceEvent,
     RaceState,
     Severity,
+    TrackState,
 )
 from rtv.racestate.strategy_math import lap_left
+from rtv.tracks.live import LiveCornerMap, place_of
+from rtv.tracks.reference import TrackReference
+from rtv.tracks.session import reference_for
 
 log = get_logger("racestate.engine")
+
+#: Events that say where on the lap something happened. Each gets a ``place`` payload entry:
+#: ``{label, name, lap_dist_pct, provisional}`` (see :mod:`rtv.tracks.live`).
+PLACE_EVENTS = frozenset({"lockup", "wheelspin", "offtrack", "incident", "recurring_issue"})
 
 #: Cars with a lap-distance below this are not in the world (iRacing uses -1).
 _INACTIVE_PCT = -0.5
@@ -131,6 +141,9 @@ class RaceStateEngine:
         #: RaceState: it is static per session, so putting it in the 60 Hz object
         #: (and therefore in every agent's citable fact set) would be wasteful.
         self._session_info: dict[str, Any] = {}
+        #: The venue reference resolved from the session info (corner names), if any.
+        self._track_ref: TrackReference | None = None
+        self._has_session_num = self._has_session_state = self._has_flags = False
         self.reset()
 
     # ------------------------------------------------------------------
@@ -174,10 +187,17 @@ class RaceStateEngine:
 
             # strategy triggers
             self._rival_pit_state: dict[int, bool] = {}
+            # Lap fractions at which any car was seen entering pit road this
+            # session: where the pit entry is (see :attr:`pit_entry_pct`).
+            self._pit_entry_pcts: list[float] = []
 
             # vehicle-engineer / spotter triggers
             self._recurrence = det.CornerRecurrence(self.config)
+            # where events happened, in the review's corner labels once a clean lap exists
+            self._places = LiveCornerMap(self._track_ref, buckets=self.config.corner_buckets)
             self._traffic_sample: tuple[float, dict[int, float], str] | None = None
+            #: Last decoded ``CarLeftRight`` state (``None`` = off or unknown).
+            self._alongside: str | None = None
             self._health_latched: str | None = None
             self._tyre_latched: str | None = None
 
@@ -197,6 +217,70 @@ class RaceStateEngine:
             # conditions trend
             self._cond_hist: deque[tuple[float, float | None, float | None]] = deque()
             self._last_cond_sample = -1e9
+
+            # session lifecycle (one segment per practice / qualifying / race)
+            self._lifecycle = SessionLifecycle()
+            self._ended_state: RaceState | None = None
+
+    def reset_segment(self) -> None:
+        """Clear the accumulators for a new session segment, keeping the binding.
+
+        Unlike :meth:`bind_catalog` the catalog, the session-info document, the
+        session's name and source, the lifecycle (its segment counter) and the
+        engine's own frame metrics survive: only what one session must not
+        inherit from the previous one (fuel model, lap history, latches, stint,
+        tyres, standings) starts again.
+        """
+        with self._lock:
+            lifecycle, ended = self._lifecycle, self._ended_state
+            old = self._state
+            frames, avg, worst, faults = self._frames, self._avg_ms, self._max_ms, self._faults
+            self.reset()
+            self._lifecycle, self._ended_state = lifecycle, ended
+            self._frames, self._avg_ms, self._max_ms, self._faults = frames, avg, worst, faults
+            state = self._state
+            state.version = old.version
+            state.metrics = old.metrics.model_copy()
+            state.stale, state.stale_reason = old.stale, old.stale_reason
+            keep = old.session
+            state.session.session_id = keep.session_id
+            state.session.source = keep.source
+            state.session.track_name = keep.track_name
+            state.session.lap_length_m = keep.lap_length_m
+            state.standings.lap_length_m = keep.lap_length_m
+            state.lifecycle = lifecycle.summary()
+
+    def end_segment(self, reason: str) -> RaceEvent | None:
+        """Close the open session segment (the feed ended); publishes ``session_end``.
+
+        Idempotent: with no open segment it does nothing and returns None. The
+        next frame opens a new segment with fresh accumulators.
+        """
+        with self._lock:
+            events = self._lifecycle_events(self._lifecycle.end(reason))
+            if not events:
+                return None
+            self._state.lifecycle = self._lifecycle.summary()
+            self._ended_state = self._state.model_copy(deep=True)
+        for event in events:
+            self.bus.publish(event)
+        return events[0]
+
+    def pop_ended_state(self) -> RaceState | None:
+        """The final state of the segment that just ended (once), else None."""
+        with self._lock:
+            state, self._ended_state = self._ended_state, None
+            return state
+
+    @property
+    def lifecycle(self) -> SessionLifecycle:
+        return self._lifecycle
+
+    def _lifecycle_events(self, signals: list[Signal], **extra: Any) -> list[RaceEvent]:
+        return [
+            self._event(sig.event_type, Severity.INFO, {**sig.payload, **extra})
+            for sig in signals
+        ]
 
     def bind_catalog(self, catalog: Catalog, *, session_id: str | None = None) -> None:
         """Probe the catalog for capabilities and reset accumulators."""
@@ -254,6 +338,7 @@ class RaceStateEngine:
             self._state.stale_reason = None
             self._window.clear()
             self._traffic_sample = None
+            self._alongside = None
         log.info("Race state live again; detector window cleared across the gap.")
 
     @property
@@ -266,7 +351,18 @@ class RaceStateEngine:
         Distinct from :meth:`bind_catalog`, which resets every accumulator: a
         session id arriving from the poller must not throw away the fuel model.
         It is what lets ``get_corner_detail`` find this session in the store.
+
+        A *different* id while a segment is open is a new session, though: the
+        open segment ends (``session_end``, reason ``session_changed``) and the
+        next frame starts a clean one.
         """
+        with self._lock:
+            current = self._state.session.session_id
+            changed = (
+                current is not None and session_id is not None and session_id != current
+            )
+        if changed:
+            self.end_segment("session_changed")
         with self._lock:
             self._state.session.session_id = session_id
 
@@ -280,6 +376,9 @@ class RaceStateEngine:
         weekend = info.get("WeekendInfo") or {}
         with self._lock:
             self._session_info = dict(info)
+            self._track_ref = reference_for(info)
+            if not self._places.ready:
+                self._places.reference = self._track_ref
             length = _parse_track_length(weekend.get("TrackLength"))
             if length is not None:
                 self._state.session.lap_length_m = length
@@ -349,6 +448,9 @@ class RaceStateEngine:
             self._tyre_press_ch = {
                 c: n for c, n in ch.TYRE_PRESSURE_FLAT.items() if n in cols
             }
+        self._has_session_num = ch.SESSION_NUM in catalog
+        self._has_session_state = ch.SESSION_STATE in catalog
+        self._has_flags = ch.SESSION_FLAGS in catalog
         self._wheel_front = [c for c in ch.FRONT_WHEELS if ch.WHEEL_SPEED[c] in catalog]
         self._wheel_rear = [c for c in ch.REAR_WHEELS if ch.WHEEL_SPEED[c] in catalog]
 
@@ -374,6 +476,8 @@ class RaceStateEngine:
             pit=has_all(ch.REQUIRED["pit"]),
             incidents=has_all(ch.REQUIRED["incidents"]),
             offtrack=has_all(ch.REQUIRED["offtrack"]),
+            lifecycle=has_all(ch.REQUIRED["lifecycle"]),
+            car_alongside=has_all(ch.REQUIRED["car_alongside"]),
             tyres=bool(self._tyre_temp_ch or self._tyre_press_ch),
             car_health=any(n in catalog for n in ch.CAR_HEALTH_ANY),
             conditions=any(n in catalog for n in ch.CONDITIONS_ANY),
@@ -513,23 +617,64 @@ class RaceStateEngine:
             # here rather than only in mark_live() so a resume works even when
             # nothing announces it -- the frame *is* the announcement.
             self.mark_live()
+        # Session segments: a SessionNum change, a session clock that went back,
+        # or the first frame after a segment ended starts a clean one.
+        events: list[RaceEvent] = []
+        session_num = (
+            det.as_int(values, ch.SESSION_NUM) if self._has_session_num else None
+        )
+        boundary = self._lifecycle.boundary(session_num, frame.session_time)
+        if boundary is not None:
+            if boundary != "start":
+                # Stamped with the previous frame: that is where the segment ended.
+                events.extend(
+                    self._lifecycle_events(
+                        self._lifecycle.end("session_changed"), cause=boundary
+                    )
+                )
+                self._state.lifecycle = self._lifecycle.summary()
+                self._ended_state = self._state.model_copy(deep=True)
+            if self._lifecycle.segment > 0:
+                self.reset_segment()
         self._window.append(dict(values))
         if len(self._window) > _WINDOW_TRIM_AT:
             del self._window[:-_WINDOW_KEEP]
+        self._places.observe(values)
         state = self._state
         state.version += 1
         state.tick = frame.tick
         state.session_time = frame.session_time
         state.wall_time = frame.wall_time
 
-        events: list[RaceEvent] = []
         caps = state.capabilities
+        if boundary is not None:
+            events.extend(
+                self._lifecycle_events(
+                    self._lifecycle.begin(
+                        session_num,
+                        self._session_info,
+                        has_state=self._has_session_state,
+                        has_flags=self._has_flags,
+                        reason=boundary,
+                    )
+                )
+            )
 
         self._update_session(values)
         if caps.flags:
             self._update_flags(values, events)
         if caps.player:
             self._update_player(values)
+        signals = self._lifecycle.observe(
+            session_state=state.session.state if self._has_session_state else None,
+            flag_phase=state.flags.phase,
+            lap=det.as_int(values, ch.LAP),
+            session_time=frame.session_time,
+        )
+        if signals:
+            events.extend(self._lifecycle_events(signals))
+        if signals or boundary is not None:
+            state.lifecycle = self._lifecycle.summary()
         if caps.fuel:
             self._update_fuel_level(values)
             if state.version % self._fuel_interval == 0:
@@ -548,6 +693,10 @@ class RaceStateEngine:
 
         for event in events:
             event.state_version = state.version
+            if event.event_type.value in PLACE_EVENTS:
+                place = self._places.place(place_of(event.payload))
+                if place is not None:
+                    event.payload["place"] = place
         return events
 
     # ---- section updaters ------------------------------------------------
@@ -790,6 +939,7 @@ class RaceStateEngine:
             self._rival_pit_state[car.idx] = car.on_pit_road
             if was is not False or car.on_pit_road is not True:
                 continue  # not a green->pit edge (or the first sighting)
+            self._note_pit_entry(car.lap_dist_pct)
             if (
                 player_pos is not None
                 and car.position is not None
@@ -879,6 +1029,8 @@ class RaceStateEngine:
             self._check_traffic(events)
         if caps.car_health:
             self._check_car_health(events)
+        if caps.car_alongside:
+            self._check_alongside(frame, events)
         self._aggregate_recurrence(events, first_new)
 
     def _aggregate_recurrence(self, events: list[RaceEvent], first_new: int) -> None:
@@ -941,6 +1093,19 @@ class RaceStateEngine:
             cooldown=10.0,
         )
 
+    def _check_alongside(self, frame: Frame, events: list[RaceEvent]) -> None:
+        """Every change of the sim's own left/right proximity sensor, every frame.
+
+        Not decimated like the standings: a car alongside is a sub-second fact,
+        and this is one integer compare per tick.
+        """
+        raw = det.as_int(frame.values, ch.CAR_LEFT_RIGHT)
+        self._alongside, payload = det.detect_car_alongside(self._alongside, raw)
+        if payload is None:
+            return
+        severity = Severity.INFO if payload["side"] == "clear" else Severity.ADVISORY
+        events.append(self._event(EventType.CAR_ALONGSIDE, severity, payload))
+
     def _check_car_health(self, events: list[RaceEvent]) -> None:
         """Latched by *measure*: a water-temp warning after an oil one still fires."""
         payload = det.detect_car_health(self._state.car_health, self.config)
@@ -981,6 +1146,27 @@ class RaceStateEngine:
         self._last_fire[name] = now
         events.append(self._event(event_type, severity, payload))
 
+    def _note_pit_entry(self, pct: float | None) -> None:
+        if pct is not None and 0.0 <= pct <= 1.0:
+            self._pit_entry_pcts.append(float(pct))
+            del self._pit_entry_pcts[:-32]
+
+    @property
+    def pit_entry_pct(self) -> float | None:
+        """Where pit road starts, as a lap fraction, once a car has been seen entering it.
+
+        Measured, not configured: the median lap fraction at which any car's
+        ``OnPitRoad`` went true this session. ``None`` before the first entry
+        (an ``.ibt`` has the player's own stops only). The radio uses it to drop
+        a box call once the car has passed the entry (:mod:`rtv.pitwall.validity`).
+        """
+        with self._lock:
+            values = sorted(self._pit_entry_pcts)
+        if not values:
+            return None
+        mid = len(values) // 2
+        return values[mid] if len(values) % 2 else (values[mid - 1] + values[mid]) / 2
+
     def _pit_transitions(self, events: list[RaceEvent]) -> None:
         transition = det.detect_pit_transition(self._window)
         if transition is None:
@@ -988,6 +1174,7 @@ class RaceStateEngine:
         p = self._state.player
         if transition == "entry":
             self._lap_had_pit = True
+            self._note_pit_entry(p.lap_dist_pct)
             events.append(
                 self._event(
                     EventType.PIT_ENTRY,
@@ -1007,6 +1194,10 @@ class RaceStateEngine:
             self._state.tyres.stint_laps = 0
             self._state.tyres.temp_trend = {}
             self._state.tyres.pressure_trend = {}
+            self._state.tyres.temp_change_since_stint_start = {}
+            self._state.tyres.pressure_change_since_stint_start = {}
+            self._state.tyres.temp_change_vs_previous_lap = {}
+            self._state.tyres.pressure_change_vs_previous_lap = {}
             self._tyre_latched = None  # a new set is a new band question
             # A refuel re-arms the fuel warnings.
             self._fuel_critical_announced = False
@@ -1078,6 +1269,12 @@ class RaceStateEngine:
                 )
 
         clean = self._lap_all_green and not self._lap_had_pit
+        if self._places.lap_done(lap, clean=clean and bool(lap_time)):
+            self._state.track = TrackState(
+                corner_map_lap=self._places.lap,
+                provisional=False,
+                corners=[CornerRef(**c) for c in self._places.corners],
+            )
         if clean:
             p.laps_on_tyres += 1
             if lap_time:
@@ -1339,6 +1536,10 @@ class RaceStateEngine:
         t.stint_laps = len(self._stint_temp_laps) or len(self._stint_press_laps)
         t.temp_trend = _corner_trends(self._stint_temp_laps)
         t.pressure_trend = _corner_trends(self._stint_press_laps)
+        t.temp_change_since_stint_start = _corner_change(self._stint_temp_laps, 0)
+        t.pressure_change_since_stint_start = _corner_change(self._stint_press_laps, 0)
+        t.temp_change_vs_previous_lap = _corner_change(self._stint_temp_laps, -2)
+        t.pressure_change_vs_previous_lap = _corner_change(self._stint_press_laps, -2)
 
     # ---- helpers ---------------------------------------------------------
     def _event(
@@ -1352,6 +1553,14 @@ class RaceStateEngine:
             severity=severity,
             payload=payload,
         )
+
+
+def _corner_change(samples: list[tuple[int, dict[str, float]]], ref: int) -> dict[str, float]:
+    """Per corner, the last lap mean minus the lap mean at index ``ref`` (0 or -2)."""
+    if len(samples) < 2:
+        return {}
+    last, then = samples[-1][1], samples[ref][1]
+    return {c: round(v - then[c], 2) for c, v in last.items() if c in then}
 
 
 def _corner_trends(samples: list[tuple[int, dict[str, float]]]) -> dict[str, float]:

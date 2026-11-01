@@ -18,7 +18,15 @@ from typing import Literal
 from pydantic import Field
 
 from rtv.pitwall import tools as T
-from rtv.pitwall.framework import AgentOutput, AgentSpec, RadioPriority, Trigger
+from rtv.pitwall.framework import (
+    AgentOutput,
+    AgentSpec,
+    RadioMessage,
+    RadioPriority,
+    Trigger,
+)
+from rtv.pitwall.questions import question_trigger
+from rtv.pitwall.validity import box_call_rules
 from rtv.racestate.models import EventType, FlagPhase, RaceEvent, RaceState
 from rtv.racestate.strategy_math import (
     CAUTION_FLAGS,
@@ -176,6 +184,8 @@ STRATEGIST_TRIGGERS: tuple[Trigger, ...] = (
         label="stint lap milestone",
         cooldown_s=60.0,
     ),
+    # A question the driver asked that needs judgement (rtv.pitwall.questions).
+    question_trigger(AGENT_NAME),
 )
 
 
@@ -262,6 +272,30 @@ def strategist_policy(output: AgentOutput, state: RaceState, event: RaceEvent) -
     return None
 
 
+def strategist_validity(
+    message: RadioMessage, state: RaceState, event: RaceEvent, pit_entry_pct: float | None
+) -> dict:
+    """When a pit call stops being true: its stop lap is over, or the stop happened.
+
+    Read from the structured answer (``recommendation``, ``target_lap``), never
+    from the words. "Box this lap" stops at this lap's pit entry; a plan for lap
+    12 stands until lap 12 is done. stay_out, extend and hold have no lap to miss.
+    """
+    data = message.data or {}
+    rec = data.get("recommendation")
+    lap = state.player.lap
+    if rec in ("box_now", "pit_under_yellow"):
+        stop_lap = lap
+    elif rec == "box_next_lap":
+        stop_lap = lap + 1 if lap is not None else None
+    elif rec == "plan_stop":
+        target = data.get("target_lap")
+        stop_lap = int(target) if isinstance(target, int | float) else None
+    else:
+        return {}
+    return box_call_rules(stop_lap, pit_entry_pct)
+
+
 def _simulate_planned_stop(state: RaceState, event: RaceEvent) -> dict:
     """Price the planned stop lap (or this lap, when there is no plan)."""
     target = stop_plan(state).target_lap
@@ -295,6 +329,10 @@ STRATEGIST = AgentSpec(
         ("simulate_pit_outcome", _simulate_planned_stop),
     ),
     max_tool_iterations=4,
+    # A pit call is about a lap, not a moment: it airs late after this, and is
+    # dropped only when its stop lap has gone (strategist_validity).
+    max_age_s=30.0,
+    validity=strategist_validity,
 )
 
 

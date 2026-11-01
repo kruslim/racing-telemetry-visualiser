@@ -662,13 +662,19 @@ class ReviewView(QWidget):
             d = rec.get("data") or {}
             ref = d.get("event_ref") or {}
             sev = d.get("priority")
+            badge = review.air_badge(d)
             head = (
                 f"{d.get('agent', '?').upper().replace('_', ' ')} · "
                 + (f"{t.SEVERITY_ICON.get(sev, '')} {sev} · " if sev == "critical" else "")
                 + (f"L{ref.get('lap')} " if ref.get("lap") is not None else "")
                 + clock(rec.get("session_time"))
+                + (f" · {badge['text']}" if badge else "")
             )
-            rows.append((head, d.get("spoken_text") or "", t.agent_color(d.get("agent"))))
+            text = d.get("spoken_text") or ""
+            expired = bool(badge and badge["kind"] in review.NOT_AIRED)
+            if expired:
+                text += f"  ({badge['reason']})"
+            rows.append((head, text, t.agent_color(d.get("agent")), expired))
         empty = (
             "This run was recorded with the agents off."
             if not any(r.get("kind") == "radio" for r in self.records)

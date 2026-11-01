@@ -21,7 +21,9 @@ from typing import Literal
 from pydantic import Field
 
 from rtv.pitwall import tools as T
-from rtv.pitwall.framework import AgentOutput, AgentSpec, RadioPriority, Trigger
+from rtv.pitwall.framework import AgentOutput, AgentSpec, RadioMessage, RadioPriority, Trigger
+from rtv.pitwall.questions import question_trigger
+from rtv.pitwall.validity import box_call_rules
 from rtv.racestate.models import EventType, RaceEvent, RaceState
 
 AGENT_NAME = "vehicle_engineer"
@@ -30,19 +32,30 @@ VEHICLE_ENGINEER_PROMPT = """\
 You are the VEHICLE ENGINEER on a sim-racing pit wall. You own the condition of
 the car: tyres, brakes, traction, engine health, damage. You do not call pit
 strategy, you do not call traffic, and you do not coach lap time - other
-engineers own those. If the answer is "box now", say what the car needs and let
-the strategist decide when.
+engineers own those. If the car needs a stop, say what it needs and let the
+strategist decide when - unless it cannot safely run to the planned stop.
+
+pit_request is your one say in when the car stops:
+- box_now: the car cannot safely run to the planned stop (damage, a failing
+  tyre, a critical car warning). It overrides the strategist's plan, so use it
+  only for that, and set priority critical when continuing risks the car.
+- none: everything else, including "change the fronts at the next stop" (put
+  that in setup_note or detail_text).
 
 You are talking to a driver at racing speed. Lead with the part of the car, then
 the number, then at most one instruction. "Fronts are up twelve degrees over the
-stint - ease the entry into turn eight" - not a briefing.
+stint - ease the entry into T8" - not a briefing.
 
 How to read what you are given:
 - A recurring_issue event has already been filtered: it means the same problem at
   the same corner three times inside five laps. Treat it as a pattern, never as a
   single mistake, and quote its occurrence count and corner from the event.
-- Corner labels are lap-distance buckets (C00-C19), not the circuit's own corner
-  numbers. Say "the same corner" or use the label; never invent "turn 4".
+- Events that happened somewhere carry a 'place': {label, name, lap_dist_pct,
+  provisional}. Name the corner from it: "T1 La Source" when there is a name, the
+  label alone ("T4") when name is null. These are the post-race review's labels.
+  When provisional is true the label is a lap-distance bucket (C00-C19), because
+  no clean lap has been mapped yet: say "the same corner", never a turn number.
+  A recurring_issue's 'corner' field is that counting bucket; say its place.
 - tyre_out_of_band tells you which measure went out and against which threshold.
   A trend is degrees or kPa *per lap* across the current stint - multiply it out
   before you say what it means by the end of the stint, and say you did.
@@ -82,7 +95,7 @@ class EngineerCall(AgentOutput):
     ] = Field(description="What the car is actually doing. 'none' if benign.")
     corner: str | None = Field(
         default=None,
-        description="Corner label from the event (C00-C19), when it is corner-specific.",
+        description="The event's place ('T1 La Source', or 'T4'), when it is corner-specific.",
     )
     affected: list[str] = Field(
         default_factory=list,
@@ -97,6 +110,10 @@ class EngineerCall(AgentOutput):
     setup_note: str | None = Field(
         default=None,
         description="For the next stop, only if get_setup_snapshot gave you the setup.",
+    )
+    pit_request: Literal["none", "box_now"] = Field(
+        default="none",
+        description="box_now only when the car cannot safely run to the planned stop.",
     )
     confidence: Literal["low", "medium", "high"] = Field(
         description="low when anything this rests on was missing or assumed."
@@ -147,6 +164,8 @@ VEHICLE_ENGINEER_TRIGGERS: tuple[Trigger, ...] = (
         label="stint end (post-stint tyre and brake review)",
         cooldown_s=0.0,
     ),
+    # A question the driver asked that needs judgement (rtv.pitwall.questions).
+    question_trigger(AGENT_NAME),
 )
 
 
@@ -167,6 +186,7 @@ def vehicle_engineer_slice(state: RaceState) -> dict:
         "tyres": state.tyres.model_dump(mode="json"),
         "car_health": state.car_health.model_dump(mode="json"),
         "conditions": state.conditions.model_dump(mode="json"),
+        "track": state.track.model_dump(mode="json"),
         "capabilities": state.capabilities.model_dump(mode="json"),
     }
 
@@ -176,8 +196,12 @@ def vehicle_engineer_subject(event: RaceEvent, output: AgentOutput) -> str:
 
     Two tyre-temperature advisories collapse into the newest one, but a tyre note
     and an oil-temperature note are different problems and must both be heard.
+    A request to box now is a pit-stop decision (``damage_stop`` or ``tyre_stop``,
+    in the strategist's decision group, :mod:`rtv.pitwall.decisions`).
     """
     finding = getattr(output, "finding", None) or event.event_type.value
+    if getattr(output, "pit_request", "none") == "box_now":
+        return "tyre_stop" if finding in ("tyre_temps", "tyre_pressures") else "damage_stop"
     if finding in ("tyre_temps", "tyre_pressures"):
         return "tyres"
     if finding in ("brake_lockup", "traction"):
@@ -185,6 +209,15 @@ def vehicle_engineer_subject(event: RaceEvent, output: AgentOutput) -> str:
     if finding in ("car_health", "damage"):
         return "car_health"
     return f"engineer:{finding}"
+
+
+def vehicle_engineer_validity(
+    message: RadioMessage, state: RaceState, event: RaceEvent, pit_entry_pct: float | None
+) -> dict:
+    """A "box now" stops being true once this lap's stop is missed or has happened."""
+    if (message.data or {}).get("pit_request") != "box_now":
+        return {}
+    return box_call_rules(state.player.lap, pit_entry_pct)
 
 
 VEHICLE_ENGINEER = AgentSpec(
@@ -214,6 +247,8 @@ VEHICLE_ENGINEER = AgentSpec(
         ("get_recent_detector_events", {"limit": 10}),
     ),
     max_tool_iterations=3,
+    max_age_s=20.0,
+    validity=vehicle_engineer_validity,
 )
 
 

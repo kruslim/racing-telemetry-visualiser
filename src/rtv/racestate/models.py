@@ -52,6 +52,11 @@ class EventType(StrEnum):
     TYRE_OUT_OF_BAND = "tyre_out_of_band"
     CAR_HEALTH_WARNING = "car_health_warning"
     TRAFFIC_CLOSE = "traffic_close"
+    #: iRacing's own proximity sensor (``CarLeftRight``) changed: a car (or two)
+    #: is now alongside on the left or right, or the sides are clear again. The
+    #: one lateral signal the sim exposes; live telemetry only (``.ibt`` files do
+    #: not record it). ``payload.side`` is the new state, ``payload.from`` the old.
+    CAR_ALONGSIDE = "car_alongside"
     #: Director-only (see :mod:`rtv.director`). No detector emits these two: the
     #: catalog contract in ``racestate/channels.py`` has no channel that would
     #: say "rain is coming in ten minutes" or "a mandatory stop is now required",
@@ -66,6 +71,20 @@ class EventType(StrEnum):
     #: flagged, number-free, ``payload.source == "vision"``. Spotter and coach may
     #: take it, always at the lowest radio priority.
     VISUAL_OBSERVATION = "visual_observation"
+    #: Session lifecycle (see :mod:`rtv.racestate.lifecycle`). Emitted by the
+    #: engine from SessionNum, SessionState, the flag phase and the lap counter.
+    #: No agent is woken by them; the orchestrator uses them to arm and disarm
+    #: under RTV_PITWALL_AUTONOMOUS, and services uses them to cut journal runs.
+    SESSION_START = "session_start"
+    SESSION_GREEN = "session_green"
+    SESSION_CHECKERED = "session_checkered"
+    SESSION_END = "session_end"
+    #: Not a detector event: the driver asked the pitwall something (push-to-talk
+    #: or the desktop text box). ``payload.text`` is the question, ``payload.owner``
+    #: the agent the router chose, ``payload.intent`` a template lookup or ``None``,
+    #: ``payload.question_id`` the driver transcript's radio ``message_id``. See
+    #: :mod:`rtv.pitwall.questions`. On the bus so the journal records it.
+    DRIVER_QUESTION = "driver_question"
 
 
 class FlagPhase(StrEnum):
@@ -101,6 +120,8 @@ class RaceEvent(BaseModel):
         """Stable discriminator used by tests/smoke: ``flag_change:yellow``."""
         if self.event_type is EventType.FLAG_CHANGE:
             return f"{self.event_type.value}:{self.payload.get('to')}"
+        if self.event_type is EventType.CAR_ALONGSIDE:
+            return f"{self.event_type.value}:{self.payload.get('side')}"
         return self.event_type.value
 
     def to_api(self) -> dict[str, Any]:
@@ -124,6 +145,12 @@ class Capabilities(BaseModel):
     wheelspin: bool = False
     offtrack: bool = False
     incidents: bool = False
+    #: Session lifecycle: SessionNum, SessionState and SessionFlags all present.
+    #: Without them a transition the catalog cannot back leaves the lifecycle
+    #: state "unknown" (see :mod:`rtv.racestate.lifecycle`).
+    lifecycle: bool = False
+    #: ``CarLeftRight`` is present (live sessions only), so ``car_alongside`` fires.
+    car_alongside: bool = False
     #: Channels the engine looked for and did not find, for operator diagnosis.
     missing: list[str] = Field(default_factory=list)
 
@@ -139,6 +166,30 @@ class SessionSummary(BaseModel):
     track_id: str | None = None
     track_name: str | None = None
     lap_length_m: float | None = None
+
+
+class LifecycleSummary(BaseModel):
+    """Where the current session segment is (:mod:`rtv.racestate.lifecycle`)."""
+
+    #: idle | practice | qualify | race | pre_green | green | checkered |
+    #: cool_down | ended | unknown
+    state: str = "idle"
+    #: Segments started since the engine was last reset (1 = the first).
+    segment: int = 0
+    session_num: int | None = None
+    #: practice | qualify | race, or None when the session-info document does
+    #: not say (``notes`` explains).
+    session_type: str | None = None
+    #: The SessionType string iRacing wrote ("Open Qualify", "Warmup", ...).
+    session_type_raw: str | None = None
+    #: iRacing's decoded SessionState label.
+    session_state: str | None = None
+    green_at: float | None = None
+    checkered_at: float | None = None
+    #: True once the player crossed the line after the checkered flag.
+    player_finished: bool | None = None
+    ended_reason: str | None = None
+    notes: list[str] = Field(default_factory=list)
 
 
 class FlagState(BaseModel):
@@ -231,6 +282,13 @@ class TyreState(BaseModel):
     temp_trend: dict[str, float] = Field(default_factory=dict)
     pressure_trend: dict[str, float] = Field(default_factory=dict)
     stint_laps: int = 0
+    #: Per corner, the last completed lap's mean minus the stint's first lap mean
+    #: (``*_since_stint_start``) and minus the lap before it (``*_vs_previous_lap``).
+    #: Derived once here so an agent copies the change instead of computing it.
+    temp_change_since_stint_start: dict[str, float] = Field(default_factory=dict)
+    pressure_change_since_stint_start: dict[str, float] = Field(default_factory=dict)
+    temp_change_vs_previous_lap: dict[str, float] = Field(default_factory=dict)
+    pressure_change_vs_previous_lap: dict[str, float] = Field(default_factory=dict)
 
 
 class CarHealthState(BaseModel):
@@ -269,6 +327,27 @@ class EngineMetrics(BaseModel):
     dropped_frames: int = 0
 
 
+class CornerRef(BaseModel):
+    """One corner of the session's own corner map: the review's label and the circuit's name."""
+
+    label: str  # "T7", numbered as the post-race review numbers it
+    name: str | None = None  # "Pouhon"; None where the venue reference maps no name
+    lap_dist_pct: float  # the apex, as a lap-distance fraction
+
+
+class TrackState(BaseModel):
+    """The corner map events are labelled against (:mod:`rtv.tracks.live`).
+
+    Empty and ``provisional`` until the first clean lap: places are then lap-distance buckets
+    (``C09``). Built once from that lap with the review's apex detection, so a live ``T7`` is
+    the review's ``T7``.
+    """
+
+    corner_map_lap: int | None = None
+    provisional: bool = True
+    corners: list[CornerRef] = Field(default_factory=list)
+
+
 class RaceState(BaseModel):
     """The single continuously-updated object the pitwall reasons over."""
 
@@ -284,12 +363,14 @@ class RaceState(BaseModel):
     stale_reason: str | None = None
     session: SessionSummary = Field(default_factory=SessionSummary)
     flags: FlagState = Field(default_factory=FlagState)
+    lifecycle: LifecycleSummary = Field(default_factory=LifecycleSummary)
     standings: StandingsState = Field(default_factory=StandingsState)
     player: PlayerState = Field(default_factory=PlayerState)
     fuel: FuelState = Field(default_factory=FuelState)
     tyres: TyreState = Field(default_factory=TyreState)
     car_health: CarHealthState = Field(default_factory=CarHealthState)
     conditions: ConditionsState = Field(default_factory=ConditionsState)
+    track: TrackState = Field(default_factory=TrackState)
     capabilities: Capabilities = Field(default_factory=Capabilities)
     metrics: EngineMetrics = Field(default_factory=EngineMetrics)
 

@@ -8,7 +8,7 @@ from PySide6.QtWidgets import QCheckBox, QHBoxLayout, QVBoxLayout, QWidget
 from ..theme import tokens as t
 from ..widgets.common import label
 from ..widgets.radio import RadioFeed
-from .hub import Hub
+from .hub import Hub, bind_voice
 
 
 class RadioWindow(QWidget):
@@ -48,6 +48,7 @@ class RadioWindow(QWidget):
         )
         hub.feed_changed.connect(self._conn)
         self.feed.send_text.connect(lambda text: hub.send_driver(text, self._unheard))
+        bind_voice(hub, self.feed, self._unheard)
         self.feed.volume_changed.connect(hub.radio.set_volume)
         self.feed.master_toggled.connect(lambda on: hub.radio.set_master_muted(not on))
         self.feed.mute_toggled.connect(hub.radio.set_agent_muted)
