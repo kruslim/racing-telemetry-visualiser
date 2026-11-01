@@ -100,6 +100,23 @@ class DriverKPIs:
 
 
 @dataclass
+class NamedPlace:
+    """One of the circuit's named stretches, located on the main lap (task A4).
+
+    The venue reference's names placed by this lap's own Lat/Lon trace, so a coach's
+    "Eau Rouge" or "Speaker's Corner" can be checked against the corner it is said about.
+    ``corner`` is the detected corner whose window holds it; ``None`` for a straight or a
+    flat-out curve no apex was detected in.
+    """
+
+    name: str
+    kind: str  # "corner" | "straight"
+    start_m: float
+    end_m: float
+    corner: str | None = None
+
+
+@dataclass
 class AgentStat:
     count: int  # findings this analyst produced
     time: float  # seconds of loss attributed to them
@@ -122,6 +139,8 @@ class LapFindings:
     notes: list[str] = field(default_factory=list)  # caveats, e.g. skipped diagnostics
     kpis: dict[str, DriverKPIs] = field(default_factory=dict)  # "main" / "ref"
     agent_stats: dict[str, AgentStat] = field(default_factory=dict)  # keyed by roster id
+    venue: str | None = None  # the venue reference key ("spa"), when the session matched one
+    places: list[NamedPlace] = field(default_factory=list)  # the venue's names on this lap
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

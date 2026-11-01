@@ -20,7 +20,7 @@ short reference for the routes the UIs and the MCP server use. The vision routes
 | GET | `/sessions/{id}/trackmap?color=Speed` | Decimated GPS polyline |
 | GET | `/sessions/{id}/track?lap=` | Layout facts from the header + the venue's named corners located on the lap |
 | GET | `/tracks` · `/tracks/{key}` | Pre-loaded venues (named corners, straights, pit lane; OSM, ODbL) |
-| GET | `/coaching/lap-findings?session_id=…&main_lap=5&ref_lap=3` | Layer-1 corner findings, driver KPIs, analyst stats |
+| GET | `/coaching/lap-findings?session_id=…&main_lap=5&ref_lap=3` | Layer-1 corner findings, driver KPIs, analyst stats, the venue's named `places` on the lap |
 | GET | `/coaching/agents` | The deterministic analysts behind the findings (ids, names, codes) |
 | POST | `/coaching/chat` | LLM race engineer: `{session_id, main_lap, ref_lap, question}` → grounded answer + graph annotations (needs `KIMI_CODE_API_KEY`) |
 | POST | `/import` · GET `/import/{job_id}` | Async `.ibt` import from a server-side path + status |

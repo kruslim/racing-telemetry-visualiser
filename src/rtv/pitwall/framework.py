@@ -912,7 +912,7 @@ class AgentRuntime:
             )
         if report.contradictions:
             problems.append(
-                "These statements contradict the corner analysis you were given: "
+                "These statements contradict the corner analysis or corner map you were given: "
                 f"{'; '.join(report.contradictions)}."
             )
         if report.over_word_limit:
@@ -1095,7 +1095,7 @@ class AgentRuntime:
             priority = RadioPriority.INFO
             spoken = REFUSAL_SPOKEN
             detail = (
-                "Withheld: the call contradicts the corner analysis "
+                "Withheld: the call contradicts the corner analysis or corner map "
                 f"({'; '.join(report.contradictions)}). Original text: " + output.spoken_text
             )
         elif report.over_word_limit:

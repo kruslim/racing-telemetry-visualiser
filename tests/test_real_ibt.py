@@ -374,6 +374,26 @@ def test_stage08_projection_and_plan_on_the_real_race(client):
     assert state.plan.stop_count is not None and state.plan.stop_count.value == 0
 
 
+def test_findings_place_the_venue_names_on_the_real_lap(client):
+    """Task A4: the names the prose check resolves against, from the real Spa trace."""
+    from rtv.coaching.agent.prose import check_prose
+
+    f = client.get(
+        "/api/v1/coaching/lap-findings",
+        params={"session_id": client.session_id, "main_lap": 8, "ref_lap": 6},
+    ).json()
+    assert f["venue"] == "spa"
+    places = {p["name"]: p for p in f["places"]}
+    t1 = f["corners"][0]
+    assert t1["name"] == "La Source" and places["La Source"]["corner"] == t1["label"]
+    assert places["Kemmel"]["kind"] == "straight" and places["Kemmel"]["corner"] is None
+    named = [c for c in f["corners"] if c["name"]]
+    right = [(f"advice[{c['label']}]", c["label"], f"{c['name']} again.") for c in named]
+    assert check_prose(right, f).issues == []
+    other = named[1]
+    wrong = [(f"advice[{t1['label']}]", t1["label"], f"{other['name']} again.")]
+    assert check_prose(wrong, f).kinds == ["name"]
+
 def test_stage09_race_control_on_the_real_race(client):
     """Stage 09 part A: an unlimited race with no driver flag, and blue flags as a blind spot."""
     from rtv.pitwall.agents.race_control import RACE_CONTROL

@@ -27,12 +27,14 @@ from rtv.coaching.models import (
     Diagnostic,
     DriverKPIs,
     LapFindings,
+    NamedPlace,
     Priority,
     SectorDelta,
 )
 from rtv.logging import get_logger
 from rtv.store.repository import Repository
 from rtv.tracks.service import lap_trace, session_reference
+from rtv.tracks.session import corner_map as locate_names
 
 log = get_logger("coaching.features")
 
@@ -157,7 +159,7 @@ class CoachingService:
             for idx, ax in enumerate(apexes)
         ]
 
-        self._name_corners(session_id, main_lap, apexes, corners, n)
+        venue, places = self._name_corners(session_id, main_lap, apexes, corners, n, lap_length)
         self._consistency(session_id, corners, di, step, notes)
         sectors = self._sectors(sp_main, sp_ref, dist, lap_length, laps, main_lap, ref_lap)
         chief = self._chief(corners, delta, laps)
@@ -180,6 +182,8 @@ class CoachingService:
             notes=notes,
             kpis=kpis,
             agent_stats=_agent_stats(corners, sectors),
+            venue=venue,
+            places=places,
         )
 
     def delta_trace(
@@ -413,23 +417,30 @@ class CoachingService:
         )
 
     # ------------------------------------------------------------------ corner names
-    def _name_corners(self, session_id: str, lap: int, apexes, corners, grid: int) -> None:
+    def _name_corners(
+        self, session_id: str, lap: int, apexes, corners, grid: int, lap_length: float
+    ) -> tuple[str | None, list[NamedPlace]]:
         """Put the circuit's own name on each apex that sits on a mapped corner.
 
         The apex position comes from this lap's own Lat/Lon on the same grid; the
         names come from the venue reference (OpenStreetMap). Unmapped stays ``None``.
+        Returns the venue key and every named stretch located on the lap, each with the
+        corner whose window holds it, so prose names can be checked (task A4).
         """
         ref = session_reference(self._repo, session_id)
-        if ref is None or not ref.corners or not corners:
-            return
+        if ref is None:
+            return None, []
+        if not ref.segments or not corners:
+            return ref.key, []
         trace = lap_trace(self._repo, session_id, lap, grid=grid)
         if trace is None:
-            return
-        lat, lon, _ = trace
+            return ref.key, []
+        lat, lon, pct = trace
         for ax, corner in zip(apexes, corners, strict=True):
             if np.isfinite(lat[ax]) and np.isfinite(lon[ax]):
                 seg = ref.name_at(float(lat[ax]), float(lon[ax]))
                 corner.name = seg.name if seg else None
+        return ref.key, _places_on_lap(locate_names(ref, lat, lon, pct), corners, lap_length)
 
     # ------------------------------------------------------------------ stint consistency
     def _consistency(self, session_id: str, corners, di, step: float, notes: list[str]) -> None:
@@ -625,3 +636,30 @@ def _agent_stats(
 
 # Keep the AGENTS tuple importable from here too (used by orchestrator/evals).
 __all__ = ["AGENTS", "AGENT_ROSTER", "CoachingService"]
+
+
+def _places_on_lap(
+    mapped: list[dict[str, Any]], corners: list[CornerFinding], lap_length: float
+) -> list[NamedPlace]:
+    """The venue's named stretches in metres, each owned by the corner whose window holds it.
+
+    The corner an apex was named after owns that name; any other stretch belongs to the
+    detected corner whose ``entry_m``-``exit_m`` window holds its middle, else to none.
+    """
+    out: list[NamedPlace] = []
+    named = {c.name: c.label for c in corners if c.name}
+    for m in mapped:
+        mid = float(m["mid_pct"]) * lap_length
+        owner = named.get(m["name"])
+        if owner is None and m["kind"] == "corner":
+            owner = next((c.label for c in corners if c.entry_m <= mid <= c.exit_m), None)
+        out.append(
+            NamedPlace(
+                name=m["name"],
+                kind=m["kind"],
+                start_m=round(float(m["start_pct"]) * lap_length, 1),
+                end_m=round(float(m["end_pct"]) * lap_length, 1),
+                corner=owner,
+            )
+        )
+    return out

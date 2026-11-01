@@ -1035,3 +1035,132 @@ def swapped_fact_cases() -> list[SwappedFactCase]:
             )
         )
     return out
+
+
+# --------------------------------------------------------------------------
+# swapped-name cases (task A4): the right corner name replaced by another real one
+# --------------------------------------------------------------------------
+#: The live corner map of the real Spa replay (evals/real/spa_run, adopted on lap 5): the
+#: review's labels and the venue's names, as the agents' state slice carries them.
+SPA_CORNER_MAP: tuple[tuple[str, float, str | None], ...] = (
+    ("T1", 0.0557, "La Source"),
+    ("T2", 0.3597, "Les Combes"),
+    ("T3", 0.4383, "Bruxelles"),
+    ("T4", 0.467, "Speaker's Corner"),
+    ("T5", 0.5523, "Double Gauche"),
+    ("T6", 0.6477, "Fagnes"),
+    ("T7", 0.709, "Campus"),
+    ("T8", 0.9663, "Chicane"),
+)
+#: A trace-numbered venue (Fuji, Hungaroring, Okayama, Barcelona, Road Atlanta): the same
+#: apexes, but the venue reference names none of them.
+NUMBERED_CORNER_MAP = tuple((label, pct, None) for label, pct, _ in SPA_CORNER_MAP)
+
+
+@dataclass
+class SwappedNameCase:
+    """One golden case answered twice: with the corner's own name, and with a wrong one.
+
+    The swapped answer's name is a real corner name (or, at a trace-numbered venue, any
+    name at all), but not the corner the call is about. Every figure is the same, so only
+    the name check can catch it.
+    """
+
+    agent: str
+    venue: str  # "spa" or "numbered"
+    case: EvalCase
+    faithful: dict[str, Any]
+    swapped: dict[str, Any]
+
+    def describe(self) -> dict[str, Any]:
+        return {
+            "agent": self.agent,
+            "venue": self.venue,
+            "case": self.case.name,
+            "right": self.faithful["spoken_text"],
+            "swapped": self.swapped["spoken_text"],
+        }
+
+
+def _with_map(case: EvalCase, corners, label: str) -> EvalCase:
+    """``case`` with the session's corner map built and its event placed at ``label``."""
+    from rtv.racestate.models import CornerRef, TrackState
+
+    state = case.state.model_copy(deep=True)
+    state.track = TrackState(
+        corner_map_lap=5,
+        provisional=False,
+        corners=[CornerRef(label=lb, name=n, lap_dist_pct=p) for lb, p, n in corners],
+    )
+    at = next((p, n) for lb, p, n in corners if lb == label)
+    payload = dict(case.event.payload or {})
+    payload["lap_dist_pct"] = at[0]
+    payload["place"] = {"label": label, "name": at[1], "lap_dist_pct": at[0], "provisional": False}
+    event = case.event.model_copy(update={"payload": payload})
+    return replace(case, name=f"{case.name}@{label}", state=state, event=event)
+
+
+#: (agent, golden case, venue map, event corner, structured data, faithful, swapped)
+_NAME_SWAPS: tuple[tuple[str, str, str, str, dict, tuple[str, str], tuple[str, str]], ...] = (
+    # The name on its own, said about the event's corner (E1's "Speaker's Corner again").
+    (
+        "coach", "coach-offtrack", "spa", "T4",
+        {"theme": "line", "cue": "Brake a touch earlier.", "corner": "T4"},
+        ("Off again at Speaker's Corner, brake a touch earlier there.", ""),
+        ("Off again at La Source, brake a touch earlier there.", ""),
+    ),
+    # The name next to its label (E1's "T7 Campus", "T8 Chicane").
+    (
+        "coach", "coach-offtrack", "spa", "T7",
+        {"theme": "line", "cue": "Brake a touch earlier.", "corner": "T7 Campus"},
+        ("T7 Campus again, brake a touch earlier there.", ""),
+        ("T7 Campus again, brake a touch earlier into La Source.", ""),
+    ),
+    (
+        "coach", "coach-offtrack", "spa", "T8",
+        {"theme": "line", "cue": "Brake a touch earlier.", "corner": "T8 Chicane"},
+        ("Chicane: brake a touch earlier, then commit to the throttle.", ""),
+        ("Off at T8 (Fagnes), brake a touch earlier there.", ""),
+    ),
+    # The engineer names corners too ("Speaker's Corner is a line thing").
+    (
+        "vehicle_engineer", "engineer-oil-over-threshold", "spa", "T4",
+        {"finding": "car_health", "corner": "T4 Speaker's Corner"},
+        ("Car's fine. Speaker's Corner is a line thing, pick your entry speed.", ""),
+        ("Car's fine. Bruxelles is a line thing, pick your entry speed.", ""),
+    ),
+    # A trace-numbered venue: the label is right, any name next to it is invented.
+    (
+        "coach", "coach-offtrack", "numbered", "T4",
+        {"theme": "line", "cue": "Brake a touch earlier.", "corner": "T4"},
+        ("Off again at T4, brake a touch earlier there.", ""),
+        ("Off again at T4 Dunlop, brake a touch earlier there.", ""),
+    ),
+    (
+        "coach", "coach-offtrack", "numbered", "T7",
+        {"theme": "line", "cue": "Brake a touch earlier.", "corner": "T7"},
+        ("Off at T7 again, brake a touch earlier there.", ""),
+        ("Off at La Source again, brake a touch earlier there.", ""),
+    ),
+)
+
+
+def swapped_name_cases() -> list[SwappedNameCase]:
+    """The swapped-name cases on the real Spa map and on a trace-numbered venue."""
+    maps = {"spa": SPA_CORNER_MAP, "numbered": NUMBERED_CORNER_MAP}
+    out: list[SwappedNameCase] = []
+    for agent, wanted, venue, label, data, right, wrong in _NAME_SWAPS:
+        base = next(
+            c for c in build_agent_cases(agent) if c.name == wanted or c.event.key == wanted
+        )
+        case = _with_map(base, maps[venue], label)
+        out.append(
+            SwappedNameCase(
+                agent=agent,
+                venue=venue,
+                case=case,
+                faithful={"spoken_text": right[0], "detail_text": right[1], "data": dict(data)},
+                swapped={"spoken_text": wrong[0], "detail_text": wrong[1], "data": dict(data)},
+            )
+        )
+    return out
