@@ -238,5 +238,6 @@ def test_real_judge_metrics_are_keyed_by_provider():
     summary = {"cases": 2, "judge gemini:gemini-3.1-pro-preview": {"grounding": 4.5}}
     metrics = we.real_metrics(summary)
     assert metrics == {"cases": 2, "judge_gemini": {"grounding": 4.5}}
+    assert we.real_metrics({"judge_gemini:m": 1}) == {"judge_gemini": 1}
     flat = we.flat_metrics({"real": {"metrics": metrics}})
     assert "real.judge_gemini.grounding" in {k for k, *_ in we.HEADLINES} & set(flat)

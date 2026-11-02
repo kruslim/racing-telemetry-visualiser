@@ -379,7 +379,7 @@ def real_metrics(summary: dict[str, Any]) -> dict[str, Any]:
     """
     out: dict[str, Any] = {}
     for key, value in summary.items():
-        if key.startswith("judge "):
+        if key.startswith(("judge ", "judge_")):  # "judge_" from an older summary.json
             key = "judge_" + key[len("judge "):].split(":", 1)[0]
         out[key] = value
     return out
