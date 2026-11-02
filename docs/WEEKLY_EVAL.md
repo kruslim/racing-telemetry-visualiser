@@ -60,7 +60,13 @@ python scripts/weekly_eval.py --dry-run           # free: no model call, no serv
 python scripts/weekly_eval.py --dry-run --replay-journal path/to/run.jsonl
 python scripts/weekly_eval.py                     # live (Kimi + Gemini quota)
 python scripts/weekly_eval.py --steps real,golden --out-root /tmp/weekly
+python scripts/weekly_eval.py --resume /mnt/project-files/weekly-evals/2026-11-02
 ```
+
+`--resume <folder>` finishes an interrupted live run in that folder: the replay is rebuilt
+from its journal, the real cases from `real.json` and the golden sets from `golden.json`
+without a model call, and only the steps with nothing on disk run again. `summary.json` is
+written before `REPORT.md`, so a report bug never loses the paid results.
 
 `--dry-run` records the free parts (offline real-case scores, the agents' model ids and
 prompt hashes, the golden-set size and, with `--replay-journal`, a journal's statistics), so
