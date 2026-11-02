@@ -71,7 +71,13 @@ COACH_LAPS = ((2, 6), (3, 6), (8, 6), (14, 6), (16, 17))
 REAL_SET = "spa_run"
 JUDGE = "gemini"
 
-QUOTA_RE = re.compile(r"\b429\b|RateLimitError|rate_limit_error|usage limit", re.IGNORECASE)
+#: A 429 as the SDKs and the endpoint word it. A bare "429" is not enough: journals and logs
+#: are full of numbers like 12.429 (the first live run stopped on one).
+QUOTA_RE = re.compile(
+    r"(?:error code|status(?:_code)?|http(?:/\d(?:\.\d)?)?)[\s:=\"']*429\b"
+    r"|RateLimitError|rate_limit_error|usage limit|too many requests",
+    re.IGNORECASE,
+)
 
 
 # --------------------------------------------------------------------------
@@ -106,13 +112,15 @@ def journal_quota_hit(path: Path) -> str | None:
     try:
         with path.open(encoding="utf-8") as fh:
             for line in fh:
-                if QUOTA_RE.search(line):
-                    try:
-                        rec = json.loads(line)
-                    except ValueError:
-                        return line.strip()[:300]
-                    data = rec.get("data") or {}
-                    return str(data.get("error") or rec.get("kind") or "429")[:300]
+                if '"error"' not in line:
+                    continue
+                try:
+                    rec = json.loads(line)
+                except ValueError:
+                    continue
+                error = str((rec.get("data") or {}).get("error") or "")
+                if error and QUOTA_RE.search(error):
+                    return error[:300]
     except OSError:
         return None
     return None
@@ -738,8 +746,42 @@ def find_ibt(explicit: str) -> Path | None:
 # --------------------------------------------------------------------------
 # report
 # --------------------------------------------------------------------------
+def previous_replay_stats(previous: dict[str, Any] | None,
+                          folder: Path | None) -> dict[str, Any] | None:
+    """Last week's replay statistics, recomputed from its journal by today's code.
+
+    The stored ``stats`` were made by last week's ``run_stats``; its keys move as
+    ``run_stats`` grows, so the journal is re-read when it is still there.
+    """
+    step = ((previous or {}).get("steps") or {}).get("replay") or {}
+    journal = step.get("journal")
+    if journal:
+        path = Path(journal)
+        if not path.is_absolute() and folder is not None:
+            path = folder / path
+        if path.is_file():
+            stats = run_stats(_records(path))
+            stats["run"] = path.stem
+            return stats
+    return step.get("stats")
+
+
+def replay_tables(prev: dict[str, Any] | None, cur: dict[str, Any],
+                  prev_label: str | None, cur_label: str) -> str:
+    """compare_markdown of last week and this week, one level below the report's sections."""
+    try:
+        text = compare_markdown([prev, cur], [prev_label or "previous", cur_label]) if prev \
+            else compare_markdown([cur], [cur_label])
+    except (KeyError, TypeError):  # statistics from an older run_stats without its journal
+        text = compare_markdown([cur], [cur_label]) + (
+            "\n(Last week's replay statistics predate today's run_stats and its journal is "
+            "gone, so only this week is shown.)\n"
+        )
+    return text.rstrip().replace("## ", "### ")
+
+
 def render_report(current: dict[str, Any], previous: dict[str, Any] | None,
-                  previous_name: str | None) -> str:
+                  previous_name: str | None, previous_folder: Path | None = None) -> str:
     cur_m = current["metrics"]
     prev_m = (previous or {}).get("metrics") or {}
     kind = "dry run (no model calls)" if current.get("dry_run") else "live run"
@@ -780,15 +822,10 @@ def render_report(current: dict[str, Any], previous: dict[str, Any] | None,
     lines.append("")
 
     cur_stats = (current["steps"].get("replay") or {}).get("stats")
-    prev_stats = ((previous or {}).get("steps") or {}).get("replay", {}).get("stats")
+    prev_stats = previous_replay_stats(previous, previous_folder)
     if cur_stats:
         lines += ["## Spa replay (compare_runs)", ""]
-        tables = [prev_stats, cur_stats] if prev_stats else [cur_stats]
-        labels = [previous_name or "previous", current["date"]] if prev_stats \
-            else [current["date"]]
-        # compare_markdown's own "## " sections sit one level below this one.
-        table = compare_markdown(tables, labels).rstrip().replace("## ", "### ")
-        lines += [table, ""]
+        lines += [replay_tables(prev_stats, cur_stats, previous_name, current["date"]), ""]
 
     lines += ["## All metrics", "", f"| metric | {previous_name or 'previous'} | "
               f"{current['date']} |", "|---|---|---|"]
@@ -852,6 +889,9 @@ async def run(args: argparse.Namespace, out_dir: Path, watch: QuotaWatch) -> dic
         steps["real_offline"] = step_real_offline()
         return steps
 
+    if not wanted:  # everything was resumed from an interrupted run
+        steps["real_offline"] = step_real_offline()
+        return steps
     from rtv import llm
 
     if not llm.is_configured():
@@ -897,6 +937,49 @@ async def run(args: argparse.Namespace, out_dir: Path, watch: QuotaWatch) -> dic
     return steps
 
 
+def resume_steps(folder: Path, wanted: set[str]) -> dict[str, Any]:
+    """Steps a crashed run in ``folder`` already finished, rebuilt from the files it left.
+
+    The replay from its journal, the real cases from ``real.json`` and the golden sets from
+    ``golden.json``; no model is called. Steps without such a file are run again.
+    """
+    out: dict[str, Any] = {}
+    journals = sorted(folder.glob("*-replay.jsonl"))
+    if "replay" in wanted and journals:
+        stats = run_stats(_records(journals[-1]))
+        stats["run"] = journals[-1].stem
+        out["replay"] = {"status": "resumed", "mode": "live", "journal": journals[-1].name,
+                         "note": "rebuilt from the journal of the interrupted run",
+                         "metrics": replay_metrics(stats), "stats": stats}
+    real = folder / "real.json"
+    if "real" in wanted and real.is_file():
+        from evals.real.live import aggregate
+
+        rows = json.loads(real.read_text(encoding="utf-8"))
+        summary = aggregate(rows) if rows else {"cases": 0}
+        drift: dict[str, int] = {}
+        for row in rows:
+            for item in row.get("spec_drift") or []:
+                drift[item] = drift.get(item, 0) + 1
+        out["real"] = {"status": "resumed", "mode": "live",
+                       "note": "rebuilt from real.json of the interrupted run",
+                       "metrics": {k.replace("judge ", "judge_"): v for k, v in summary.items()},
+                       "spec_drift_vs_recording": drift}
+    golden = folder / "golden.json"
+    if "golden" in wanted and golden.is_file():
+        from evals.pitwall_checks import aggregate as golden_aggregate
+
+        rows = json.loads(golden.read_text(encoding="utf-8"))
+        metrics = dict(golden_aggregate(rows))
+        for agent in sorted({r["agent"] for r in rows}):
+            mine = [r for r in rows if r["agent"] == agent]
+            metrics[f"{agent}_mean_score"] = golden_aggregate(mine).get("mean_score")
+        out["golden"] = {"status": "resumed", "mode": "live",
+                         "note": "rebuilt from golden.json of the interrupted run (no latency "
+                         "or token totals)", "metrics": metrics}
+    return out
+
+
 def main(argv: Sequence[str] | None = None,
          fingerprint: Callable[[], dict[str, Any]] = spec_fingerprint) -> int:
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
@@ -909,6 +992,9 @@ def main(argv: Sequence[str] | None = None,
     p.add_argument("--ibt", default="", help="The Spa .ibt (default: fixtures, else fetch).")
     p.add_argument("--speed", type=float, default=2.0, help="Replay speed (default 2x).")
     p.add_argument("--replay-timeout", type=float, default=5400, help="Seconds.")
+    p.add_argument("--resume", type=Path, default=None,
+                   help="Finish an interrupted live run in this folder: steps it left results "
+                   "for are rebuilt from them, the rest run.")
     p.add_argument("--replay-journal", default="",
                    help="--dry-run: record this journal's statistics as the replay result.")
     args = p.parse_args(argv)
@@ -917,15 +1003,29 @@ def main(argv: Sequence[str] | None = None,
     if unknown:
         p.error(f"unknown step(s): {', '.join(sorted(unknown))}")
 
-    out_dir = run_folder(args.out_root, args.date, args.dry_run)
-    out_dir.mkdir(parents=True)
+    resumed: dict[str, Any] = {}
+    if args.resume:
+        if args.dry_run:
+            p.error("--resume finishes a live run; it does not combine with --dry-run")
+        out_dir = args.resume
+        if not out_dir.is_dir():
+            p.error(f"no such run folder: {out_dir}")
+        args.out_root = out_dir.parent
+        args.date = out_dir.name[:10]
+        resumed = resume_steps(out_dir, args.steps)
+        args.steps -= set(resumed)
+    else:
+        out_dir = run_folder(args.out_root, args.date, args.dry_run)
+        out_dir.mkdir(parents=True)
     watch = QuotaWatch()
     rtv_log = logging.getLogger("rtv")
     rtv_log.addHandler(watch)
     try:
-        steps = asyncio.run(run(args, out_dir, watch))
+        ran = asyncio.run(run(args, out_dir, watch))
     finally:
         rtv_log.removeHandler(watch)
+    merged = {**resumed, **ran}
+    steps = {name: merged[name] for name in (*STEPS, "real_offline") if name in merged}
 
     previous = find_previous(args.out_root, out_dir.name)
     prev_name, prev_data = (previous[0].name, previous[1]) if previous else (None, None)
@@ -943,11 +1043,17 @@ def main(argv: Sequence[str] | None = None,
         "steps": steps,
     }
     current["metrics"] = flat_metrics(steps)
-    report = out_dir / "REPORT.md"
-    report.write_text(render_report(current, prev_data, prev_name) + "\n", encoding="utf-8")
     current["previous"] = prev_name
+    # The summary first: a report bug must never lose an hour of paid results.
     (out_dir / "summary.json").write_text(
         json.dumps(current, indent=1, default=str) + "\n", encoding="utf-8")
+    report = out_dir / "REPORT.md"
+    try:
+        text = render_report(current, prev_data, prev_name, previous[0] if previous else None)
+    except Exception as exc:  # pragma: no cover - the fallback for a report bug
+        text = (f"# Weekly eval {args.date}\n\nThe report failed to render "
+                f"({type(exc).__name__}: {exc}); the results are in summary.json.\n")
+    report.write_text(text + "\n", encoding="utf-8")
     current["previous_metrics"] = (prev_data or {}).get("metrics")
     current["previous_fingerprint"] = (prev_data or {}).get("fingerprint")
     print(short_summary(current, prev_name, report))

@@ -182,3 +182,53 @@ def test_golden_step_stops_cleanly_on_a_429(monkeypatch):
     assert result["rows"] == []
     # One case's call (plus its single transport retry), then nothing else.
     assert _QuotaProvider.calls <= 2
+
+
+def test_quota_pattern_ignores_numbers_that_contain_429(tmp_path):
+    watch = we.QuotaWatch()
+    for text in ('"laps_remaining":12.429', "margin -11.429 l", "127.0.0.1:42950 GET",
+                 "429 cache read tokens"):
+        assert not watch.note(text), text
+    for text in ("Error code: 429 - {'error': ...}", "HTTP/1.1 429 Too Many Requests",
+                 "RateLimitError: slow down", "You've reached your 5-hour usage limit"):
+        assert we.QuotaWatch().note(text), text
+    path = tmp_path / "run.jsonl"
+    path.write_text(
+        json.dumps({"kind": "state", "data": {"laps_remaining": 12.429, "error": None}}) + "\n"
+        + json.dumps({"kind": "llm_call_end", "data": {"ok": False, "error": "ValueError"}})
+        + "\n"
+    )
+    assert we.journal_quota_hit(path) is None
+
+
+def test_old_replay_stats_never_break_the_report(tmp_path):
+    cur = we.run_stats(we._records(RUN3))
+    old = {k: v for k, v in cur.items() if k != "tool_turns"} | {"model_calls": 99}
+    # No journal left: the stored (older) statistics are shown when they fit, else skipped.
+    text = we.replay_tables(old, cur, "last week", "this week")
+    assert "this week" in text and "### Summary" in text
+    # With the journal still there, last week is recomputed by today's run_stats.
+    prev = {"steps": {"replay": {"journal": RUN2.name, "stats": old}}}
+    stats = we.previous_replay_stats(prev, RUN2.parent)
+    assert stats["run"] == RUN2.stem and stats["model_calls"] != 99
+
+
+def test_resume_rebuilds_finished_steps_without_models(tmp_path, no_models, monkeypatch):
+    folder = tmp_path / "2026-11-09"
+    folder.mkdir()
+    (folder / "20261109T054712Z-01-replay.jsonl").write_text(RUN3.read_text())
+    (folder / "real.json").write_text(json.dumps([
+        {"case_id": "coach-1", "agent": "coach", "spec_drift": ["prompt"],
+         "recorded_score": 1.0, "recorded_validator_ok": True, "unrecorded_tool_calls": [],
+         "new": {"x": 1}, "new_score": 0.5, "new_validator_ok": False, "refused": False,
+         "judges": []},
+    ]))
+    rc = we.main(["--resume", str(folder), "--steps", "replay,real"],
+                 fingerprint=_fingerprint())
+    assert rc == 0
+    summary = json.loads((folder / "summary.json").read_text())
+    assert summary["steps"]["replay"]["status"] == "resumed"
+    assert summary["metrics"]["replay.refusals"] == 1
+    assert summary["metrics"]["real.new_validator_failures"] == 1
+    assert summary["steps"]["real"]["spec_drift_vs_recording"] == {"prompt": 1}
+    assert "| replay | resumed |" in (folder / "REPORT.md").read_text()
