@@ -371,6 +371,20 @@ def step_real_dry() -> dict[str, Any]:
     }
 
 
+def real_metrics(summary: dict[str, Any]) -> dict[str, Any]:
+    """The live real-case summary with judge keys named by provider ("judge_gemini").
+
+    ``aggregate`` labels a judge "gemini:<model id>"; the model id must not end up in the
+    metric key, or a judge model change would read as a metric that vanished.
+    """
+    out: dict[str, Any] = {}
+    for key, value in summary.items():
+        if key.startswith("judge "):
+            key = "judge_" + key[len("judge "):].split(":", 1)[0]
+        out[key] = value
+    return out
+
+
 async def step_real_live(watch: QuotaWatch) -> dict[str, Any]:
     from evals.judge_provider import judge_backend
     from evals.real.cases import load_case_set
@@ -396,7 +410,7 @@ async def step_real_live(watch: QuotaWatch) -> dict[str, Any]:
                 break
             rows.append(_failed_real_row(case, exc))
     summary = aggregate(rows) if rows else {"cases": 0}
-    metrics = {k.replace("judge ", "judge_"): v for k, v in summary.items()}
+    metrics = real_metrics(summary)
     drift: dict[str, int] = {}
     for row in rows:
         for item in row.get("spec_drift") or []:
@@ -963,7 +977,7 @@ def resume_steps(folder: Path, wanted: set[str]) -> dict[str, Any]:
                 drift[item] = drift.get(item, 0) + 1
         out["real"] = {"status": "resumed", "mode": "live",
                        "note": "rebuilt from real.json of the interrupted run",
-                       "metrics": {k.replace("judge ", "judge_"): v for k, v in summary.items()},
+                       "metrics": real_metrics(summary),
                        "spec_drift_vs_recording": drift}
     golden = folder / "golden.json"
     if "golden" in wanted and golden.is_file():
